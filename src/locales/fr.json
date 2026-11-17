@@ -124,7 +124,8 @@
     "CSV_DELIMITER": "Le séparateur doit être un seul caractère.",
     "CSV_PARSE": "Le fichier CSV n’a pas pu être lu.",
     "IMPORT_ROWS": "Le serveur a refusé des lignes du fichier. Rien n’a été importé.",
-    "COPY_SAME": "Choisissez une autre base que la source."
+    "COPY_SAME": "Choisissez une autre base que la source.",
+    "VARIABLE_VALUE": "Valeur non valide pour cette variable."
   },
   "tree": {
     "title": "Bases de données",
@@ -333,6 +334,67 @@
     "none": "Aucun plugin ne correspond.",
     "installHint": "Le plugin reste installé après un redémarrage du serveur. Nécessite le privilège INSERT sur mysql.plugin.",
     "notStable": "Ce plugin n’est pas stable (maturité : {maturity}). Le serveur peut le refuser selon plugin_maturity."
+  },
+  "admin": {
+    "refresh": "Actualiser",
+    "refreshEvery": "Actualiser",
+    "seconds": "toutes les {n} s",
+    "paused": "en pause"
+  },
+  "processes": {
+    "tab": "Processus",
+    "filter": "Filtrer les processus",
+    "hideSleeping": "Masquer les connexions inactives",
+    "id": "ID",
+    "user": "Utilisateur",
+    "host": "Hôte",
+    "db": "Base",
+    "command": "Commande",
+    "time": "Durée (s)",
+    "state": "État",
+    "info": "Instruction",
+    "actions": "Actions",
+    "progress": "{n} % effectué",
+    "explain": "Plan d'exécution",
+    "killQuery": "Arrêter la requête",
+    "killConnection": "Fermer la connexion",
+    "killQueryHint": "Arrête l'instruction en cours ; la connexion reste ouverte. Une transaction en cours est annulée jusqu'à cette instruction.",
+    "killConnectionHint": "Ferme la connexion ; sa transaction ouverte est annulée.",
+    "planTitle": "Plan d'exécution de la connexion {id}",
+    "none": "Aucun processus ne correspond.",
+    "planLoading": "En attente du serveur… il répond quand la requête atteint un point de contrôle, ce qui peut prendre quelques secondes."
+  },
+  "variables": {
+    "tab": "Variables",
+    "filter": "Filtrer les variables",
+    "changedOnly": "Seulement celles modifiées",
+    "hint": "SET GLOBAL s'applique aux nouvelles connexions et se perd au redémarrage du serveur, sauf si la valeur est aussi écrite dans le fichier de configuration.",
+    "name": "Nom",
+    "value": "Valeur",
+    "default": "Défaut",
+    "origin": "Origine",
+    "type": "Type",
+    "readOnly": "Lecture seule",
+    "reset": "Revenir au défaut",
+    "editValue": "Saisir une valeur",
+    "toDefault": "Retour à la valeur par défaut ({value})",
+    "none": "Aucune variable ne correspond."
+  },
+  "status": {
+    "tab": "Statut",
+    "qps": "Requêtes par seconde",
+    "questionsTotal": "{n} depuis le démarrage",
+    "connections": "Connexions",
+    "connectionsDetail": "{running} actives · pic {peak}",
+    "bufferPool": "Buffer pool InnoDB utilisé",
+    "bufferPoolDetail": "Taille {size}",
+    "hitRatio": "Taux de succès du buffer pool",
+    "hitRatioDetail": "{reads} lectures disque depuis le démarrage",
+    "tmpDisk": "Tables temporaires sur disque",
+    "tmpDiskDetail": "{disk} sur {all} depuis le démarrage",
+    "uptime": "Disponibilité",
+    "uptimeValue": "{d} j {h} h {m} min",
+    "sinceStart": "Depuis le démarrage du serveur"
   },
   "transfer": {
     "export": "Exporter",

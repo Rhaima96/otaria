@@ -124,7 +124,8 @@
     "CSV_DELIMITER": "El separador debe ser un solo carácter.",
     "CSV_PARSE": "No se pudo leer el archivo CSV.",
     "IMPORT_ROWS": "El servidor rechazó filas del archivo. No se importó nada.",
-    "COPY_SAME": "Elija una base de datos distinta de la de origen."
+    "COPY_SAME": "Elija una base de datos distinta de la de origen.",
+    "VARIABLE_VALUE": "Valor no válido para esta variable."
   },
   "tree": {
     "title": "Bases de datos",
@@ -333,6 +334,67 @@
     "none": "Ningún plugin coincide.",
     "installHint": "El plugin sigue instalado tras reiniciar el servidor. Requiere el privilegio INSERT en mysql.plugin.",
     "notStable": "Este plugin no es estable (madurez: {maturity}). El servidor puede rechazarlo según plugin_maturity."
+  },
+  "admin": {
+    "refresh": "Actualizar",
+    "refreshEvery": "Actualizar",
+    "seconds": "cada {n} s",
+    "paused": "en pausa"
+  },
+  "processes": {
+    "tab": "Procesos",
+    "filter": "Filtrar procesos",
+    "hideSleeping": "Ocultar conexiones inactivas",
+    "id": "ID",
+    "user": "Usuario",
+    "host": "Host",
+    "db": "Base de datos",
+    "command": "Comando",
+    "time": "Tiempo (s)",
+    "state": "Estado",
+    "info": "Sentencia",
+    "actions": "Acciones",
+    "progress": "{n} % hecho",
+    "explain": "Plan de ejecución",
+    "killQuery": "Detener la consulta",
+    "killConnection": "Cerrar la conexión",
+    "killQueryHint": "Detiene la sentencia en curso; la conexión sigue abierta. Una transacción en curso se revierte hasta esa sentencia.",
+    "killConnectionHint": "Cierra la conexión; su transacción abierta se revierte.",
+    "planTitle": "Plan de ejecución de la conexión {id}",
+    "none": "Ningún proceso coincide.",
+    "planLoading": "Esperando al servidor… responde cuando la consulta llega a un punto de control, lo que puede tardar unos segundos."
+  },
+  "variables": {
+    "tab": "Variables",
+    "filter": "Filtrar variables",
+    "changedOnly": "Solo las modificadas",
+    "hint": "SET GLOBAL se aplica a las conexiones nuevas y se pierde al reiniciar el servidor, salvo que también se escriba en el archivo de configuración.",
+    "name": "Nombre",
+    "value": "Valor",
+    "default": "Predeterminado",
+    "origin": "Origen",
+    "type": "Tipo",
+    "readOnly": "Solo lectura",
+    "reset": "Volver al predeterminado",
+    "editValue": "Indicar un valor",
+    "toDefault": "Volver al valor predeterminado ({value})",
+    "none": "Ninguna variable coincide."
+  },
+  "status": {
+    "tab": "Estado",
+    "qps": "Consultas por segundo",
+    "questionsTotal": "{n} desde el inicio",
+    "connections": "Conexiones",
+    "connectionsDetail": "{running} en ejecución · pico {peak}",
+    "bufferPool": "Buffer pool de InnoDB usado",
+    "bufferPoolDetail": "Tamaño {size}",
+    "hitRatio": "Tasa de aciertos del buffer pool",
+    "hitRatioDetail": "{reads} lecturas de disco desde el inicio",
+    "tmpDisk": "Tablas temporales en disco",
+    "tmpDiskDetail": "{disk} de {all} desde el inicio",
+    "uptime": "Tiempo activo",
+    "uptimeValue": "{d} d {h} h {m} min",
+    "sinceStart": "Desde el inicio del servidor"
   },
   "transfer": {
     "export": "Exportar",

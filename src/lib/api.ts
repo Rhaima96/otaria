@@ -228,6 +228,33 @@ export interface Plugin {
   description: string;
 }
 
+export interface Process {
+  id: number;
+  user: string;
+  host: string;
+  db: string | null;
+  command: string;
+  timeMs: number;
+  state: string | null;
+  info: string | null;
+  /** 0–100, MariaDB only. */
+  progress: number;
+}
+
+export interface Variable {
+  name: string;
+  value: string | null;
+  /** The fields below are null on MySQL. */
+  default: string | null;
+  /** INT, BIGINT UNSIGNED, DOUBLE, BOOLEAN, ENUM, SET, FLAGSET, VARCHAR… */
+  kind: string | null;
+  origin: string | null;
+  readOnly: boolean;
+  comment: string | null;
+  /** Comma-separated, for ENUM / SET / FLAGSET / BOOLEAN. */
+  choices: string | null;
+}
+
 export type ExportFormat = "csv" | "json" | "xlsx" | "sql";
 
 export interface ExportReq {
@@ -312,6 +339,14 @@ export const api = {
   listPlugins: (sessionId: string) => invoke<Plugin[]>("list_plugins", { sessionId }),
   pluginInstallSql: (name: string, library: string) => invoke<string>("plugin_install_sql", { name, library }),
   pluginInstall: (sessionId: string, name: string, library: string) => invoke<void>("plugin_install", { sessionId, name, library }),
+  listProcesses: (sessionId: string) => invoke<Process[]>("list_processes", { sessionId }),
+  killProcess: (sessionId: string, id: number, connection: boolean) => invoke<void>("kill_process", { sessionId, id, connection }),
+  explainProcess: (sessionId: string, id: number) => invoke<string | null>("explain_process", { sessionId, id }),
+  listVariables: (sessionId: string) => invoke<Variable[]>("list_variables", { sessionId }),
+  /** value null = back to the default. */
+  variableSql: (name: string, kind: string | null, value: string | null) => invoke<string>("variable_sql", { name, kind, value }),
+  setVariable: (sessionId: string, name: string, value: string | null) => invoke<void>("set_variable", { sessionId, name, value }),
+  serverStatus: (sessionId: string) => invoke<Record<string, string>>("server_status", { sessionId }),
   exportData: (sessionId: string, jobId: string, req: ExportReq) => invoke<number>("export_data", { sessionId, jobId, req }),
   importSql: (sessionId: string, jobId: string, schema: string, path: string) => invoke<number>("import_sql", { sessionId, jobId, schema, path }),
   csvPreview: (path: string, delimiter: string | null, header: boolean) => invoke<CsvPreview>("csv_preview", { path, delimiter, header }),

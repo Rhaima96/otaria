@@ -6,7 +6,8 @@ import ErrorLine from "@/components/ErrorLine.vue";
 import { api, toAppError, type AppError, type Plugin } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-const props = defineProps<{ sessionId: string }>();
+// active: unused here, passed to every server screen (the polling ones pause when hidden).
+const props = defineProps<{ sessionId: string; active?: boolean }>();
 const { t } = useI18n();
 
 const plugins = ref<Plugin[]>([]);

@@ -1,3 +1,4 @@
+mod admin;
 mod browse;
 mod db;
 mod designer;
@@ -296,6 +297,41 @@ async fn sequence_setval(state: State<'_, AppState>, session_id: String, schema:
 }
 
 #[tauri::command]
+async fn list_processes(state: State<'_, AppState>, session_id: String) -> AppResult<Vec<admin::Process>> {
+    admin::processes(&pool(&state, &session_id).await?, is_mariadb(&state, &session_id).await?).await
+}
+
+#[tauri::command]
+async fn kill_process(state: State<'_, AppState>, session_id: String, id: u64, connection: bool) -> AppResult<()> {
+    admin::kill(&pool(&state, &session_id).await?, id, connection).await
+}
+
+#[tauri::command]
+async fn explain_process(state: State<'_, AppState>, session_id: String, id: u64) -> AppResult<Option<String>> {
+    admin::explain(&pool(&state, &session_id).await?, id).await
+}
+
+#[tauri::command]
+async fn list_variables(state: State<'_, AppState>, session_id: String) -> AppResult<Vec<admin::Variable>> {
+    admin::variables(&pool(&state, &session_id).await?, is_mariadb(&state, &session_id).await?).await
+}
+
+#[tauri::command]
+fn variable_sql(name: String, kind: Option<String>, value: Option<String>) -> AppResult<String> {
+    admin::set_sql(&name, kind.as_deref(), value.as_deref())
+}
+
+#[tauri::command]
+async fn set_variable(state: State<'_, AppState>, session_id: String, name: String, value: Option<String>) -> AppResult<()> {
+    admin::set(&pool(&state, &session_id).await?, is_mariadb(&state, &session_id).await?, &name, value.as_deref()).await
+}
+
+#[tauri::command]
+async fn server_status(state: State<'_, AppState>, session_id: String) -> AppResult<std::collections::HashMap<String, String>> {
+    admin::status(&pool(&state, &session_id).await?).await
+}
+
+#[tauri::command]
 async fn list_plugins(state: State<'_, AppState>, session_id: String) -> AppResult<Vec<plugins::Plugin>> {
     plugins::list(&pool(&state, &session_id).await?).await
 }
@@ -527,6 +563,13 @@ pub fn run() {
             list_plugins,
             plugin_install_sql,
             plugin_install,
+            list_processes,
+            kill_process,
+            explain_process,
+            list_variables,
+            variable_sql,
+            set_variable,
+            server_status,
             export_data,
             import_sql,
             csv_preview,

@@ -124,7 +124,8 @@
     "CSV_DELIMITER": "The delimiter must be one character.",
     "CSV_PARSE": "The CSV file could not be read.",
     "IMPORT_ROWS": "The server refused rows of the file. Nothing was imported.",
-    "COPY_SAME": "Pick another database than the source."
+    "COPY_SAME": "Pick another database than the source.",
+    "VARIABLE_VALUE": "Not a valid value for this variable."
   },
   "tree": {
     "title": "Databases",
@@ -333,6 +334,67 @@
     "none": "No plugin matches.",
     "installHint": "The plugin stays installed after a server restart. Requires the INSERT privilege on mysql.plugin.",
     "notStable": "This plugin is not stable (maturity: {maturity}). The server may refuse it depending on plugin_maturity."
+  },
+  "admin": {
+    "refresh": "Refresh",
+    "refreshEvery": "Refresh",
+    "seconds": "every {n} s",
+    "paused": "paused"
+  },
+  "processes": {
+    "tab": "Processes",
+    "filter": "Filter processes",
+    "hideSleeping": "Hide idle connections",
+    "id": "ID",
+    "user": "User",
+    "host": "Host",
+    "db": "Database",
+    "command": "Command",
+    "time": "Time (s)",
+    "state": "State",
+    "info": "Statement",
+    "actions": "Actions",
+    "progress": "{n} % done",
+    "explain": "Execution plan",
+    "killQuery": "Stop the query",
+    "killConnection": "Close the connection",
+    "killQueryHint": "Stops the running statement; the connection stays open. A transaction in progress is rolled back up to that statement.",
+    "killConnectionHint": "Closes the connection; its open transaction is rolled back.",
+    "planTitle": "Execution plan of connection {id}",
+    "none": "No process matches.",
+    "planLoading": "Waiting for the server… it answers when the query reaches a checkpoint, which can take a few seconds."
+  },
+  "variables": {
+    "tab": "Variables",
+    "filter": "Filter variables",
+    "changedOnly": "Changed from default only",
+    "hint": "SET GLOBAL applies to new connections and is lost when the server restarts, unless it is also written in the configuration file.",
+    "name": "Name",
+    "value": "Value",
+    "default": "Default",
+    "origin": "Origin",
+    "type": "Type",
+    "readOnly": "Read-only",
+    "reset": "Reset to default",
+    "editValue": "Set a value",
+    "toDefault": "Back to the default ({value})",
+    "none": "No variable matches."
+  },
+  "status": {
+    "tab": "Status",
+    "qps": "Queries per second",
+    "questionsTotal": "{n} since start",
+    "connections": "Connections",
+    "connectionsDetail": "{running} running · peak {peak}",
+    "bufferPool": "InnoDB buffer pool used",
+    "bufferPoolDetail": "Size {size}",
+    "hitRatio": "Buffer pool hit ratio",
+    "hitRatioDetail": "{reads} reads from disk since start",
+    "tmpDisk": "Temporary tables on disk",
+    "tmpDiskDetail": "{disk} of {all} since start",
+    "uptime": "Uptime",
+    "uptimeValue": "{d} d {h} h {m} min",
+    "sinceStart": "Since the server started"
   },
   "transfer": {
     "export": "Export",
