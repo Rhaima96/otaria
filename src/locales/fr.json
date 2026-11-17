@@ -120,7 +120,11 @@
     "EXPORT_FORMAT": "Ce format ne peut pas exporter une base entière.",
     "EXPORT_TOO_MANY_ROWS": "Trop de lignes pour une feuille Excel. Utilisez CSV ou JSON.",
     "IMPORT_STATEMENT": "L’import s’est arrêté sur une instruction en erreur. Les instructions précédentes ont été appliquées.",
-    "FILE_NOT_UTF8": "Le fichier n’est pas un texte UTF-8."
+    "FILE_NOT_UTF8": "Le fichier n’est pas un texte UTF-8.",
+    "CSV_DELIMITER": "Le séparateur doit être un seul caractère.",
+    "CSV_PARSE": "Le fichier CSV n’a pas pu être lu.",
+    "IMPORT_ROWS": "Le serveur a refusé des lignes du fichier. Rien n’a été importé.",
+    "COPY_SAME": "Choisissez une autre base que la source."
   },
   "tree": {
     "title": "Bases de données",
@@ -355,6 +359,33 @@
     "exported": "{n} lignes écrites dans {path}",
     "imported": "{n} instructions exécutées.",
     "stop": "Arrêter",
-    "close": "Fermer"
+    "close": "Fermer",
+    "destination": "Destination",
+    "toFile": "Fichier",
+    "toConnection": "Autre connexion",
+    "targetConnection": "Connexion",
+    "targetSchema": "Base",
+    "copyHint": "Créée si elle n’existe pas. Choisissez une autre connexion parmi les onglets ouverts, ou une autre base de celle-ci.",
+    "copyRun": "Copier",
+    "copied": "{n} lignes copiées vers {to}",
+    "importCsv": "Importer CSV",
+    "csvPick": "Choisir un fichier CSV…",
+    "delimiter": "Séparateur",
+    "delimiters": {
+      "comma": "Virgule (,)",
+      "semicolon": "Point-virgule (;)",
+      "tab": "Tabulation",
+      "pipe": "Barre (|)"
+    },
+    "header": "Première ligne = noms des colonnes",
+    "emptyNull": "Champ vide = NULL",
+    "csvColumn": "Colonne CSV",
+    "sample": "Première valeur",
+    "tableColumn": "Colonne de la table",
+    "skip": "— ignorer —",
+    "csvHint": "Toutes les lignes passent dans une seule transaction : une ligne en erreur et rien n’est importé.",
+    "csvRun": "Importer",
+    "csvImported": "{n} lignes insérées.",
+    "fileLines": "Lignes du fichier : {lines}"
   }
 }

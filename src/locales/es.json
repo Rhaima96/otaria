@@ -120,7 +120,11 @@
     "EXPORT_FORMAT": "Este formato no puede exportar una base de datos completa.",
     "EXPORT_TOO_MANY_ROWS": "Demasiadas filas para una hoja de Excel. Use CSV o JSON.",
     "IMPORT_STATEMENT": "La importación se detuvo en una instrucción con error. Las instrucciones anteriores se aplicaron.",
-    "FILE_NOT_UTF8": "El archivo no es texto UTF-8."
+    "FILE_NOT_UTF8": "El archivo no es texto UTF-8.",
+    "CSV_DELIMITER": "El separador debe ser un solo carácter.",
+    "CSV_PARSE": "No se pudo leer el archivo CSV.",
+    "IMPORT_ROWS": "El servidor rechazó filas del archivo. No se importó nada.",
+    "COPY_SAME": "Elija una base de datos distinta de la de origen."
   },
   "tree": {
     "title": "Bases de datos",
@@ -355,6 +359,33 @@
     "exported": "{n} filas escritas en {path}",
     "imported": "{n} instrucciones ejecutadas.",
     "stop": "Detener",
-    "close": "Cerrar"
+    "close": "Cerrar",
+    "destination": "Destino",
+    "toFile": "Archivo",
+    "toConnection": "Otra conexión",
+    "targetConnection": "Conexión",
+    "targetSchema": "Base de datos",
+    "copyHint": "Se crea si no existe. Elija otra conexión entre las pestañas abiertas, u otra base de datos de esta.",
+    "copyRun": "Copiar",
+    "copied": "{n} filas copiadas a {to}",
+    "importCsv": "Importar CSV",
+    "csvPick": "Elegir un archivo CSV…",
+    "delimiter": "Separador",
+    "delimiters": {
+      "comma": "Coma (,)",
+      "semicolon": "Punto y coma (;)",
+      "tab": "Tabulación",
+      "pipe": "Barra (|)"
+    },
+    "header": "Primera línea = nombres de columnas",
+    "emptyNull": "Campo vacío = NULL",
+    "csvColumn": "Columna CSV",
+    "sample": "Primer valor",
+    "tableColumn": "Columna de la tabla",
+    "skip": "— omitir —",
+    "csvHint": "Todas las filas van en una sola transacción: con una fila errónea no se importa nada.",
+    "csvRun": "Importar",
+    "csvImported": "{n} filas insertadas.",
+    "fileLines": "Líneas del archivo: {lines}"
   }
 }

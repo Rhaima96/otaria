@@ -120,7 +120,11 @@
     "EXPORT_FORMAT": "This format cannot export a whole database.",
     "EXPORT_TOO_MANY_ROWS": "Too many rows for an Excel sheet. Use CSV or JSON.",
     "IMPORT_STATEMENT": "The import stopped at a failing statement. The statements before it were applied.",
-    "FILE_NOT_UTF8": "The file is not UTF-8 text."
+    "FILE_NOT_UTF8": "The file is not UTF-8 text.",
+    "CSV_DELIMITER": "The delimiter must be one character.",
+    "CSV_PARSE": "The CSV file could not be read.",
+    "IMPORT_ROWS": "The server refused rows of the file. Nothing was imported.",
+    "COPY_SAME": "Pick another database than the source."
   },
   "tree": {
     "title": "Databases",
@@ -355,6 +359,33 @@
     "exported": "{n} rows written to {path}",
     "imported": "{n} statements run.",
     "stop": "Stop",
-    "close": "Close"
+    "close": "Close",
+    "destination": "Destination",
+    "toFile": "File",
+    "toConnection": "Another connection",
+    "targetConnection": "Connection",
+    "targetSchema": "Database",
+    "copyHint": "Created if it does not exist. Pick another connection from the open tabs, or another database of this one.",
+    "copyRun": "Copy",
+    "copied": "{n} rows copied to {to}",
+    "importCsv": "Import CSV",
+    "csvPick": "Choose a CSV file…",
+    "delimiter": "Delimiter",
+    "delimiters": {
+      "comma": "Comma (,)",
+      "semicolon": "Semicolon (;)",
+      "tab": "Tab",
+      "pipe": "Pipe (|)"
+    },
+    "header": "First line = column names",
+    "emptyNull": "Empty field = NULL",
+    "csvColumn": "CSV column",
+    "sample": "First value",
+    "tableColumn": "Table column",
+    "skip": "— skip —",
+    "csvHint": "All rows go in one transaction: one bad row and nothing is imported.",
+    "csvRun": "Import",
+    "csvImported": "{n} rows inserted.",
+    "fileLines": "File lines: {lines}"
   }
 }

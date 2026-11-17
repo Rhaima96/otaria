@@ -364,6 +364,36 @@ async fn import_sql(app: AppHandle, state: State<'_, AppState>, session_id: Stri
 }
 
 #[tauri::command]
+fn csv_preview(path: String, delimiter: Option<String>, header: bool) -> AppResult<transfer::CsvPreview> {
+    transfer::csv_preview(&path, delimiter.as_deref(), header)
+}
+
+/// CSV file → table, in one transaction. Returns the number of rows inserted.
+#[tauri::command]
+async fn import_csv(app: AppHandle, state: State<'_, AppState>, session_id: String, job_id: String, req: transfer::CsvImport) -> AppResult<u64> {
+    let pool = pool(&state, &session_id).await?;
+    let job = Job::new(&state, &job_id, 0);
+    transfer::import_csv(&pool, &req, &job.cancel, |done, total| {
+        let _ = app.emit("transfer-progress", Progress { id: &job_id, done, total });
+    })
+    .await
+}
+
+/// Table or schema → another open session (or another schema of the same one). Returns rows copied.
+#[tauri::command]
+async fn copy_data(app: AppHandle, state: State<'_, AppState>, session_id: String, job_id: String, req: transfer::CopyReq) -> AppResult<u64> {
+    if req.target_session == session_id && req.target_schema == req.schema {
+        return Err(AppError::new("COPY_SAME", req.schema));
+    }
+    let (src, dst) = (pool(&state, &session_id).await?, pool(&state, &req.target_session).await?);
+    let job = Job::new(&state, &job_id, 0);
+    transfer::copy(&src, &dst, &req, &job.cancel, |done, total| {
+        let _ = app.emit("transfer-progress", Progress { id: &job_id, done, total });
+    })
+    .await
+}
+
+#[tauri::command]
 async fn cancel_job(state: State<'_, AppState>, session_id: String, job_id: String) -> AppResult<()> {
     let found = state.jobs.lock().unwrap().get(&job_id).cloned();
     let Some((cancel, conn_id)) = found else { return Ok(()) };
@@ -499,6 +529,9 @@ pub fn run() {
             plugin_install,
             export_data,
             import_sql,
+            csv_preview,
+            import_csv,
+            copy_data,
             cancel_job
         ])
         .run(tauri::generate_context!())

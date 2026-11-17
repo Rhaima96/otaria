@@ -240,6 +240,33 @@ export interface ExportReq {
   drop: boolean;
 }
 
+export interface CsvPreview {
+  /** Header names, or "1", "2"… without a header row. */
+  columns: string[];
+  rows: string[][];
+  delimiter: string;
+}
+
+export interface CsvImport {
+  schema: string;
+  table: string;
+  path: string;
+  delimiter: string;
+  header: boolean;
+  /** Target column per CSV column, in file order; null = skip. */
+  mapping: (string | null)[];
+  emptyNull: boolean;
+}
+
+export interface CopyReq {
+  schema: string;
+  table: string | null;
+  targetSession: string;
+  targetSchema: string;
+  data: boolean;
+  drop: boolean;
+}
+
 /** Payload of the `transfer-progress` event. Export: rows so far (total 0); import: bytes read of total. */
 export interface TransferProgress {
   id: string;
@@ -287,6 +314,9 @@ export const api = {
   pluginInstall: (sessionId: string, name: string, library: string) => invoke<void>("plugin_install", { sessionId, name, library }),
   exportData: (sessionId: string, jobId: string, req: ExportReq) => invoke<number>("export_data", { sessionId, jobId, req }),
   importSql: (sessionId: string, jobId: string, schema: string, path: string) => invoke<number>("import_sql", { sessionId, jobId, schema, path }),
+  csvPreview: (path: string, delimiter: string | null, header: boolean) => invoke<CsvPreview>("csv_preview", { path, delimiter, header }),
+  importCsv: (sessionId: string, jobId: string, req: CsvImport) => invoke<number>("import_csv", { sessionId, jobId, req }),
+  copyData: (sessionId: string, jobId: string, req: CopyReq) => invoke<number>("copy_data", { sessionId, jobId, req }),
   cancelJob: (sessionId: string, jobId: string) => invoke<void>("cancel_job", { sessionId, jobId }),
   runSql: (sessionId: string, editorId: string, r: RunRequest) => invoke<RunOutput>("run_sql", { sessionId, editorId, ...r }),
   cancelSql: (sessionId: string, editorId: string) => invoke<void>("cancel_sql", { sessionId, editorId }),

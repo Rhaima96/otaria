@@ -1,5 +1,6 @@
 //! Import / export. Rows go from the server to the file (and back) in Rust, never through the UI.
-//! A table or view → CSV, JSON, Excel or SQL; a whole schema → SQL; an SQL file → the server, streamed.
+//! A table or view → CSV, JSON, Excel or SQL; a whole schema → SQL; an SQL file → the server, streamed;
+//! a CSV file → a table (batched INSERTs in one transaction); a table or schema → another connection.
 // ponytail: internal SQL dump only. mariadb-dump would need the password, the SSH tunnel port and the
 // TLS files on its command line; add it if the internal dump falls short.
 
@@ -10,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use mysql_async::consts::ColumnType;
 use mysql_async::prelude::Queryable;
 use mysql_async::{Column, Conn, Pool, QueryResult, Row, TextProtocol, TxOpts, Value};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio::io::AsyncReadExt;
 
 use crate::browse::{self, ident};
@@ -428,6 +429,177 @@ async fn run(conn: &mut Conn, sql: &str, n: u64, cancel: &AtomicBool) -> AppResu
     })
 }
 
+/// First rows of a CSV file, to map its columns before importing.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CsvPreview {
+    /// Header names, or "1", "2"… without a header row.
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<String>>,
+    /// The delimiter used (detected when none was given).
+    pub delimiter: String,
+}
+
+const PREVIEW_ROWS: usize = 20;
+
+/// The most frequent of `,` `;` tab `|` on the first line; `,` when none appears (ties go to the first).
+fn detect_delimiter(first_line: &str) -> u8 {
+    let count = |d: u8| first_line.bytes().filter(|&c| c == d).count();
+    b";\t|".iter().fold(b',', |best, &d| if count(d) > count(best) { d } else { best })
+}
+
+fn delimiter_byte(d: &str) -> AppResult<u8> {
+    match d.as_bytes() {
+        [b] if b.is_ascii() && !b.is_ascii_alphanumeric() && *b != b'"' => Ok(*b),
+        _ => Err(AppError::new("CSV_DELIMITER", d.to_string())),
+    }
+}
+
+fn csv_err(e: csv::Error) -> AppError {
+    let line = e.position().map(|p| p.line());
+    let code = if matches!(e.kind(), csv::ErrorKind::Utf8 { .. }) { "FILE_NOT_UTF8" } else { "CSV_PARSE" };
+    AppError { detail: line.map(|l| l.to_string()), ..AppError::new(code, e.to_string()) }
+}
+
+fn csv_reader(path: &str, delimiter: u8, header: bool) -> AppResult<csv::Reader<File>> {
+    csv::ReaderBuilder::new().delimiter(delimiter).has_headers(header).from_path(path).map_err(csv_err)
+}
+
+pub fn csv_preview(path: &str, delimiter: Option<&str>, header: bool) -> AppResult<CsvPreview> {
+    let d = match delimiter {
+        Some(d) => delimiter_byte(d)?,
+        None => {
+            let mut first = String::new();
+            std::io::BufRead::read_line(&mut std::io::BufReader::new(File::open(path)?), &mut first)?;
+            detect_delimiter(&first)
+        }
+    };
+    let mut rd = csv_reader(path, d, header)?;
+    let rows: Vec<Vec<String>> =
+        rd.records().take(PREVIEW_ROWS).map(|r| r.map(|r| r.iter().map(str::to_string).collect())).collect::<Result<_, _>>().map_err(csv_err)?;
+    let columns = if header {
+        // A UTF-8 BOM written by Excel would stick to the first name.
+        rd.headers().map_err(csv_err)?.iter().enumerate().map(|(i, h)| if i == 0 { h.trim_start_matches('\u{feff}') } else { h }.to_string()).collect()
+    } else {
+        (1..=rows.first().map_or(0, Vec::len)).map(|i| i.to_string()).collect()
+    };
+    Ok(CsvPreview { columns, rows, delimiter: (d as char).to_string() })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CsvImport {
+    pub schema: String,
+    pub table: String,
+    pub path: String,
+    pub delimiter: String,
+    pub header: bool,
+    /// Target column for each CSV column, in file order; None = skip that CSV column.
+    pub mapping: Vec<Option<String>>,
+    /// Empty field → NULL (what the CSV export writes for NULL).
+    pub empty_null: bool,
+}
+
+/// Placeholders per statement: the protocol allows 65,535.
+const MAX_PARAMS: usize = 65_535;
+
+/// The INSERT for `rows` rows of the mapped columns (values bound as parameters).
+fn insert_sql(schema: &str, table: &str, cols: &[&str], rows: usize) -> String {
+    let list: Vec<String> = cols.iter().map(|c| ident(c)).collect();
+    let one = format!("({})", vec!["?"; cols.len()].join(", "));
+    format!("INSERT INTO {}.{} ({}) VALUES {}", ident(schema), ident(table), list.join(", "), vec![one; rows].join(", "))
+}
+
+/// CSV → table in one transaction: any error (bad line, server refusal) rolls everything back.
+/// `progress(bytes read, file size)`. Returns the number of rows inserted.
+pub async fn import_csv(pool: &Pool, req: &CsvImport, cancel: &AtomicBool, progress: impl Fn(u64, u64)) -> AppResult<u64> {
+    let mut conn = pool.get_conn().await?;
+    let known = column_names(&mut conn, &req.schema, &req.table, true).await?;
+    let picked: Vec<(usize, &str)> = req.mapping.iter().enumerate().filter_map(|(i, m)| m.as_deref().map(|c| (i, c))).collect();
+    if picked.is_empty() {
+        return Err(AppError::new("REQUIRED", "mapping"));
+    }
+    if let Some((_, c)) = picked.iter().find(|(_, c)| !known.iter().any(|k| k == c)) {
+        return Err(AppError::new("NOT_FOUND", c.to_string()));
+    }
+    let cols: Vec<&str> = picked.iter().map(|(_, c)| *c).collect();
+    let batch = (MAX_PARAMS / cols.len()).min(INSERT_ROWS);
+    let full_sql = insert_sql(&req.schema, &req.table, &cols, batch);
+
+    let total = std::fs::metadata(&req.path)?.len();
+    let mut rd = csv_reader(&req.path, delimiter_byte(&req.delimiter)?, req.header)?;
+    let mut tx = conn.start_transaction(TxOpts::default()).await?;
+    let (mut params, mut in_batch, mut first_line, mut last_line, mut n) = (Vec::<Value>::new(), 0usize, 0u64, 0u64, 0u64);
+    let mut record = csv::StringRecord::new();
+    loop {
+        let more = rd.read_record(&mut record).map_err(csv_err)?;
+        if more {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(cancelled()); // dropping `tx` rolls back
+            }
+            last_line = record.position().map_or(0, |p| p.line());
+            if in_batch == 0 {
+                first_line = last_line;
+            }
+            for (i, _) in &picked {
+                let v = record.get(*i).unwrap_or("");
+                params.push(if v.is_empty() && req.empty_null { Value::NULL } else { Value::from(v) });
+            }
+            in_batch += 1;
+        }
+        if in_batch > 0 && (in_batch == batch || !more) {
+            let sql = if in_batch == batch { full_sql.clone() } else { insert_sql(&req.schema, &req.table, &cols, in_batch) };
+            tx.exec_drop(sql, std::mem::take(&mut params)).await.map_err(|e| {
+                // The server says "at row k" within the batch; the line range locates it in the file.
+                let err = AppError::from(e);
+                let code = if err.code == "QUERY_CANCELLED" { err.code } else { "IMPORT_ROWS" };
+                AppError { code, detail: Some(format!("{first_line}-{last_line}")), ..err }
+            })?;
+            n += in_batch as u64;
+            in_batch = 0;
+            progress(record.position().map_or(0, |p| p.byte()), total);
+        }
+        if !more {
+            break;
+        }
+    }
+    tx.commit().await?;
+    Ok(n)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CopyReq {
+    pub schema: String,
+    /// None = the whole schema.
+    pub table: Option<String>,
+    pub target_session: String,
+    /// Created if it does not exist.
+    pub target_schema: String,
+    pub data: bool,
+    pub drop: bool,
+}
+
+/// Copy = SQL export to a temporary file, then import on the target, so it works between any two
+/// servers (and MySQL ↔ MariaDB as far as the DDL allows). The file is removed whatever happens.
+/// `progress(done, total)`: rows exported (total 0), then bytes imported.
+// ponytail: goes through a temp file on disk; stream directly between the two connections if disk space matters.
+pub async fn copy(src: &Pool, dst: &Pool, req: &CopyReq, cancel: &AtomicBool, progress: impl Fn(u64, u64)) -> AppResult<u64> {
+    let path = std::env::temp_dir().join(format!("otaria-copy-{}.sql", uuid::Uuid::new_v4())).to_string_lossy().into_owned();
+    let export_req = ExportReq { schema: req.schema.clone(), table: req.table.clone(), format: Format::Sql, path: path.clone(), data: req.data, drop: req.drop };
+    let r = async {
+        let rows = export(src, &export_req, cancel, |n| progress(n, 0)).await?;
+        let mut conn = dst.get_conn().await?;
+        conn.query_drop(format!("CREATE DATABASE IF NOT EXISTS {}", ident(&req.target_schema))).await?;
+        conn.query_drop(format!("USE {}", ident(&req.target_schema))).await?;
+        import_sql(&mut conn, &path, cancel, &progress).await?;
+        Ok(rows)
+    }
+    .await;
+    let _ = std::fs::remove_file(&path);
+    r
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -440,6 +612,18 @@ mod tests {
         assert_eq!(sql_literal(&b(b"it's a \\ \n\r\0\x1a"), Kind::Text), r"'it\'s a \\ \n\r\0\Z'");
         assert_eq!(sql_literal(&b(&[0, 255, 16]), Kind::Bin), "0x00FF10");
         assert_eq!(sql_literal(&b(b""), Kind::Bin), "''");
+    }
+
+    #[test]
+    fn prepares_csv_import() {
+        assert_eq!(detect_delimiter("a;b;c,d"), b';');
+        assert_eq!(detect_delimiter("a\tb\tc"), b'\t');
+        assert_eq!(detect_delimiter("single"), b',');
+        assert_eq!(delimiter_byte("|").unwrap(), b'|');
+        for bad in ["", ";;", "a", "\"", "é"] {
+            assert_eq!(delimiter_byte(bad).unwrap_err().code, "CSV_DELIMITER", "{bad}");
+        }
+        assert_eq!(insert_sql("s", "t", &["a", "b`c"], 2), "INSERT INTO `s`.`t` (`a`, `b``c`) VALUES (?, ?), (?, ?)");
     }
 
     #[test]
@@ -497,7 +681,7 @@ mod tests {
         );
         let mut conn = pool.get_conn().await.unwrap();
         conn.query_drop(
-            "DROP DATABASE IF EXISTS otaria_ex; DROP DATABASE IF EXISTS otaria_im; CREATE DATABASE otaria_ex; CREATE DATABASE otaria_im;
+            "DROP DATABASE IF EXISTS otaria_ex; DROP DATABASE IF EXISTS otaria_im; DROP DATABASE IF EXISTS otaria_cp; CREATE DATABASE otaria_ex; CREATE DATABASE otaria_im;
              CREATE TABLE otaria_ex.t (id INT PRIMARY KEY, txt TEXT, bin VARBINARY(8), d DECIMAL(30,2), ts TIMESTAMP NULL,
                g INT AS (id * 2) VIRTUAL, inv INT INVISIBLE DEFAULT 5) WITH SYSTEM VERSIONING;
              INSERT INTO otaria_ex.t (id, txt, bin, d, ts, inv) VALUES (1, 'a''b\\\\c\\n;', 0x00FF, 12345678901234567890.25, '2026-01-02 03:04:05', 9),
@@ -563,6 +747,37 @@ mod tests {
         assert_eq!(export(&pool, &req(Format::Csv, Some("t"), "stop.csv"), &stop, |_| {}).await.unwrap_err().code, "QUERY_CANCELLED");
         assert!(!std::path::Path::new(&path("stop.csv")).exists());
 
-        conn.query_drop("DROP DATABASE otaria_ex; DROP DATABASE otaria_im").await.unwrap();
+        // CSV → table: BOM, quoted delimiter and newline, empty = NULL, unmapped column skipped.
+        conn.query_drop("CREATE TABLE otaria_im.c (id INT PRIMARY KEY, name VARCHAR(20), n INT)").await.unwrap();
+        std::fs::write(path("in.csv"), "\u{feff}id;skip;name;n\n1;x;\"a;\nb\";5\n2;x;;\n").unwrap();
+        let pre = csv_preview(&path("in.csv"), None, true).unwrap();
+        assert_eq!((pre.delimiter.as_str(), pre.columns[0].as_str(), pre.rows.len()), (";", "id", 2));
+        let imp = |mapping: Vec<Option<&str>>| CsvImport {
+            schema: "otaria_im".into(),
+            table: "c".into(),
+            path: path("in.csv"),
+            delimiter: ";".into(),
+            header: true,
+            mapping: mapping.into_iter().map(|m| m.map(Into::into)).collect(),
+            empty_null: true,
+        };
+        assert_eq!(import_csv(&pool, &imp(vec![Some("id"), None, Some("name"), Some("n")]), &no, |_, _| {}).await.unwrap(), 2);
+        let got: Vec<(i32, Option<String>, Option<i32>)> = conn.query("SELECT id, name, n FROM otaria_im.c ORDER BY id").await.unwrap();
+        assert_eq!(got, [(1, Some("a;\nb".into()), Some(5)), (2, None, None)]);
+        // Same file again: duplicate keys, nothing kept, lines of the failing batch reported.
+        conn.query_drop("DELETE FROM otaria_im.c WHERE id = 2").await.unwrap();
+        let err = import_csv(&pool, &imp(vec![Some("id"), None, Some("name"), Some("n")]), &no, |_, _| {}).await.unwrap_err();
+        assert_eq!((err.code, err.detail.as_deref()), ("IMPORT_ROWS", Some("2-4")));
+        let left: Option<u64> = conn.query_first("SELECT COUNT(*) FROM otaria_im.c").await.unwrap();
+        assert_eq!(left, Some(1));
+        assert_eq!(import_csv(&pool, &imp(vec![Some("nope")]), &no, |_, _| {}).await.unwrap_err().code, "NOT_FOUND");
+
+        // Copy one table into a schema that does not exist yet.
+        let req = CopyReq { schema: "otaria_ex".into(), table: Some("t".into()), target_session: String::new(), target_schema: "otaria_cp".into(), data: true, drop: false };
+        assert_eq!(copy(&pool, &pool, &req, &no, |_, _| {}).await.unwrap(), 2);
+        let copied: Option<u64> = conn.query_first("SELECT COUNT(*) FROM otaria_cp.t").await.unwrap();
+        assert_eq!(copied, Some(2));
+
+        conn.query_drop("DROP DATABASE otaria_ex; DROP DATABASE otaria_im; DROP DATABASE otaria_cp").await.unwrap();
     }
 }

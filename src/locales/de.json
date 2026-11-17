@@ -120,7 +120,11 @@
     "EXPORT_FORMAT": "Dieses Format kann keine ganze Datenbank exportieren.",
     "EXPORT_TOO_MANY_ROWS": "Zu viele Zeilen für ein Excel-Blatt. Verwenden Sie CSV oder JSON.",
     "IMPORT_STATEMENT": "Der Import wurde bei einer fehlerhaften Anweisung gestoppt. Die vorherigen Anweisungen wurden angewendet.",
-    "FILE_NOT_UTF8": "Die Datei ist kein UTF-8-Text."
+    "FILE_NOT_UTF8": "Die Datei ist kein UTF-8-Text.",
+    "CSV_DELIMITER": "Das Trennzeichen muss ein einzelnes Zeichen sein.",
+    "CSV_PARSE": "Die CSV-Datei konnte nicht gelesen werden.",
+    "IMPORT_ROWS": "Der Server hat Zeilen der Datei abgelehnt. Es wurde nichts importiert.",
+    "COPY_SAME": "Wählen Sie eine andere Datenbank als die Quelle."
   },
   "tree": {
     "title": "Datenbanken",
@@ -355,6 +359,33 @@
     "exported": "{n} Zeilen in {path} geschrieben",
     "imported": "{n} Anweisungen ausgeführt.",
     "stop": "Stoppen",
-    "close": "Schließen"
+    "close": "Schließen",
+    "destination": "Ziel",
+    "toFile": "Datei",
+    "toConnection": "Andere Verbindung",
+    "targetConnection": "Verbindung",
+    "targetSchema": "Datenbank",
+    "copyHint": "Wird angelegt, falls sie nicht existiert. Wählen Sie eine andere Verbindung aus den offenen Tabs oder eine andere Datenbank dieser Verbindung.",
+    "copyRun": "Kopieren",
+    "copied": "{n} Zeilen nach {to} kopiert",
+    "importCsv": "CSV importieren",
+    "csvPick": "CSV-Datei wählen…",
+    "delimiter": "Trennzeichen",
+    "delimiters": {
+      "comma": "Komma (,)",
+      "semicolon": "Semikolon (;)",
+      "tab": "Tabulator",
+      "pipe": "Senkrechter Strich (|)"
+    },
+    "header": "Erste Zeile = Spaltennamen",
+    "emptyNull": "Leeres Feld = NULL",
+    "csvColumn": "CSV-Spalte",
+    "sample": "Erster Wert",
+    "tableColumn": "Tabellenspalte",
+    "skip": "— überspringen —",
+    "csvHint": "Alle Zeilen laufen in einer Transaktion: Bei einer fehlerhaften Zeile wird nichts importiert.",
+    "csvRun": "Importieren",
+    "csvImported": "{n} Zeilen eingefügt.",
+    "fileLines": "Zeilen der Datei: {lines}"
   }
 }

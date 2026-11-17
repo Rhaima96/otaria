@@ -1,18 +1,19 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Download, Eraser, KeyRound, Pencil, Trash2 } from "lucide-vue-next";
+import { Download, Eraser, KeyRound, Pencil, Trash2, Upload } from "lucide-vue-next";
 import DataGrid from "@/components/DataGrid.vue";
 import ErrorLine from "@/components/ErrorLine.vue";
 import SequenceView from "@/components/SequenceView.vue";
 import TableDesigner from "@/components/TableDesigner.vue";
+import TransferDialog from "@/components/TransferDialog.vue";
 import { api, toAppError, type AppError, type DbObject, type TableInfo } from "@/lib/api";
 import { hasRows } from "@/lib/objects";
 import { editScript } from "@/lib/templates";
 import { cn } from "@/lib/utils";
 
 const props = defineProps<{ sessionId: string; schema: string; obj: DbObject; mariadb: boolean }>();
-const emit = defineEmits<{ renamed: [name: string]; dropped: []; editSql: [sql: string]; export: [] }>();
+const emit = defineEmits<{ renamed: [name: string]; dropped: []; editSql: [sql: string]; treeChanged: [] }>();
 const { t } = useI18n();
 
 type View = "sequence" | "data" | "structure" | "ddl";
@@ -22,6 +23,7 @@ const view = ref<View>(views[0]);
 const isTable = props.obj.kind === "table";
 
 const info = ref<TableInfo | null>(null);
+const transfer = ref<InstanceType<typeof TransferDialog> | null>(null);
 const ddl = ref<string | null>(null);
 const error = ref<AppError | null>(null);
 /** Bumped after a structure change: remounts the grid on the new columns. */
@@ -97,7 +99,10 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
         {{ t(`object.${v}`) }}
       </button>
       <div class="ml-auto flex items-center gap-1">
-        <button v-if="hasRows(obj.kind) && obj.kind !== 'sequence'" :class="btn" @click="emit('export')"><Download class="size-3.5" />{{ t("transfer.export") }}</button>
+        <button v-if="hasRows(obj.kind) && obj.kind !== 'sequence'" :class="btn" @click="transfer?.open({ mode: 'export', schema, table: obj.name, view: !isTable })">
+          <Download class="size-3.5" />{{ t("transfer.export") }}
+        </button>
+        <button v-if="isTable" :class="btn" @click="transfer?.open({ mode: 'csv', schema, table: obj.name })"><Upload class="size-3.5" />{{ t("transfer.importCsv") }}</button>
         <button v-if="isTable" :class="btn" @click="askDrop(true)"><Eraser class="size-3.5" />{{ t("object.truncate") }}</button>
         <button :class="cn(btn, 'hover:text-destructive')" @click="askDrop(false)"><Trash2 class="size-3.5" />{{ t("object.drop") }}</button>
       </div>
@@ -169,5 +174,7 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
         </div>
       </form>
     </dialog>
+    <!-- A CSV import changed the rows: reload the grid. A copy may have created a database: reload the tree. -->
+    <TransferDialog ref="transfer" :session-id="sessionId" @imported="(_, mode) => (mode === 'csv' ? saved(obj.name) : emit('treeChanged'))" />
   </div>
 </template>

@@ -120,7 +120,11 @@
     "EXPORT_FORMAT": "Questo formato non può esportare un intero database.",
     "EXPORT_TOO_MANY_ROWS": "Troppe righe per un foglio Excel. Usa CSV o JSON.",
     "IMPORT_STATEMENT": "L’importazione si è fermata su un’istruzione in errore. Le istruzioni precedenti sono state applicate.",
-    "FILE_NOT_UTF8": "Il file non è testo UTF-8."
+    "FILE_NOT_UTF8": "Il file non è testo UTF-8.",
+    "CSV_DELIMITER": "Il separatore deve essere un solo carattere.",
+    "CSV_PARSE": "Impossibile leggere il file CSV.",
+    "IMPORT_ROWS": "Il server ha rifiutato righe del file. Non è stato importato nulla.",
+    "COPY_SAME": "Scegli un database diverso dall’origine."
   },
   "tree": {
     "title": "Database",
@@ -355,6 +359,33 @@
     "exported": "{n} righe scritte in {path}",
     "imported": "{n} istruzioni eseguite.",
     "stop": "Interrompi",
-    "close": "Chiudi"
+    "close": "Chiudi",
+    "destination": "Destinazione",
+    "toFile": "File",
+    "toConnection": "Altra connessione",
+    "targetConnection": "Connessione",
+    "targetSchema": "Database",
+    "copyHint": "Creato se non esiste. Scegli un’altra connessione tra le schede aperte, o un altro database di questa.",
+    "copyRun": "Copia",
+    "copied": "{n} righe copiate in {to}",
+    "importCsv": "Importa CSV",
+    "csvPick": "Scegli un file CSV…",
+    "delimiter": "Separatore",
+    "delimiters": {
+      "comma": "Virgola (,)",
+      "semicolon": "Punto e virgola (;)",
+      "tab": "Tabulazione",
+      "pipe": "Barra (|)"
+    },
+    "header": "Prima riga = nomi delle colonne",
+    "emptyNull": "Campo vuoto = NULL",
+    "csvColumn": "Colonna CSV",
+    "sample": "Primo valore",
+    "tableColumn": "Colonna della tabella",
+    "skip": "— ignora —",
+    "csvHint": "Tutte le righe vanno in un’unica transazione: con una riga errata non viene importato nulla.",
+    "csvRun": "Importa",
+    "csvImported": "{n} righe inserite.",
+    "fileLines": "Righe del file: {lines}"
   }
 }
