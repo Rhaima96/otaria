@@ -151,9 +151,12 @@ export interface ColumnDef {
 export interface IndexDef {
   original: string | null;
   name: string;
-  kind: "PRIMARY" | "UNIQUE" | "INDEX" | "FULLTEXT" | "SPATIAL";
-  columns: { name: string; length: number | null }[];
+  /** VECTOR: kept or dropped, never edited in the designer (its M / DISTANCE options are not loaded). */
+  kind: "PRIMARY" | "UNIQUE" | "INDEX" | "FULLTEXT" | "SPATIAL" | "VECTOR";
+  columns: { name: string; length: number | null; desc: boolean }[];
   comment: string;
+  /** Not used by the optimizer: IGNORED (MariaDB) / INVISIBLE (MySQL). */
+  ignored: boolean;
 }
 
 export interface FkDef {
@@ -215,6 +218,16 @@ export interface RunRequest {
   confirmed: boolean;
 }
 
+export interface Plugin {
+  name: string;
+  kind: string;
+  status: string;
+  /** null = built into the server. */
+  library: string | null;
+  maturity: string;
+  description: string;
+}
+
 export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
   listProfiles: () => invoke<Profile[]>("list_profiles"),
@@ -242,13 +255,17 @@ export const api = {
     invoke<string | null>("sequence_setval", { sessionId, schema, name, value }),
   tableDef: (sessionId: string, schema: string, table: string) => invoke<TableDef>("table_def", { sessionId, schema, table }),
   listEngines: (sessionId: string) => invoke<string[]>("list_engines", { sessionId }),
-  designerSql: (schema: string, old: TableDef | null, next: TableDef, algorithm: Algorithm) =>
-    invoke<string[]>("designer_sql", { schema, old, new: next, algorithm }),
+  listCollations: (sessionId: string) => invoke<string[]>("list_collations", { sessionId }),
+  designerSql: (sessionId: string, schema: string, old: TableDef | null, next: TableDef, algorithm: Algorithm) =>
+    invoke<string[]>("designer_sql", { sessionId, schema, old, new: next, algorithm }),
   designerApply: (sessionId: string, schema: string, old: TableDef | null, next: TableDef, algorithm: Algorithm) =>
     invoke<void>("designer_apply", { sessionId, schema, old, new: next, algorithm }),
   dropSql: (schema: string, name: string, kind: ObjectKind, truncate: boolean) => invoke<string>("drop_sql", { schema, name, kind, truncate }),
   dropObject: (sessionId: string, schema: string, name: string, kind: ObjectKind, truncate: boolean) =>
     invoke<void>("drop_object", { sessionId, schema, name, kind, truncate }),
+  listPlugins: (sessionId: string) => invoke<Plugin[]>("list_plugins", { sessionId }),
+  pluginInstallSql: (name: string, library: string) => invoke<string>("plugin_install_sql", { name, library }),
+  pluginInstall: (sessionId: string, name: string, library: string) => invoke<void>("plugin_install", { sessionId, name, library }),
   runSql: (sessionId: string, editorId: string, r: RunRequest) => invoke<RunOutput>("run_sql", { sessionId, editorId, ...r }),
   cancelSql: (sessionId: string, editorId: string) => invoke<void>("cancel_sql", { sessionId, editorId }),
   closeEditor: (sessionId: string, editorId: string) => invoke<void>("close_editor", { sessionId, editorId }),

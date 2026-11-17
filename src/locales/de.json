@@ -114,7 +114,9 @@
     "ALTER_ALGORITHM": "Der Server kann diese Änderung so nicht durchführen.",
     "INVALID_NAME": "Ungültiger Name oder ungültiges Schlüsselwort.",
     "REQUIRED": "Ein Pflichtfeld ist leer.",
-    "NOT_FOUND": "Dieses Objekt existiert nicht mehr."
+    "NOT_FOUND": "Dieses Objekt existiert nicht mehr.",
+    "INDEX_READ_ONLY": "Vektorindizes werden im Designer weder erstellt noch bearbeitet; den SQL-Editor verwenden.",
+    "PLUGIN_UNAVAILABLE": "Dieses Plugin kann nicht installiert werden: Es ist auf diesem Server nicht als verfügbar aufgeführt."
   },
   "tree": {
     "title": "Datenbanken",
@@ -301,6 +303,27 @@
     "algo_online": "Online (ALGORITHM=INPLACE, LOCK=NONE): die Tabelle kann neu aufgebaut werden, bleibt aber les- und schreibbar.",
     "algo_default": "Wahl des Servers: die Tabelle kann kopiert und Schreibzugriffe währenddessen blockiert werden.",
     "try_online": "Online ausführen",
-    "try_default": "Trotzdem ausführen (kann Schreibzugriffe blockieren)"
+    "try_default": "Trotzdem ausführen (kann Schreibzugriffe blockieren)",
+    "ignored": "Ignoriert",
+    "ignoredHint": "Wird gepflegt, aber vom Optimierer nicht verwendet: so lässt sich das Entfernen eines Index gefahrlos testen. Ohne Neuaufbau umgeschaltet.",
+    "vectorReadOnly": "Vektorindex: kann hier ignoriert oder entfernt, aber nicht bearbeitet werden (seine Optionen gingen verloren)."
+  },
+  "plugins": {
+    "tab": "Plugins",
+    "filter": "Plugins filtern",
+    "availableOnly": "Nur nicht installierte",
+    "refresh": "Aktualisieren",
+    "hint": "Installiert werden können nur Plugins, deren Bibliothek bereits auf dem Server liegt. Andere erfordern ein Paket, das auf dem Server selbst installiert wird.",
+    "name": "Name",
+    "type": "Typ",
+    "status": "Status",
+    "maturity": "Reife",
+    "library": "Bibliothek",
+    "description": "Beschreibung",
+    "install": "Installieren",
+    "builtIn": "eingebaut",
+    "none": "Kein Plugin passt.",
+    "installHint": "Das Plugin bleibt nach einem Serverneustart installiert. Erfordert das INSERT-Recht auf mysql.plugin.",
+    "notStable": "Dieses Plugin ist nicht stabil (Reife: {maturity}). Der Server kann es je nach plugin_maturity ablehnen."
   }
 }

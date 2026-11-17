@@ -114,7 +114,9 @@
     "ALTER_ALGORITHM": "El servidor no puede hacer este cambio de esa manera.",
     "INVALID_NAME": "Nombre o palabra clave no válidos.",
     "REQUIRED": "Falta un campo obligatorio.",
-    "NOT_FOUND": "Este objeto ya no existe."
+    "NOT_FOUND": "Este objeto ya no existe.",
+    "INDEX_READ_ONLY": "Los índices vectoriales no se crean ni se editan en el diseñador; use el editor SQL.",
+    "PLUGIN_UNAVAILABLE": "Este plugin no se puede instalar: no figura como disponible en este servidor."
   },
   "tree": {
     "title": "Bases de datos",
@@ -301,6 +303,27 @@
     "algo_online": "En línea (ALGORITHM=INPLACE, LOCK=NONE): la tabla puede reconstruirse pero sigue legible y modificable.",
     "algo_default": "Elección del servidor: la tabla puede copiarse y las escrituras bloquearse mientras tanto.",
     "try_online": "Ejecutar en línea",
-    "try_default": "Ejecutar de todos modos (puede bloquear escrituras)"
+    "try_default": "Ejecutar de todos modos (puede bloquear escrituras)",
+    "ignored": "Ignorado",
+    "ignoredHint": "Se mantiene al día pero el optimizador no lo usa: una forma segura de probar a quitar un índice. Se cambia sin reconstruir.",
+    "vectorReadOnly": "Índice vectorial: aquí se puede ignorar o quitar, no editar (se perderían sus opciones)."
+  },
+  "plugins": {
+    "tab": "Plugins",
+    "filter": "Filtrar plugins",
+    "availableOnly": "Solo no instalados",
+    "refresh": "Actualizar",
+    "hint": "Solo se pueden instalar los plugins cuya biblioteca ya está en el servidor. Los demás requieren instalar un paquete en el propio servidor.",
+    "name": "Nombre",
+    "type": "Tipo",
+    "status": "Estado",
+    "maturity": "Madurez",
+    "library": "Biblioteca",
+    "description": "Descripción",
+    "install": "Instalar",
+    "builtIn": "integrado",
+    "none": "Ningún plugin coincide.",
+    "installHint": "El plugin sigue instalado tras reiniciar el servidor. Requiere el privilegio INSERT en mysql.plugin.",
+    "notStable": "Este plugin no es estable (madurez: {maturity}). El servidor puede rechazarlo según plugin_maturity."
   }
 }

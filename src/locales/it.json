@@ -114,7 +114,9 @@
     "ALTER_ALGORITHM": "Il server non può fare questa modifica in questo modo.",
     "INVALID_NAME": "Nome o parola chiave non validi.",
     "REQUIRED": "Un campo obbligatorio è vuoto.",
-    "NOT_FOUND": "Questo oggetto non esiste più."
+    "NOT_FOUND": "Questo oggetto non esiste più.",
+    "INDEX_READ_ONLY": "Gli indici vettoriali non si creano né si modificano nel designer; usa l'editor SQL.",
+    "PLUGIN_UNAVAILABLE": "Questo plugin non può essere installato: non risulta disponibile su questo server."
   },
   "tree": {
     "title": "Database",
@@ -301,6 +303,27 @@
     "algo_online": "Online (ALGORITHM=INPLACE, LOCK=NONE): la tabella può essere ricostruita ma resta leggibile e modificabile.",
     "algo_default": "Scelta del server: la tabella può essere copiata e le scritture bloccate nel frattempo.",
     "try_online": "Esegui online",
-    "try_default": "Esegui comunque (può bloccare le scritture)"
+    "try_default": "Esegui comunque (può bloccare le scritture)",
+    "ignored": "Ignorato",
+    "ignoredHint": "Tenuto aggiornato ma non usato dall'ottimizzatore: un modo sicuro per provare a togliere un indice. Cambiato senza ricostruzione.",
+    "vectorReadOnly": "Indice vettoriale: qui si può ignorare o rimuovere, non modificare (le sue opzioni andrebbero perse)."
+  },
+  "plugins": {
+    "tab": "Plugin",
+    "filter": "Filtra i plugin",
+    "availableOnly": "Solo non installati",
+    "refresh": "Aggiorna",
+    "hint": "Si possono installare solo i plugin la cui libreria è già presente sul server. Gli altri richiedono l’installazione di un pacchetto sul server stesso.",
+    "name": "Nome",
+    "type": "Tipo",
+    "status": "Stato",
+    "maturity": "Maturità",
+    "library": "Libreria",
+    "description": "Descrizione",
+    "install": "Installa",
+    "builtIn": "integrato",
+    "none": "Nessun plugin corrisponde.",
+    "installHint": "Il plugin resta installato dopo il riavvio del server. Richiede il privilegio INSERT su mysql.plugin.",
+    "notStable": "Questo plugin non è stabile (maturità: {maturity}). Il server può rifiutarlo in base a plugin_maturity."
   }
 }

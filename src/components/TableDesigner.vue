@@ -16,6 +16,11 @@ const EMPTY: TableDef = { name: "", engine: "", collation: "", comment: "", colu
 const old = ref<TableDef | null>(null);
 const def = ref<TableDef>(structuredClone(EMPTY));
 const engines = ref<string[]>([]);
+// Suggestions, loaded when the designer opens (schemas, collations) or when a field gets focus (tables, columns).
+const collations = ref<string[]>([]);
+const schemas = ref<string[]>([]);
+const refTables = ref<Record<string, string[]>>({});
+const refCols = ref<Record<string, string[]>>({});
 const error = ref<AppError | null>(null);
 const section = ref<"columns" | "indexes" | "fks" | "checks" | "options">("columns");
 const selected = ref(0);
@@ -26,20 +31,38 @@ const dirty = computed(() => JSON.stringify(def.value) !== JSON.stringify(old.va
 async function load(name = props.table) {
   error.value = null;
   try {
-    engines.value = await api.listEngines(props.sessionId);
+    [engines.value, collations.value, schemas.value] = await Promise.all([
+      api.listEngines(props.sessionId),
+      api.listCollations(props.sessionId),
+      api.listSchemas(props.sessionId),
+    ]);
     if (name) {
       old.value = await api.tableDef(props.sessionId, props.schema, name);
       def.value = clone(old.value);
     } else {
       def.value = { ...clone(EMPTY), engine: engines.value[0] ?? "", columns: [newColumn("id", "int")] };
       def.value.columns[0].autoIncrement = true;
-      def.value.indexes.push({ original: null, name: "PRIMARY", kind: "PRIMARY", columns: [{ name: "id", length: null }], comment: "" });
+      def.value.indexes.push({ original: null, name: "PRIMARY", kind: "PRIMARY", columns: [{ name: "id", length: null, desc: false }], comment: "", ignored: false });
     }
   } catch (e) {
     error.value = toAppError(e);
   }
 }
 onMounted(() => load());
+
+async function loadTables(schema: string) {
+  if (refTables.value[schema]) return;
+  refTables.value[schema] = []; // once per schema, even if it fails
+  const objs = await api.listObjects(props.sessionId, schema).catch(() => []);
+  refTables.value[schema] = objs.filter((o) => o.kind === "table").map((o) => o.name);
+}
+
+async function loadCols(schema: string, table: string) {
+  const key = `${schema}.${table}`;
+  if (!table || refCols.value[key]) return;
+  refCols.value[key] = [];
+  refCols.value[key] = (await api.tableInfo(props.sessionId, schema, table).catch(() => null))?.columns.map((c) => c.name) ?? [];
+}
 
 function newColumn(name = "", colType = "varchar(255)"): ColumnDef {
   return { original: null, name, colType, nullable: !name, default: { kind: "none" }, generated: null, autoIncrement: false, onUpdate: null, invisible: false, collation: null, check: null, comment: "" };
@@ -60,16 +83,16 @@ function toggleGenerated(c: ColumnDef, on: boolean) {
   c.generated = on ? { expr: "", stored: false } : null;
 }
 
-// Index / FK columns are edited as "a, b(10)" text.
-const indexCols = (i: IndexDef) => i.columns.map((c) => (c.length ? `${c.name}(${c.length})` : c.name)).join(", ");
+// Index / FK columns are edited as "a, b(10) DESC" text.
+const indexCols = (i: IndexDef) => i.columns.map((c) => (c.length ? `${c.name}(${c.length})` : c.name) + (c.desc ? " DESC" : "")).join(", ");
 function setIndexCols(i: IndexDef, text: string) {
   i.columns = text
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean)
     .map((s) => {
-      const m = s.match(/^(.*?)\s*\((\d+)\)$/);
-      return m ? { name: m[1], length: Number(m[2]) } : { name: s, length: null };
+      const m = s.match(/^(.*?)(?:\s*\((\d+)\))?(\s+(?:DESC|ASC))?$/i)!;
+      return { name: m[1].trim(), length: m[2] ? Number(m[2]) : null, desc: /desc/i.test(m[3] ?? "") };
     });
 }
 const list = (v: string[]) => v.join(", ");
@@ -89,7 +112,7 @@ async function openPreview(algo: Algorithm = "instant") {
   applyError.value = null;
   algorithm.value = algo;
   try {
-    preview.value = await api.designerSql(props.schema, old.value, def.value, algo);
+    preview.value = await api.designerSql(props.sessionId, props.schema, old.value, def.value, algo);
     if (!preview.value.length) return;
     if (!dialog.value?.open) dialog.value?.showModal();
   } catch (e) {
@@ -116,6 +139,7 @@ async function apply() {
 
 const RULES = ["RESTRICT", "CASCADE", "SET NULL", "NO ACTION", "SET DEFAULT"];
 const KINDS: IndexDef["kind"][] = ["PRIMARY", "UNIQUE", "INDEX", "FULLTEXT", "SPATIAL"];
+const fkSchema = (refSchema: string) => refSchema.trim() || props.schema;
 // ponytail: common types only; anything else can be typed.
 const TYPES = ["int", "bigint", "smallint", "tinyint(1)", "decimal(10,2)", "double", "varchar(255)", "char(36)", "text", "longtext", "json", "date", "datetime", "timestamp", "time", "blob", "uuid", "inet6", "enum('a','b')"];
 
@@ -213,7 +237,7 @@ const subtab = "h-full border-b-2 px-3 font-medium";
           <label class="text-muted-foreground" for="d-upd">{{ t("designer.onUpdate") }}</label>
           <input id="d-upd" :value="col.onUpdate ?? ''" :disabled="!!col.generated" placeholder="current_timestamp()" :class="input" @input="col.onUpdate = ($event.target as HTMLInputElement).value || null" />
           <label class="text-muted-foreground" for="d-coll">{{ t("designer.collation") }}</label>
-          <input id="d-coll" :value="col.collation ?? ''" :placeholder="t('designer.tableDefault')" :class="input" @input="col.collation = ($event.target as HTMLInputElement).value || null" />
+          <input id="d-coll" :value="col.collation ?? ''" list="designer-collations" :placeholder="t('designer.tableDefault')" :class="input" @input="col.collation = ($event.target as HTMLInputElement).value || null" />
           <label class="text-muted-foreground" for="d-chk">{{ t("designer.check") }}</label>
           <input id="d-chk" :value="col.check ?? ''" :class="input" @input="col.check = ($event.target as HTMLInputElement).value || null" />
           <label class="text-muted-foreground" for="d-inv">{{ t("designer.invisible") }}</label>
@@ -229,24 +253,30 @@ const subtab = "h-full border-b-2 px-3 font-medium";
               <th :class="head">{{ t("structure.name") }}</th>
               <th :class="head">{{ t("designer.indexColumns") }}</th>
               <th :class="head">{{ t("structure.comment") }}</th>
+              <th :class="head" :title="t('designer.ignoredHint')">{{ t("designer.ignored") }}</th>
               <th :class="head" />
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(x, i) in def.indexes" :key="i">
+            <!-- VECTOR indexes are read-only here: they can be ignored or removed, not edited (phase 7). -->
+            <tr v-for="(x, i) in def.indexes" :key="i" :title="x.kind === 'VECTOR' ? t('designer.vectorReadOnly') : undefined">
               <td :class="cell">
-                <select v-model="x.kind" :aria-label="t('designer.kind')" :class="cn(input, 'w-28 font-sans')" @change="x.kind === 'PRIMARY' && (x.name = 'PRIMARY')">
+                <select v-model="x.kind" :disabled="x.kind === 'VECTOR'" :aria-label="t('designer.kind')" :class="cn(input, 'w-28 font-sans')" @change="x.kind === 'PRIMARY' && ((x.name = 'PRIMARY'), (x.ignored = false))">
                   <option v-for="k in KINDS" :key="k" :value="k">{{ k }}</option>
+                  <option v-if="x.kind === 'VECTOR'" value="VECTOR">{{ x.kind }}</option>
                 </select>
               </td>
-              <td :class="cell"><input v-model="x.name" :disabled="x.kind === 'PRIMARY'" :placeholder="t('designer.autoName')" :aria-label="t('structure.name')" :class="input" /></td>
-              <td :class="cell"><input :value="indexCols(x)" placeholder="a, b(10)" :aria-label="t('designer.indexColumns')" :class="input" @change="setIndexCols(x, ($event.target as HTMLInputElement).value)" /></td>
-              <td :class="cell"><input v-model="x.comment" :aria-label="t('structure.comment')" :class="cn(input, 'font-sans')" /></td>
+              <td :class="cell"><input v-model="x.name" :disabled="x.kind === 'PRIMARY' || x.kind === 'VECTOR'" :placeholder="t('designer.autoName')" :aria-label="t('structure.name')" :class="input" /></td>
+              <td :class="cell">
+                <input :value="indexCols(x)" :disabled="x.kind === 'VECTOR'" placeholder="a, b(10) DESC" :aria-label="t('designer.indexColumns')" :class="input" @change="setIndexCols(x, ($event.target as HTMLInputElement).value)" />
+              </td>
+              <td :class="cell"><input v-model="x.comment" :disabled="x.kind === 'VECTOR'" :aria-label="t('structure.comment')" :class="cn(input, 'font-sans')" /></td>
+              <td :class="cn(cell, 'text-center')"><input v-model="x.ignored" type="checkbox" :disabled="x.kind === 'PRIMARY'" :aria-label="t('designer.ignored')" /></td>
               <td :class="cell"><button :class="icon" :title="t('designer.remove')" @click="def.indexes.splice(i, 1)"><Trash2 class="size-3.5" /><span class="sr-only">{{ t("designer.remove") }}</span></button></td>
             </tr>
           </tbody>
         </table>
-        <button :class="cn(btn, 'mt-1')" @click="def.indexes.push({ original: null, name: '', kind: 'INDEX', columns: [], comment: '' })">
+        <button :class="cn(btn, 'mt-1')" @click="def.indexes.push({ original: null, name: '', kind: 'INDEX', columns: [], comment: '', ignored: false })">
           <Plus class="size-3.5" />{{ t("designer.addIndex") }}
         </button>
       </template>
@@ -269,9 +299,22 @@ const subtab = "h-full border-b-2 px-3 font-medium";
             <tr v-for="(f, i) in def.fks" :key="i">
               <td :class="cell"><input v-model="f.name" :placeholder="t('designer.autoName')" :aria-label="t('structure.name')" :class="input" /></td>
               <td :class="cell"><input :value="list(f.columns)" :aria-label="t('designer.indexColumns')" :class="input" @change="f.columns = parseList(($event.target as HTMLInputElement).value)" /></td>
-              <td :class="cell"><input v-model="f.refSchema" :placeholder="schema" :aria-label="t('designer.refSchema')" :class="input" /></td>
-              <td :class="cell"><input v-model="f.refTable" :aria-label="t('designer.refTable')" :class="input" /></td>
-              <td :class="cell"><input :value="list(f.refColumns)" :aria-label="t('designer.refColumns')" :class="input" @change="f.refColumns = parseList(($event.target as HTMLInputElement).value)" /></td>
+              <td :class="cell"><input v-model="f.refSchema" list="designer-schemas" :placeholder="schema" :aria-label="t('designer.refSchema')" :class="input" /></td>
+              <td :class="cell">
+                <input v-model="f.refTable" :list="`designer-fk-tables-${i}`" :aria-label="t('designer.refTable')" :class="input" @focus="loadTables(fkSchema(f.refSchema))" />
+                <datalist :id="`designer-fk-tables-${i}`"><option v-for="tb in refTables[fkSchema(f.refSchema)] ?? []" :key="tb" :value="tb" /></datalist>
+              </td>
+              <td :class="cell">
+                <input
+                  :value="list(f.refColumns)"
+                  :list="`designer-fk-cols-${i}`"
+                  :aria-label="t('designer.refColumns')"
+                  :class="input"
+                  @focus="loadCols(fkSchema(f.refSchema), f.refTable)"
+                  @change="f.refColumns = parseList(($event.target as HTMLInputElement).value)"
+                />
+                <datalist :id="`designer-fk-cols-${i}`"><option v-for="c in refCols[`${fkSchema(f.refSchema)}.${f.refTable}`] ?? []" :key="c" :value="c" /></datalist>
+              </td>
               <td :class="cell">
                 <select v-model="f.onDelete" :aria-label="t('designer.onDelete')" :class="cn(input, 'font-sans')"><option v-for="r in RULES" :key="r">{{ r }}</option></select>
               </td>
@@ -319,13 +362,15 @@ const subtab = "h-full border-b-2 px-3 font-medium";
           <option v-if="def.engine && !engines.includes(def.engine)">{{ def.engine }}</option>
         </select>
         <label class="text-muted-foreground" for="d-tcoll">{{ t("designer.collation") }}</label>
-        <input id="d-tcoll" v-model="def.collation" :placeholder="t('designer.serverDefault')" :class="input" />
+        <input id="d-tcoll" v-model="def.collation" list="designer-collations" :placeholder="t('designer.serverDefault')" :class="input" />
         <label class="text-muted-foreground" for="d-tcomment">{{ t("structure.comment") }}</label>
         <input id="d-tcomment" v-model="def.comment" :class="cn(input, 'font-sans')" />
       </div>
     </div>
 
     <datalist id="designer-types"><option v-for="ty in TYPES" :key="ty" :value="ty" /></datalist>
+    <datalist id="designer-collations"><option v-for="c in collations" :key="c" :value="c" /></datalist>
+    <datalist id="designer-schemas"><option v-for="s in schemas" :key="s" :value="s" /></datalist>
 
     <dialog ref="dialog" class="m-auto w-[min(56rem,90vw)] rounded-lg border bg-popover p-0 text-popover-foreground backdrop:bg-black/40">
       <div class="border-b px-4 py-2 font-semibold">{{ t("grid.previewTitle") }}</div>

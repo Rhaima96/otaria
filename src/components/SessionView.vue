@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { defineAsyncComponent, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { FileCode, Info, ListPlus, Lock, LockOpen, Plus, TableProperties, TriangleAlert, X } from "lucide-vue-next";
+import { FileCode, Info, ListPlus, Lock, LockOpen, Plus, Puzzle, TableProperties, TriangleAlert, X } from "lucide-vue-next";
 import ObjectTree from "@/components/ObjectTree.vue";
 import ObjectView from "@/components/ObjectView.vue";
 // Monaco is heavy: load the editor on first use.
 const SqlEditor = defineAsyncComponent(() => import("@/components/SqlEditor.vue"));
+import PluginsView from "@/components/PluginsView.vue";
 import SequenceView from "@/components/SequenceView.vue";
 import TableDesigner from "@/components/TableDesigner.vue";
 import type { DbObject, ObjectKind, OpenedSession } from "@/lib/api";
@@ -16,7 +17,7 @@ import { cn } from "@/lib/utils";
 const props = defineProps<{ session: OpenedSession }>();
 const { t } = useI18n();
 
-/** An object tab, an SQL editor tab (obj = null), or a "new table / sequence" form (create). */
+/** An object tab, an SQL editor tab (obj = null), a "new table / sequence" form (create), or the plugins list. */
 interface Tab {
   id: string;
   schema: string | null;
@@ -25,6 +26,7 @@ interface Tab {
   create?: "table" | "sequence";
   /** Editor tabs: script to start with. */
   sql?: string;
+  plugins?: true;
 }
 const tabs = ref<Tab[]>([]);
 /** null = server info tab. */
@@ -64,6 +66,11 @@ function renamed(x: Tab, name: string) {
 function dropped(id: string) {
   close(id);
   tree.value?.load();
+}
+
+function openPlugins() {
+  if (!tabs.value.some((x) => x.id === "plugins")) tabs.value.push({ id: "plugins", schema: null, obj: null, plugins: true });
+  active.value = "plugins";
 }
 
 let queries = 0;
@@ -108,8 +115,8 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
             @click="active = x.id"
             @auxclick.middle="close(x.id)"
           >
-            <component :is="x.obj ? objectIcon(x.obj) : x.create === 'table' ? TableProperties : x.create ? ListPlus : FileCode" class="size-3.5 text-muted-foreground" />
-            <span class="max-w-48 truncate">{{ x.obj ? x.obj.name : x.create ? t(`newObject.${x.create}`) : t("editor.tab", { n: x.n }) }}</span>
+            <component :is="x.obj ? objectIcon(x.obj) : x.create === 'table' ? TableProperties : x.create ? ListPlus : x.plugins ? Puzzle : FileCode" class="size-3.5 text-muted-foreground" />
+            <span class="max-w-48 truncate">{{ x.obj ? x.obj.name : x.create ? t(`newObject.${x.create}`) : x.plugins ? t("plugins.tab") : t("editor.tab", { n: x.n }) }}</span>
             <button :title="t('object.close')" class="flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-secondary hover:text-foreground" @click.stop="close(x.id)">
               <X class="size-3" /><span class="sr-only">{{ t("object.close") }}</span>
             </button>
@@ -135,6 +142,7 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
           />
           <SequenceView v-else-if="x.create === 'sequence'" v-show="active === x.id" :session-id="session.sessionId" :schema="x.schema!" name="" create class="min-h-0 flex-1" @created="(n) => created(x.id, x.schema!, 'sequence', n)" />
           <TableDesigner v-else-if="x.create === 'table'" v-show="active === x.id" :session-id="session.sessionId" :schema="x.schema!" :table="null" class="min-h-0 flex-1" @saved="(n) => created(x.id, x.schema!, 'table', n)" />
+          <PluginsView v-else-if="x.plugins" v-show="active === x.id" :session-id="session.sessionId" class="min-h-0 flex-1" />
           <SqlEditor v-else v-show="active === x.id" :session-id="session.sessionId" :profile-id="session.profile.id" :editor-id="x.id" :schema="x.schema" :initial-sql="x.sql" class="min-h-0 flex-1" />
         </template>
 
@@ -155,9 +163,15 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
             </dd>
           </dl>
           <p class="mt-6 text-muted-foreground">{{ t("session.pickObject") }}</p>
-          <button class="mt-3 flex h-7 items-center gap-1.5 rounded-sm border px-3 font-medium hover:bg-secondary" @click="newQuery()">
-            <FileCode class="size-3.5" />{{ t("editor.new") }}
-          </button>
+          <div class="mt-3 flex gap-2">
+            <button class="flex h-7 items-center gap-1.5 rounded-sm border px-3 font-medium hover:bg-secondary" @click="newQuery()">
+              <FileCode class="size-3.5" />{{ t("editor.new") }}
+            </button>
+            <!-- ALL_PLUGINS is MariaDB-only. -->
+            <button v-if="session.info.isMariadb" class="flex h-7 items-center gap-1.5 rounded-sm border px-3 font-medium hover:bg-secondary" @click="openPlugins">
+              <Puzzle class="size-3.5" />{{ t("plugins.tab") }}
+            </button>
+          </div>
         </div>
       </main>
     </div>

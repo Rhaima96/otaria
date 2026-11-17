@@ -3,6 +3,7 @@ mod db;
 mod designer;
 mod edit;
 mod error;
+mod plugins;
 mod profiles;
 mod query;
 mod sequence;
@@ -185,12 +186,17 @@ async fn table_data(
     browse::data(&pool(&state, &session_id).await?, &sql, &vars).await
 }
 
+/// MariaDB or MySQL: some metadata and DDL keywords differ.
+async fn is_mariadb(state: &AppState, session_id: &str) -> AppResult<bool> {
+    match state.sessions.lock().await.get(session_id) {
+        Some(s) => Ok(s.info.is_mariadb),
+        None => Err(AppError::new("SESSION_NOT_FOUND", session_id)),
+    }
+}
+
 #[tauri::command]
 async fn table_def(state: State<'_, AppState>, session_id: String, schema: String, table: String) -> AppResult<designer::TableDef> {
-    let mariadb = match state.sessions.lock().await.get(&session_id) {
-        Some(s) => s.info.is_mariadb,
-        None => return Err(AppError::new("SESSION_NOT_FOUND", session_id)),
-    };
+    let mariadb = is_mariadb(&state, &session_id).await?;
     designer::load(&pool(&state, &session_id).await?, &schema, &table, mariadb).await
 }
 
@@ -200,16 +206,35 @@ async fn list_engines(state: State<'_, AppState>, session_id: String) -> AppResu
 }
 
 /// Statements for the designer: CREATE TABLE when `old` is None, else RENAME + one ALTER TABLE.
-fn designer_stmts(schema: &str, old: Option<&designer::TableDef>, new: &designer::TableDef, algorithm: designer::Algorithm) -> AppResult<Vec<String>> {
+fn designer_stmts(
+    schema: &str,
+    old: Option<&designer::TableDef>,
+    new: &designer::TableDef,
+    algorithm: designer::Algorithm,
+    mariadb: bool,
+) -> AppResult<Vec<String>> {
     match old {
-        None => Ok(vec![designer::create_sql(schema, new)?]),
-        Some(old) => designer::alter_sql(schema, old, new, algorithm),
+        None => Ok(vec![designer::create_sql(schema, new, mariadb)?]),
+        Some(old) => designer::alter_sql(schema, old, new, algorithm, mariadb),
     }
 }
 
 #[tauri::command]
-fn designer_sql(schema: String, old: Option<designer::TableDef>, new: designer::TableDef, algorithm: designer::Algorithm) -> AppResult<Vec<String>> {
-    designer_stmts(&schema, old.as_ref(), &new, algorithm)
+async fn designer_sql(
+    state: State<'_, AppState>,
+    session_id: String,
+    schema: String,
+    old: Option<designer::TableDef>,
+    new: designer::TableDef,
+    algorithm: designer::Algorithm,
+) -> AppResult<Vec<String>> {
+    designer_stmts(&schema, old.as_ref(), &new, algorithm, is_mariadb(&state, &session_id).await?)
+}
+
+/// Collation names for the designer's suggestions.
+#[tauri::command]
+async fn list_collations(state: State<'_, AppState>, session_id: String) -> AppResult<Vec<String>> {
+    designer::collations(&pool(&state, &session_id).await?).await
 }
 
 /// Rebuilt from the same inputs as the preview, so what runs is what was shown.
@@ -222,7 +247,7 @@ async fn designer_apply(
     new: designer::TableDef,
     algorithm: designer::Algorithm,
 ) -> AppResult<()> {
-    let stmts = designer_stmts(&schema, old.as_ref(), &new, algorithm)?;
+    let stmts = designer_stmts(&schema, old.as_ref(), &new, algorithm, is_mariadb(&state, &session_id).await?)?;
     designer::run(&pool(&state, &session_id).await?, &stmts).await
 }
 
@@ -263,6 +288,21 @@ async fn sequence_apply(state: State<'_, AppState>, session_id: String, schema: 
 #[tauri::command]
 async fn sequence_setval(state: State<'_, AppState>, session_id: String, schema: String, name: String, value: String) -> AppResult<Option<String>> {
     sequence::setval(&pool(&state, &session_id).await?, &schema, &name, &value).await
+}
+
+#[tauri::command]
+async fn list_plugins(state: State<'_, AppState>, session_id: String) -> AppResult<Vec<plugins::Plugin>> {
+    plugins::list(&pool(&state, &session_id).await?).await
+}
+
+#[tauri::command]
+fn plugin_install_sql(name: String, library: String) -> AppResult<String> {
+    plugins::install_sql(&name, &library)
+}
+
+#[tauri::command]
+async fn plugin_install(state: State<'_, AppState>, session_id: String, name: String, library: String) -> AppResult<()> {
+    plugins::install(&pool(&state, &session_id).await?, &name, &library).await
 }
 
 #[tauri::command]
@@ -379,10 +419,14 @@ pub fn run() {
             sequence_setval,
             table_def,
             list_engines,
+            list_collations,
             designer_sql,
             designer_apply,
             drop_sql,
-            drop_object
+            drop_object,
+            list_plugins,
+            plugin_install_sql,
+            plugin_install
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

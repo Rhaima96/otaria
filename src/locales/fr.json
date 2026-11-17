@@ -114,7 +114,9 @@
     "ALTER_ALGORITHM": "Le serveur ne peut pas faire ce changement de cette façon.",
     "INVALID_NAME": "Nom ou mot-clé invalide.",
     "REQUIRED": "Un champ obligatoire est vide.",
-    "NOT_FOUND": "Cet objet n'existe plus."
+    "NOT_FOUND": "Cet objet n'existe plus.",
+    "INDEX_READ_ONLY": "Les index vectoriels ne se créent ni ne se modifient dans le concepteur ; passez par l'éditeur SQL.",
+    "PLUGIN_UNAVAILABLE": "Ce plugin ne peut pas être installé : il n’est pas listé comme disponible sur ce serveur."
   },
   "tree": {
     "title": "Bases de données",
@@ -301,6 +303,27 @@
     "algo_online": "En ligne (ALGORITHM=INPLACE, LOCK=NONE) : la table peut être reconstruite mais reste lisible et modifiable.",
     "algo_default": "Choix du serveur : la table peut être copiée et les écritures bloquées pendant ce temps.",
     "try_online": "Exécuter en ligne",
-    "try_default": "Exécuter quand même (peut bloquer les écritures)"
+    "try_default": "Exécuter quand même (peut bloquer les écritures)",
+    "ignored": "Ignoré",
+    "ignoredHint": "Tenu à jour mais pas utilisé par l'optimiseur : pour tester sans risque la suppression d'un index. Changé sans reconstruction.",
+    "vectorReadOnly": "Index vectoriel : il peut être ignoré ou retiré ici, pas modifié (ses options seraient perdues)."
+  },
+  "plugins": {
+    "tab": "Plugins",
+    "filter": "Filtrer les plugins",
+    "availableOnly": "Non installés seulement",
+    "refresh": "Actualiser",
+    "hint": "Seuls les plugins dont la bibliothèque est déjà présente sur le serveur peuvent être installés. Les autres demandent l’installation d’un paquet sur le serveur lui-même.",
+    "name": "Nom",
+    "type": "Type",
+    "status": "Statut",
+    "maturity": "Maturité",
+    "library": "Bibliothèque",
+    "description": "Description",
+    "install": "Installer",
+    "builtIn": "intégré",
+    "none": "Aucun plugin ne correspond.",
+    "installHint": "Le plugin reste installé après un redémarrage du serveur. Nécessite le privilège INSERT sur mysql.plugin.",
+    "notStable": "Ce plugin n’est pas stable (maturité : {maturity}). Le serveur peut le refuser selon plugin_maturity."
   }
 }

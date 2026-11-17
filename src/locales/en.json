@@ -114,7 +114,9 @@
     "ALTER_ALGORITHM": "The server cannot make this change that way.",
     "INVALID_NAME": "Invalid name or keyword.",
     "REQUIRED": "A required field is empty.",
-    "NOT_FOUND": "This object no longer exists."
+    "NOT_FOUND": "This object no longer exists.",
+    "INDEX_READ_ONLY": "Vector indexes cannot be created or edited in the designer; use the SQL editor.",
+    "PLUGIN_UNAVAILABLE": "This plugin cannot be installed: it is not listed as available on this server."
   },
   "tree": {
     "title": "Databases",
@@ -301,6 +303,27 @@
     "algo_online": "Online (ALGORITHM=INPLACE, LOCK=NONE): the table may be rebuilt but stays readable and writable.",
     "algo_default": "Server's choice: the table may be copied and writes blocked meanwhile.",
     "try_online": "Run online",
-    "try_default": "Run anyway (may block writes)"
+    "try_default": "Run anyway (may block writes)",
+    "ignored": "Ignored",
+    "ignoredHint": "Kept up to date but not used by the optimizer: a safe way to test dropping an index. Switched without rebuilding.",
+    "vectorReadOnly": "Vector index: can be ignored or removed here, not edited (its options would be lost)."
+  },
+  "plugins": {
+    "tab": "Plugins",
+    "filter": "Filter plugins",
+    "availableOnly": "Not installed only",
+    "refresh": "Refresh",
+    "hint": "Only plugins whose library is already on the server can be installed. Others need a package installed on the server itself.",
+    "name": "Name",
+    "type": "Type",
+    "status": "Status",
+    "maturity": "Maturity",
+    "library": "Library",
+    "description": "Description",
+    "install": "Install",
+    "builtIn": "built in",
+    "none": "No plugin matches.",
+    "installHint": "The plugin stays installed after a server restart. Requires the INSERT privilege on mysql.plugin.",
+    "notStable": "This plugin is not stable (maturity: {maturity}). The server may refuse it depending on plugin_maturity."
   }
 }

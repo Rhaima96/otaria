@@ -57,6 +57,9 @@ pub struct IndexColumn {
     pub name: String,
     /// Prefix length, e.g. 10 for `name`(10).
     pub length: Option<u32>,
+    /// Descending order (MariaDB 10.8+, MySQL 8).
+    #[serde(default)]
+    pub desc: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -65,10 +68,13 @@ pub struct IndexDef {
     pub original: Option<String>,
     /// "PRIMARY" for the primary key; empty = let the server name it.
     pub name: String,
-    /// PRIMARY | UNIQUE | INDEX | FULLTEXT | SPATIAL
+    /// PRIMARY | UNIQUE | INDEX | FULLTEXT | SPATIAL | VECTOR (VECTOR: loaded, kept or dropped, never rebuilt here)
     pub kind: String,
     pub columns: Vec<IndexColumn>,
     pub comment: String,
+    /// Not used by the optimizer: IGNORED (MariaDB 10.6+) / INVISIBLE (MySQL 8).
+    #[serde(default)]
+    pub ignored: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -175,27 +181,43 @@ pub fn column_sql(c: &ColumnDef) -> AppResult<String> {
     Ok(s)
 }
 
-fn index_sql(i: &IndexDef) -> AppResult<String> {
+/// `mariadb` picks the keyword of an index the optimizer must not use: IGNORED, or INVISIBLE on MySQL.
+fn ignored_kw(ignored: bool, mariadb: bool) -> &'static str {
+    match (ignored, mariadb) {
+        (true, true) => "IGNORED",
+        (false, true) => "NOT IGNORED",
+        (true, false) => "INVISIBLE",
+        (false, false) => "VISIBLE",
+    }
+}
+
+fn index_sql(i: &IndexDef, mariadb: bool) -> AppResult<String> {
     if i.columns.is_empty() {
         return Err(AppError { detail: Some("index_columns".into()), ..AppError::new("REQUIRED", i.name.clone()) });
     }
     let cols: Vec<String> = i
         .columns
         .iter()
-        .map(|c| match c.length {
-            Some(n) => format!("{}({n})", ident(&c.name)),
-            None => ident(&c.name),
+        .map(|c| {
+            let col = match c.length {
+                Some(n) => format!("{}({n})", ident(&c.name)),
+                None => ident(&c.name),
+            };
+            if c.desc { col + " DESC" } else { col }
         })
         .collect();
     let name = if i.name.trim().is_empty() { String::new() } else { format!("{} ", ident(i.name.trim())) };
     let mut s = match i.kind.as_str() {
         "PRIMARY" => format!("PRIMARY KEY ({})", cols.join(", ")),
-        "UNIQUE" | "FULLTEXT" | "SPATIAL" => format!("{} INDEX {name}({})", i.kind, cols.join(", ")),
+        "UNIQUE" | "FULLTEXT" | "SPATIAL" | "VECTOR" => format!("{} INDEX {name}({})", i.kind, cols.join(", ")),
         "INDEX" => format!("INDEX {name}({})", cols.join(", ")),
         other => return Err(AppError { detail: Some("index_kind".into()), ..AppError::new("INVALID_NAME", other.to_string()) }),
     };
     if !i.comment.is_empty() {
         s += &format!(" COMMENT {}", literal(&i.comment));
+    }
+    if i.ignored {
+        s += &format!(" {}", ignored_kw(true, mariadb));
     }
     Ok(s)
 }
@@ -238,14 +260,14 @@ fn table_options(t: &TableDef) -> AppResult<Vec<String>> {
     Ok(o)
 }
 
-pub fn create_sql(schema: &str, t: &TableDef) -> AppResult<String> {
+pub fn create_sql(schema: &str, t: &TableDef, mariadb: bool) -> AppResult<String> {
     nonempty("table_name", &t.name)?;
     if t.columns.is_empty() {
         return Err(AppError { detail: Some("columns".into()), ..AppError::new("REQUIRED", String::new()) });
     }
     let mut parts: Vec<String> = t.columns.iter().map(column_sql).collect::<AppResult<_>>()?;
     for i in &t.indexes {
-        parts.push(index_sql(i)?);
+        parts.push(index_sql(i, mariadb)?);
     }
     for f in &t.fks {
         parts.push(fk_sql(f)?);
@@ -275,9 +297,19 @@ pub enum Algorithm {
 }
 
 /// Everything that changed between `old` and `new`, as the clauses of one ALTER TABLE.
-pub fn alter_clauses(old: &TableDef, new: &TableDef) -> AppResult<Vec<String>> {
+pub fn alter_clauses(old: &TableDef, new: &TableDef, mariadb: bool) -> AppResult<Vec<String>> {
     let mut out = Vec::new();
     let kept = |orig: &Option<String>| orig.clone();
+
+    // VECTOR indexes carry options information_schema does not show (M, DISTANCE): rebuilding one from
+    // what we loaded could change it. They can be kept, dropped or ignored, not created or edited here.
+    // ponytail: vector index editing comes with the vector tools (phase 7).
+    for i in new.indexes.iter().filter(|i| i.kind == "VECTOR") {
+        let same = old.indexes.iter().find(|o| i.original.as_deref() == Some(&o.name)).is_some_and(|o| strip_index(o) == strip_index(i));
+        if !same {
+            return Err(AppError { detail: Some(i.name.clone()), ..AppError::new("INDEX_READ_ONLY", i.name.clone()) });
+        }
+    }
 
     // 1. Drops: constraints and indexes first (they may use dropped columns), then columns.
     for f in &old.fks {
@@ -332,8 +364,14 @@ pub fn alter_clauses(old: &TableDef, new: &TableDef) -> AppResult<Vec<String>> {
 
     // 3. Adds.
     for i in &new.indexes {
-        if old.indexes.iter().find(|o| i.original.as_deref() == Some(&o.name)).is_none_or(|o| strip_index(o) != strip_index(i)) {
-            out.push(format!("ADD {}", index_sql(i)?));
+        match old.indexes.iter().find(|o| i.original.as_deref() == Some(&o.name)) {
+            Some(o) if strip_index(o) == strip_index(i) => {
+                // Only the ignored flag changed: switched in place, no rebuild.
+                if o.ignored != i.ignored {
+                    out.push(format!("ALTER INDEX {} {}", ident(&i.name), ignored_kw(i.ignored, mariadb)));
+                }
+            }
+            _ => out.push(format!("ADD {}", index_sql(i, mariadb)?)),
         }
     }
     for f in &new.fks {
@@ -360,8 +398,9 @@ pub fn alter_clauses(old: &TableDef, new: &TableDef) -> AppResult<Vec<String>> {
     Ok(out)
 }
 
+/// Index without what does not need a rebuild (its loaded name, the ignored flag).
 fn strip_index(i: &IndexDef) -> IndexDef {
-    IndexDef { original: None, ..i.clone() }
+    IndexDef { original: None, ignored: false, ..i.clone() }
 }
 
 fn strip_fk(f: &FkDef) -> FkDef {
@@ -369,13 +408,13 @@ fn strip_fk(f: &FkDef) -> FkDef {
 }
 
 /// The full statements to run: RENAME first (when the name changed), then one ALTER TABLE.
-pub fn alter_sql(schema: &str, old: &TableDef, new: &TableDef, algo: Algorithm) -> AppResult<Vec<String>> {
+pub fn alter_sql(schema: &str, old: &TableDef, new: &TableDef, algo: Algorithm, mariadb: bool) -> AppResult<Vec<String>> {
     let mut out = Vec::new();
     if new.name.trim() != old.name {
         nonempty("table_name", &new.name)?;
         out.push(rename_sql(schema, &old.name, new.name.trim()));
     }
-    let clauses = alter_clauses(old, new)?;
+    let clauses = alter_clauses(old, new, mariadb)?;
     if !clauses.is_empty() {
         let algo = match algo {
             Algorithm::Instant => ", ALGORITHM=INSTANT",
@@ -513,20 +552,25 @@ pub async fn load(pool: &Pool, schema: &str, table: &str, mariadb: bool) -> AppR
         });
     }
 
-    type IndexRow = (String, bool, Option<String>, Option<u32>, String, String);
+    // IGNORED exists from MariaDB 10.6 (oldest supported: 10.11); MySQL calls it IS_VISIBLE.
+    let ignored = if mariadb { "IGNORED = 'YES'" } else { "IS_VISIBLE = 'NO'" };
+    type IndexRow = (String, bool, Option<String>, Option<u32>, String, String, bool, bool);
     let rows: Vec<IndexRow> = conn
         .exec(
-            "SELECT INDEX_NAME, NON_UNIQUE = 1, COLUMN_NAME, SUB_PART, INDEX_TYPE, IFNULL(INDEX_COMMENT, '')
-               FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
-              ORDER BY INDEX_NAME = 'PRIMARY' DESC, INDEX_NAME, SEQ_IN_INDEX",
+            format!(
+                "SELECT INDEX_NAME, NON_UNIQUE = 1, COLUMN_NAME, SUB_PART, INDEX_TYPE, IFNULL(INDEX_COMMENT, ''),
+                        IFNULL(COLLATION = 'D', 0), {ignored}
+                   FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
+                  ORDER BY INDEX_NAME = 'PRIMARY' DESC, INDEX_NAME, SEQ_IN_INDEX"
+            ),
             (schema, table),
         )
         .await?;
     let mut indexes: Vec<IndexDef> = Vec::new();
-    for (name, non_unique, col, sub_part, itype, icomment) in rows {
+    for (name, non_unique, col, sub_part, itype, icomment, desc, ignored) in rows {
         // ponytail: functional index parts (MySQL, COLUMN_NAME NULL) are skipped; such an index is shown without them.
         let Some(col) = col else { continue };
-        let column = IndexColumn { name: col, length: sub_part };
+        let column = IndexColumn { name: col, length: sub_part, desc };
         match indexes.last_mut().filter(|i| i.name == name) {
             Some(i) => i.columns.push(column),
             None => indexes.push(IndexDef {
@@ -535,6 +579,7 @@ pub async fn load(pool: &Pool, schema: &str, table: &str, mariadb: bool) -> AppR
                     ("PRIMARY", _, _) => "PRIMARY",
                     (_, "FULLTEXT", _) => "FULLTEXT",
                     (_, "SPATIAL", _) => "SPATIAL",
+                    (_, "VECTOR", _) => "VECTOR",
                     (_, _, false) => "UNIQUE",
                     _ => "INDEX",
                 }
@@ -542,6 +587,7 @@ pub async fn load(pool: &Pool, schema: &str, table: &str, mariadb: bool) -> AppR
                 name,
                 columns: vec![column],
                 comment: icomment,
+                ignored,
             }),
         }
     }
@@ -591,6 +637,11 @@ pub async fn engines(pool: &Pool) -> AppResult<Vec<String>> {
         .await?)
 }
 
+pub async fn collations(pool: &Pool) -> AppResult<Vec<String>> {
+    let mut conn = pool.get_conn().await?;
+    Ok(conn.query("SELECT COLLATION_NAME FROM information_schema.COLLATIONS ORDER BY 1").await?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -623,8 +674,9 @@ mod tests {
                 original: Some("PRIMARY".into()),
                 name: "PRIMARY".into(),
                 kind: "PRIMARY".into(),
-                columns: vec![IndexColumn { name: "id".into(), length: None }],
+                columns: vec![IndexColumn { name: "id".into(), length: None, desc: false }],
                 comment: String::new(),
+                ignored: false,
             }],
             fks: vec![],
             checks: vec![],
@@ -650,8 +702,8 @@ mod tests {
 
     #[test]
     fn same_definition_means_no_change() {
-        assert!(alter_clauses(&table(), &table()).unwrap().is_empty());
-        assert!(alter_sql("s", &table(), &table(), Algorithm::Instant).unwrap().is_empty());
+        assert!(alter_clauses(&table(), &table(), true).unwrap().is_empty());
+        assert!(alter_sql("s", &table(), &table(), Algorithm::Instant, true).unwrap().is_empty());
     }
 
     #[test]
@@ -663,7 +715,7 @@ mod tests {
         new.columns.insert(1, ColumnDef { original: None, ..col("n", "date") }); // add after id
         new.columns.push(ColumnDef { original: None, ..col("z", "int") });
         assert_eq!(
-            alter_clauses(&old, &new).unwrap(),
+            alter_clauses(&old, &new, true).unwrap(),
             [
                 "ADD COLUMN `n` date NOT NULL AFTER `id`",
                 "CHANGE COLUMN `a` `a2` varchar(10) NOT NULL",
@@ -673,7 +725,7 @@ mod tests {
         );
         let mut drop = table();
         drop.columns.remove(1);
-        assert_eq!(alter_clauses(&old, &drop).unwrap(), ["DROP COLUMN `a`"]);
+        assert_eq!(alter_clauses(&old, &drop, true).unwrap(), ["DROP COLUMN `a`"]);
     }
 
     #[test]
@@ -682,12 +734,12 @@ mod tests {
         let mut new = table();
         new.columns.swap(1, 2); // id, b, a
         assert_eq!(
-            alter_clauses(&old, &new).unwrap(),
+            alter_clauses(&old, &new, true).unwrap(),
             ["CHANGE COLUMN `b` `b` int(11) NOT NULL AFTER `id`", "CHANGE COLUMN `a` `a` varchar(10) NOT NULL AFTER `b`"]
         );
         let mut first = table();
         first.columns.rotate_right(1); // b, id, a
-        let c = alter_clauses(&old, &first).unwrap();
+        let c = alter_clauses(&old, &first, true).unwrap();
         assert_eq!(c[0], "CHANGE COLUMN `b` `b` int(11) NOT NULL FIRST");
     }
 
@@ -708,25 +760,67 @@ mod tests {
             ..table()
         };
         let mut new = old.clone();
-        new.indexes[0].columns.push(IndexColumn { name: "a".into(), length: Some(4) });
-        new.indexes.push(IndexDef { original: None, name: "".into(), kind: "UNIQUE".into(), columns: vec![IndexColumn { name: "b".into(), length: None }], comment: String::new() });
+        new.indexes[0].columns.push(IndexColumn { name: "a".into(), length: Some(4), desc: false });
+        new.indexes.push(IndexDef { original: None, name: "".into(), kind: "UNIQUE".into(), columns: vec![IndexColumn { name: "b".into(), length: None, desc: true }], comment: String::new(), ignored: false });
         new.fks[0].on_delete = "set null".into();
         new.checks.clear();
         new.comment = "hi".into();
         assert_eq!(
-            alter_clauses(&old, &new).unwrap(),
+            alter_clauses(&old, &new, true).unwrap(),
             [
                 "DROP FOREIGN KEY `fk`",
                 "DROP CONSTRAINT `c1`",
                 "DROP PRIMARY KEY",
                 "ADD PRIMARY KEY (`id`, `a`(4))",
-                "ADD UNIQUE INDEX (`b`)",
+                "ADD UNIQUE INDEX (`b` DESC)",
                 "ADD CONSTRAINT `fk` FOREIGN KEY (`b`) REFERENCES `p` (`id`) ON DELETE SET NULL ON UPDATE RESTRICT",
                 "COMMENT='hi'",
             ]
         );
         new.fks[0].on_delete = "EXPLODE".into();
-        assert_eq!(alter_clauses(&old, &new).unwrap_err().code, "INVALID_NAME");
+        assert_eq!(alter_clauses(&old, &new, true).unwrap_err().code, "INVALID_NAME");
+    }
+
+    #[test]
+    fn keeps_index_flags() {
+        let mut old = table();
+        old.indexes.push(IndexDef {
+            original: Some("ib".into()),
+            name: "ib".into(),
+            kind: "INDEX".into(),
+            columns: vec![IndexColumn { name: "b".into(), length: None, desc: true }],
+            comment: String::new(),
+            ignored: false,
+        });
+        old.indexes.push(IndexDef {
+            original: Some("ve".into()),
+            name: "ve".into(),
+            kind: "VECTOR".into(),
+            columns: vec![IndexColumn { name: "a".into(), length: None, desc: false }],
+            comment: String::new(),
+            ignored: false,
+        });
+        assert!(alter_clauses(&old, &old, true).unwrap().is_empty());
+
+        // Ignoring an index is switched in place, with each server's keyword.
+        let mut ign = old.clone();
+        ign.indexes[1].ignored = true;
+        assert_eq!(alter_clauses(&old, &ign, true).unwrap(), ["ALTER INDEX `ib` IGNORED"]);
+        assert_eq!(alter_clauses(&old, &ign, false).unwrap(), ["ALTER INDEX `ib` INVISIBLE"]);
+        assert_eq!(alter_clauses(&ign, &old, true).unwrap(), ["ALTER INDEX `ib` NOT IGNORED"]);
+
+        // A rebuilt index keeps DESC and the ignored flag.
+        let mut rebuilt = ign.clone();
+        rebuilt.indexes[1].comment = "c".into();
+        assert_eq!(alter_clauses(&old, &rebuilt, true).unwrap(), ["DROP INDEX `ib`", "ADD INDEX `ib` (`b` DESC) COMMENT 'c' IGNORED"]);
+
+        // VECTOR: can be dropped, never rebuilt from what we loaded.
+        let mut dropped = old.clone();
+        dropped.indexes.pop();
+        assert_eq!(alter_clauses(&old, &dropped, true).unwrap(), ["DROP INDEX `ve`"]);
+        let mut edited = old.clone();
+        edited.indexes[2].name = "ve2".into();
+        assert_eq!(alter_clauses(&old, &edited, true).unwrap_err().code, "INDEX_READ_ONLY");
     }
 
     #[test]
@@ -735,10 +829,10 @@ mod tests {
         new.name = "t2".into();
         new.comment = "x".into();
         assert_eq!(
-            alter_sql("s", &table(), &new, Algorithm::Online).unwrap(),
+            alter_sql("s", &table(), &new, Algorithm::Online, true).unwrap(),
             ["RENAME TABLE `s`.`t` TO `s`.`t2`", "ALTER TABLE `s`.`t2`\n  COMMENT='x', ALGORITHM=INPLACE, LOCK=NONE"]
         );
-        let c = create_sql("s", &table()).unwrap();
+        let c = create_sql("s", &table(), true).unwrap();
         assert!(c.starts_with("CREATE TABLE `s`.`t` (\n  `id` int(11) NOT NULL,"), "{c}");
         assert!(c.ends_with("PRIMARY KEY (`id`)\n) ENGINE=InnoDB COLLATE=utf8mb4_general_ci COMMENT=''"), "{c}");
         assert_eq!(drop_sql("s", "v", "view", false).unwrap(), "DROP VIEW `s`.`v`");
@@ -794,7 +888,7 @@ mod tests {
         .await
         .unwrap();
         let def = load(&pool, "otaria_des", "t", true).await.unwrap();
-        assert_eq!(alter_clauses(&def, &def).unwrap(), Vec::<String>::new());
+        assert_eq!(alter_clauses(&def, &def, true).unwrap(), Vec::<String>::new());
         let name = &def.columns[1];
         assert_eq!(name.default, DefaultValue::Literal("it's \\ ok".into()));
         assert_eq!(name.collation.as_deref(), Some("utf8mb4_bin"));
@@ -812,8 +906,8 @@ mod tests {
         new.columns.insert(1, created);
         new.columns.insert(1, ColumnDef { original: None, ..col("extra", "int(11)") });
         new.columns.iter_mut().find(|c| c.name == "n").unwrap().default = DefaultValue::Expr("5".into());
-        new.indexes.push(IndexDef { original: None, name: "ipid".into(), kind: "INDEX".into(), columns: vec![IndexColumn { name: "pid".into(), length: None }], comment: String::new() });
-        run(&pool, &alter_sql("otaria_des", &def, &new, Algorithm::Default).unwrap()).await.unwrap();
+        new.indexes.push(IndexDef { original: None, name: "ipid".into(), kind: "INDEX".into(), columns: vec![IndexColumn { name: "pid".into(), length: None, desc: false }], comment: String::new(), ignored: false });
+        run(&pool, &alter_sql("otaria_des", &def, &new, Algorithm::Default, true).unwrap()).await.unwrap();
         let after = load(&pool, "otaria_des", "t2", true).await.unwrap();
         let names: Vec<&str> = after.columns.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, ["id", "extra", "made", "name", "n", "doc", "twice", "pid"]);
@@ -825,8 +919,34 @@ mod tests {
         // INSTANT is refused for a change that needs a rebuild, with our own error code.
         let mut retype = after.clone();
         retype.columns[1].col_type = "varchar(5)".into();
-        let e = run(&pool, &alter_sql("otaria_des", &after, &retype, Algorithm::Instant).unwrap()).await.unwrap_err();
+        let e = run(&pool, &alter_sql("otaria_des", &after, &retype, Algorithm::Instant, true).unwrap()).await.unwrap_err();
         assert_eq!(e.code, "ALTER_ALGORITHM", "{e:?}");
+
+        // Index flags (MariaDB 11.7+ for VECTOR): loaded as they are, so nothing changes and editing
+        // the table elsewhere leaves them alone.
+        run(
+            &pool,
+            &["CREATE TABLE otaria_des.v (id INT PRIMARY KEY, e VECTOR(3) NOT NULL, a INT, b INT,
+                 VECTOR INDEX ve (e) M=8 DISTANCE=cosine, INDEX ia (a) IGNORED, INDEX ib (b DESC))"
+                .into()],
+        )
+        .await
+        .unwrap();
+        let v = load(&pool, "otaria_des", "v", true).await.unwrap();
+        let kinds: Vec<(&str, &str, bool, bool)> =
+            v.indexes.iter().map(|i| (i.name.as_str(), i.kind.as_str(), i.ignored, i.columns[0].desc)).collect();
+        assert_eq!(kinds, [("PRIMARY", "PRIMARY", false, false), ("ia", "INDEX", true, false), ("ib", "INDEX", false, true), ("ve", "VECTOR", false, false)]);
+        assert!(alter_clauses(&v, &v, true).unwrap().is_empty());
+        let mut v2 = v.clone();
+        v2.columns.push(ColumnDef { original: None, ..col("c", "int(11)") });
+        v2.indexes[1].ignored = false; // un-ignore ia in place
+        v2.indexes[2].comment = "rebuilt".into(); // rebuild ib: must stay DESC
+        run(&pool, &alter_sql("otaria_des", &v, &v2, Algorithm::Default, true).unwrap()).await.unwrap();
+        let v3 = load(&pool, "otaria_des", "v", true).await.unwrap();
+        assert!(!v3.indexes[1].ignored && v3.indexes[2].columns[0].desc && v3.indexes[2].comment == "rebuilt");
+        assert_eq!(v3.indexes[3].kind, "VECTOR");
+        let ddl = crate::browse::ddl(&pool, "otaria_des", "v", "table").await.unwrap();
+        assert!(ddl.contains("`M`='8'") && ddl.contains("`DISTANCE`='cosine'"), "{ddl}");
 
         run(&pool, &["DROP DATABASE otaria_des".into()]).await.unwrap();
     }
