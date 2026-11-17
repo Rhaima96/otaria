@@ -21,7 +21,8 @@ const ALLOWED = /^(Otaria|for MariaDB|MariaDB|[✓⚠✕·—\s\d.:]+)$/;
 const walk = (d) => readdirSync(d).flatMap((f) => (statSync(join(d, f)).isDirectory() ? walk(join(d, f)) : [join(d, f)]));
 for (const file of walk("src").filter((f) => f.endsWith(".vue") && !f.includes("components/ui/"))) {
   const tpl = readFileSync(file, "utf8").match(/<template>([\s\S]*)<\/template>/)?.[1] ?? "";
-  const text = tpl.replace(/<[^>]*>/g, "\n").replace(/\{\{[\s\S]*?\}\}/g, "\n");
+  // Strip tags (quoted attributes may contain ">") and {{ mustaches }}, keep plain text.
+  const text = tpl.replace(/<(?:"[^"]*"|'[^']*'|[^>"'])*>/g, "\n").replace(/\{\{[\s\S]*?\}\}/g, "\n");
   for (const raw of text.split("\n")) {
     const s = raw.trim();
     if (s && /\p{L}/u.test(s) && !ALLOWED.test(s)) (errors++, console.error(`${file}: hard-coded text "${s}"`));

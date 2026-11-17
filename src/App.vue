@@ -1,41 +1,56 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { Monitor, Moon, Sun } from "lucide-vue-next";
+import { Monitor, Moon, Plug, Sun, X } from "lucide-vue-next";
 import mark from "@/assets/mark.svg";
-import { api, type AppInfo } from "@/lib/api";
+import ConnectionManager from "@/components/ConnectionManager.vue";
+import SessionView from "@/components/SessionView.vue";
 import { LOCALES, setLocale, type Locale } from "@/i18n";
 import { useTheme, type ThemePreference } from "@/composables/useTheme";
+import { useSessions } from "@/composables/useSessions";
+import { tagClass } from "@/lib/tagColors";
 import { cn } from "@/lib/utils";
 
 const { t, locale } = useI18n();
 const { preference } = useTheme();
-const info = ref<AppInfo | null>(null);
-const ipcError = ref(false);
+const { sessions, activeTab, closeSession } = useSessions();
+const active = computed(() => sessions.value.find((s) => s.sessionId === activeTab.value));
 
 const themes: { value: ThemePreference; icon: typeof Sun }[] = [
   { value: "system", icon: Monitor },
   { value: "light", icon: Sun },
   { value: "dark", icon: Moon },
 ];
-
-onMounted(async () => {
-  try {
-    info.value = await api.appInfo();
-  } catch {
-    ipcError.value = true; // e.g. running in a plain browser via `npm run dev`
-  }
-});
+const tab = "flex h-full items-center gap-1.5 border-r px-3 hover:bg-secondary";
 </script>
 
 <template>
   <div class="flex h-screen flex-col">
-    <header class="flex h-10 items-center gap-2 border-b bg-sidebar px-3">
-      <img :src="mark" alt="" class="size-5" />
-      <span class="font-semibold">Otaria</span>
-      <span class="truncate text-muted-foreground">{{ t("app.tagline") }}</span>
+    <header class="flex h-9 shrink-0 items-stretch border-b bg-sidebar">
+      <div class="flex items-center gap-2 border-r px-3">
+        <img :src="mark" alt="Otaria" class="size-5" />
+      </div>
+      <nav class="flex min-w-0 flex-1 items-stretch overflow-x-auto" role="tablist">
+        <button role="tab" :aria-selected="activeTab === 'manager'" :class="cn(tab, activeTab === 'manager' && 'bg-background')" @click="activeTab = 'manager'">
+          <Plug class="size-3.5" /> {{ t("connection.title") }}
+        </button>
+        <div
+          v-for="s in sessions"
+          :key="s.sessionId"
+          role="tab"
+          :aria-selected="activeTab === s.sessionId"
+          :class="cn(tab, 'cursor-default pr-1', activeTab === s.sessionId && 'bg-background')"
+          @click="activeTab = s.sessionId"
+        >
+          <span :class="cn('size-2 rounded-full', tagClass(s.profile.color))" />
+          <span class="max-w-40 truncate">{{ s.profile.name }}</span>
+          <button :title="t('session.disconnect')" class="flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-secondary hover:text-foreground" @click.stop="closeSession(s.sessionId)">
+            <X class="size-3" /><span class="sr-only">{{ t("session.disconnect") }}</span>
+          </button>
+        </div>
+      </nav>
 
-      <div class="ml-auto flex items-center gap-3">
+      <div class="flex items-center gap-3 px-3">
         <div role="radiogroup" :aria-label="t('settings.theme')" class="flex rounded-md border p-0.5">
           <button
             v-for="th in themes"
@@ -43,36 +58,25 @@ onMounted(async () => {
             role="radio"
             :aria-checked="preference === th.value"
             :title="t(`settings.${th.value}`)"
-            :class="cn(
-              'flex size-6 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground',
-              preference === th.value && 'bg-selection text-foreground',
-            )"
+            :class="cn('flex size-6 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground', preference === th.value && 'bg-selection text-foreground')"
             @click="preference = th.value"
           >
             <component :is="th.icon" class="size-3.5" />
             <span class="sr-only">{{ t(`settings.${th.value}`) }}</span>
           </button>
         </div>
-
-        <label class="flex items-center gap-1.5 text-muted-foreground">
+        <label>
           <span class="sr-only">{{ t("settings.language") }}</span>
-          <select
-            :value="locale"
-            class="h-7 rounded-sm border bg-background px-1.5 text-foreground"
-            @change="setLocale(($event.target as HTMLSelectElement).value as Locale)"
-          >
+          <select :value="locale" class="h-7 rounded-sm border bg-background px-1.5" @change="setLocale(($event.target as HTMLSelectElement).value as Locale)">
             <option v-for="(name, code) in LOCALES" :key="code" :value="code">{{ name }}</option>
           </select>
         </label>
       </div>
     </header>
 
-    <main class="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-      <img :src="mark" alt="Otaria" class="size-24" />
-      <h1 class="text-lg font-semibold">Otaria <span class="font-normal text-muted-foreground">for MariaDB</span></h1>
-      <p class="max-w-md">{{ t("app.welcome") }}</p>
-      <p v-if="info" class="font-mono text-xs text-success">✓ {{ t("app.version", { version: info.version, os: info.os }) }}</p>
-      <p v-else-if="ipcError" class="font-mono text-xs text-warning">⚠ {{ t("errors.ipc") }}</p>
+    <main class="min-h-0 flex-1">
+      <ConnectionManager v-show="activeTab === 'manager'" />
+      <SessionView v-if="active" :key="active.sessionId" :session="active" />
     </main>
   </div>
 </template>

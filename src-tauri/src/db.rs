@@ -1,0 +1,237 @@
+//! Opening MariaDB connections from a profile: TLS, socket, SSH tunnel, server facts.
+
+use std::time::Duration;
+
+use mysql_async::prelude::Queryable;
+use mysql_async::{ClientIdentity, Conn, Opts, OptsBuilder, Pool, PoolConstraints, PoolOpts, SslOpts};
+use serde::Serialize;
+
+use crate::error::{AppError, AppResult};
+use crate::profiles::{Profile, TlsMode};
+use crate::ssh::{self, Tunnel};
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// Facts shown right after connecting; `is_mariadb` drives the MySQL warning banner.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerInfo {
+    pub version: String,
+    pub version_comment: String,
+    pub is_mariadb: bool,
+    pub current_user: String,
+    pub connection_id: u32,
+    /// Negotiated TLS cipher, None when the link is not encrypted.
+    pub tls_cipher: Option<String>,
+    pub via_ssh: bool,
+}
+
+/// TLS options for a mode. `sni_host` is the real server name when going through an SSH tunnel.
+fn ssl_opts(profile: &Profile, mode: TlsMode, sni_host: Option<&str>) -> Option<SslOpts> {
+    let tls = &profile.tls;
+    let mut opts = match mode {
+        TlsMode::Disabled => return None,
+        TlsMode::Preferred | TlsMode::Required => SslOpts::default().with_danger_accept_invalid_certs(true),
+        TlsMode::VerifyCa => SslOpts::default().with_danger_skip_domain_validation(true),
+        TlsMode::VerifyIdentity => SslOpts::default(),
+    };
+    if let Some(ca) = tls.ca.as_deref().filter(|s| !s.is_empty()) {
+        opts = opts.with_root_certs(vec![std::path::PathBuf::from(ca).into()]);
+    }
+    if let (Some(cert), Some(key)) = (tls.cert.as_deref(), tls.key.as_deref()) {
+        if !cert.is_empty() && !key.is_empty() {
+            let id = ClientIdentity::new(std::path::PathBuf::from(cert).into(), std::path::PathBuf::from(key).into());
+            opts = opts.with_client_identity(Some(id));
+        }
+    }
+    if let Some(host) = sni_host {
+        opts = opts.with_danger_tls_hostname_override(Some(host.to_string()));
+    }
+    Some(opts)
+}
+
+fn opts(profile: &Profile, password: Option<&str>, tunnel: Option<&Tunnel>, mode: TlsMode) -> Opts {
+    let socket = profile.socket.as_deref().filter(|s| !s.is_empty() && tunnel.is_none());
+    let (host, port) = match tunnel {
+        Some(t) => ("127.0.0.1".to_string(), t.port),
+        None => (profile.host.clone(), profile.port),
+    };
+    let mode = if socket.is_some() { TlsMode::Disabled } else { mode };
+    let sni = tunnel.map(|_| profile.host.as_str());
+    OptsBuilder::default()
+        .ip_or_hostname(host)
+        .tcp_port(port)
+        .socket(socket)
+        // Without this, mysql_async silently switches localhost connections to the server's socket.
+        .prefer_socket(false)
+        .user(Some(profile.user.clone()))
+        .pass(password.map(str::to_string))
+        .db_name(profile.database.clone().filter(|d| !d.is_empty()))
+        .ssl_opts(ssl_opts(profile, mode, sni))
+        .pool_opts(PoolOpts::default().with_constraints(PoolConstraints::new(0, 8).expect("valid constraints")))
+        .into()
+}
+
+async fn with_timeout<T>(fut: impl std::future::Future<Output = Result<T, mysql_async::Error>>) -> AppResult<T> {
+    match tokio::time::timeout(CONNECT_TIMEOUT, fut).await {
+        Ok(r) => r.map_err(AppError::from),
+        Err(_) => Err(AppError::new("DB_TIMEOUT", format!("{}s", CONNECT_TIMEOUT.as_secs()))),
+    }
+}
+
+async fn server_info(conn: &mut Conn, via_ssh: bool) -> AppResult<ServerInfo> {
+    let (version, version_comment, current_user, connection_id): (String, String, String, u32) = conn
+        .query_first("SELECT VERSION(), @@version_comment, CURRENT_USER(), CONNECTION_ID()")
+        .await?
+        .ok_or_else(|| AppError::new("DB", "empty server info"))?;
+    let cipher: Option<(String, String)> = conn.query_first("SHOW SESSION STATUS LIKE 'Ssl_cipher'").await?;
+    Ok(ServerInfo {
+        is_mariadb: version.to_ascii_lowercase().contains("mariadb"),
+        version,
+        version_comment,
+        current_user,
+        connection_id,
+        tls_cipher: cipher.map(|(_, c)| c).filter(|c| !c.is_empty()),
+        via_ssh,
+    })
+}
+
+/// An open, validated connection pool (plus the SSH tunnel it needs, if any).
+pub struct Session {
+    pub pool: Pool,
+    pub info: ServerInfo,
+    _tunnel: Option<Tunnel>,
+}
+
+impl Session {
+    pub async fn close(self) {
+        let _ = self.pool.disconnect().await;
+    }
+}
+
+/// Connect, check the credentials and read the server facts.
+/// With TLS "preferred", a server without TLS support falls back to a plain connection.
+pub async fn open(profile: &Profile, password: Option<&str>, ssh_secret: Option<&str>) -> AppResult<Session> {
+    let tunnel = match &profile.ssh {
+        Some(s) => Some(ssh::open(s, ssh_secret, &profile.host, profile.port).await?),
+        None => None,
+    };
+    let try_open = |mode| {
+        let pool = Pool::new(opts(profile, password, tunnel.as_ref(), mode));
+        async move {
+            let mut conn = with_timeout(pool.get_conn()).await?;
+            let info = server_info(&mut conn, profile.ssh.is_some()).await?;
+            drop(conn);
+            Ok::<_, AppError>((pool, info))
+        }
+    };
+    let (pool, info) = match try_open(profile.tls.mode).await {
+        Err(e) if profile.tls.mode == TlsMode::Preferred && e.code == "TLS_NOT_SUPPORTED" => {
+            try_open(TlsMode::Disabled).await?
+        }
+        r => r?,
+    };
+    Ok(Session { pool, info, _tunnel: tunnel })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::profiles::Tls;
+
+    fn profile(mode: TlsMode) -> Profile {
+        Profile {
+            id: "t".into(),
+            name: "t".into(),
+            color: None,
+            host: "db.example.com".into(),
+            port: 3306,
+            user: "u".into(),
+            database: None,
+            socket: None,
+            save_password: false,
+            tls: Tls { mode, ..Default::default() },
+            ssh: None,
+        }
+    }
+
+    #[test]
+    fn tls_modes_map_to_ssl_opts() {
+        let p = profile(TlsMode::Disabled);
+        assert!(ssl_opts(&p, TlsMode::Disabled, None).is_none());
+        let req = ssl_opts(&p, TlsMode::Required, None).unwrap();
+        assert!(req.accept_invalid_certs());
+        let ca = ssl_opts(&p, TlsMode::VerifyCa, None).unwrap();
+        assert!(!ca.accept_invalid_certs() && ca.skip_domain_validation());
+        let full = ssl_opts(&p, TlsMode::VerifyIdentity, None).unwrap();
+        assert!(!full.accept_invalid_certs() && !full.skip_domain_validation());
+    }
+
+    #[test]
+    fn socket_disables_tls() {
+        let mut p = profile(TlsMode::VerifyIdentity);
+        p.socket = Some("/tmp/mysql.sock".into());
+        let o = opts(&p, None, None, p.tls.mode);
+        assert!(o.ssl_opts().is_none());
+        assert_eq!(o.socket(), Some("/tmp/mysql.sock"));
+    }
+
+    /// Live check against a real server: OTARIA_TEST_DB="host:port:user:password" cargo test -- --ignored
+    #[tokio::test]
+    #[ignore]
+    async fn connects_to_test_server() {
+        let spec = std::env::var("OTARIA_TEST_DB").expect("set OTARIA_TEST_DB");
+        let parts: Vec<&str> = spec.splitn(4, ':').collect();
+        let mut p = profile(TlsMode::Preferred);
+        p.host = parts[0].into();
+        p.port = parts[1].parse().unwrap();
+        p.user = parts[2].into();
+        let session = open(&p, Some(parts[3]), None).await.expect("connect");
+        assert!(session.info.is_mariadb, "{:?}", session.info);
+        // MariaDB >= 11.4 has TLS on by default, so "preferred" must end up encrypted.
+        assert!(session.info.tls_cipher.is_some(), "{:?}", session.info);
+        session.close().await;
+
+        p.tls.mode = TlsMode::VerifyIdentity; // self-signed server cert: must be rejected
+        let e = open(&p, Some(parts[3]), None).await.err().expect("must fail");
+        assert_eq!(e.code, "TLS", "{e:?}");
+        p.tls.mode = TlsMode::Preferred;
+
+        let err = open(&p, Some("wrong-password"), None).await.err().expect("must fail");
+        assert_eq!(err.code, "DB_ACCESS_DENIED");
+    }
+
+    /// SSH tunnel: OTARIA_TEST_SSH="ssh_host:ssh_port:user:password:db_host" plus OTARIA_TEST_DB for the DB login.
+    #[tokio::test]
+    #[ignore]
+    async fn connects_through_ssh_tunnel() {
+        let ssh: Vec<String> = std::env::var("OTARIA_TEST_SSH").expect("set OTARIA_TEST_SSH").splitn(5, ':').map(String::from).collect();
+        let dbs: Vec<String> = std::env::var("OTARIA_TEST_DB").expect("set OTARIA_TEST_DB").splitn(4, ':').map(String::from).collect();
+        let mut p = profile(TlsMode::Preferred);
+        p.host = ssh[4].clone(); // as seen from the bastion
+        p.port = 3306;
+        p.user = dbs[2].clone();
+        p.ssh = Some(crate::profiles::Ssh {
+            host: ssh[0].clone(),
+            port: ssh[1].parse().unwrap(),
+            user: ssh[2].clone(),
+            key_path: None,
+            host_key: None,
+        });
+
+        // First contact: unknown host key -> the UI gets the fingerprint to confirm.
+        let err = open(&p, Some(&dbs[3]), Some(&ssh[3])).await.err().expect("unknown host must fail");
+        assert_eq!(err.code, "SSH_HOST_UNKNOWN");
+        let fingerprint = err.detail.expect("fingerprint");
+        assert!(fingerprint.starts_with("SHA256:"), "{fingerprint}");
+
+        // After the user trusts it, the tunnel works.
+        p.ssh.as_mut().unwrap().host_key = Some(fingerprint);
+        let session = open(&p, Some(&dbs[3]), Some(&ssh[3])).await.expect("connect via ssh");
+        assert!(session.info.via_ssh && session.info.is_mariadb, "{:?}", session.info);
+        session.close().await;
+
+        let bad = open(&p, Some(&dbs[3]), Some("wrong")).await.err().expect("bad ssh password");
+        assert_eq!(bad.code, "SSH_AUTH");
+    }
+}
