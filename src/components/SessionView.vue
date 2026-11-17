@@ -1,20 +1,24 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { defineAsyncComponent, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { Info, Lock, LockOpen, TriangleAlert, X } from "lucide-vue-next";
+import { FileCode, Info, Lock, LockOpen, Plus, TriangleAlert, X } from "lucide-vue-next";
 import ObjectTree from "@/components/ObjectTree.vue";
 import ObjectView from "@/components/ObjectView.vue";
+// Monaco is heavy: load the editor on first use.
+const SqlEditor = defineAsyncComponent(() => import("@/components/SqlEditor.vue"));
 import type { DbObject, OpenedSession } from "@/lib/api";
 import { objectIcon } from "@/lib/objects";
 import { cn } from "@/lib/utils";
 
-defineProps<{ session: OpenedSession }>();
+const props = defineProps<{ session: OpenedSession }>();
 const { t } = useI18n();
 
+/** An object tab, or an SQL editor tab (obj = null). */
 interface Tab {
   id: string;
-  schema: string;
-  obj: DbObject;
+  schema: string | null;
+  obj: DbObject | null;
+  n?: number;
 }
 const tabs = ref<Tab[]>([]);
 /** null = server info tab. */
@@ -23,6 +27,15 @@ const active = ref<string | null>(null);
 function open(schema: string, obj: DbObject) {
   const id = `${schema}.${obj.kind}.${obj.name}`;
   if (!tabs.value.some((x) => x.id === id)) tabs.value.push({ id, schema, obj });
+  active.value = id;
+}
+
+let queries = 0;
+function newQuery() {
+  // Start on the schema of the tab in front, else the profile's default database.
+  const schema = tabs.value.find((x) => x.id === active.value)?.schema ?? props.session.profile.database;
+  const id = crypto.randomUUID();
+  tabs.value.push({ id, schema, obj: null, n: ++queries });
   active.value = id;
 }
 
@@ -55,21 +68,27 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
             :key="x.id"
             role="tab"
             :aria-selected="active === x.id"
-            :title="`${x.schema}.${x.obj.name}`"
+            :title="x.obj ? `${x.schema}.${x.obj.name}` : undefined"
             :class="cn(tab, 'cursor-default pr-1', active === x.id && 'bg-background')"
             @click="active = x.id"
             @auxclick.middle="close(x.id)"
           >
-            <component :is="objectIcon(x.obj)" class="size-3.5 text-muted-foreground" />
-            <span class="max-w-48 truncate">{{ x.obj.name }}</span>
+            <component :is="x.obj ? objectIcon(x.obj) : FileCode" class="size-3.5 text-muted-foreground" />
+            <span class="max-w-48 truncate">{{ x.obj ? x.obj.name : t("editor.tab", { n: x.n }) }}</span>
             <button :title="t('object.close')" class="flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-secondary hover:text-foreground" @click.stop="close(x.id)">
               <X class="size-3" /><span class="sr-only">{{ t("object.close") }}</span>
             </button>
           </div>
+          <button :title="t('editor.new')" :class="cn(tab, 'border-r-0 text-muted-foreground')" @click="newQuery">
+            <Plus class="size-3.5" /><span class="sr-only">{{ t("editor.new") }}</span>
+          </button>
         </nav>
 
         <!-- v-show keeps each tab alive, so unsaved grid edits survive switching tabs. -->
-        <ObjectView v-for="x in tabs" v-show="active === x.id" :key="x.id" :session-id="session.sessionId" :schema="x.schema" :obj="x.obj" class="min-h-0 flex-1" />
+        <template v-for="x in tabs" :key="x.id">
+          <ObjectView v-if="x.obj" v-show="active === x.id" :session-id="session.sessionId" :schema="x.schema!" :obj="x.obj" class="min-h-0 flex-1" />
+          <SqlEditor v-else v-show="active === x.id" :session-id="session.sessionId" :profile-id="session.profile.id" :editor-id="x.id" :schema="x.schema" class="min-h-0 flex-1" />
+        </template>
 
         <div v-if="active === null" class="overflow-auto p-5">
           <h2 class="text-sm font-semibold">{{ session.profile.name }}</h2>
@@ -88,6 +107,9 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
             </dd>
           </dl>
           <p class="mt-6 text-muted-foreground">{{ t("session.pickObject") }}</p>
+          <button class="mt-3 flex h-7 items-center gap-1.5 rounded-sm border px-3 font-medium hover:bg-secondary" @click="newQuery">
+            <FileCode class="size-3.5" />{{ t("editor.new") }}
+          </button>
         </div>
       </main>
     </div>

@@ -107,7 +107,9 @@
     "SSH": "Erreur du tunnel SSH.",
     "NO_PRIMARY_KEY": "Cette table n'a pas de clé primaire : ses lignes ne peuvent pas être modifiées.",
     "ROW_CONFLICT": "Une ligne a été modifiée ou supprimée par quelqu'un d'autre entre-temps. Rien n'a été enregistré ; rechargez et réessayez.",
-    "NO_DDL": "La définition n'est pas disponible (privilège manquant ?)."
+    "NO_DDL": "La définition n'est pas disponible (privilège manquant ?).",
+    "QUERY_CANCELLED": "La requête a été arrêtée.",
+    "CONFIRM_RISKY": "Confirmation requise pour une instruction destructrice."
   },
   "tree": {
     "title": "Bases de données",
@@ -159,5 +161,38 @@
     "previewHint": "Ces requêtes s'exécutent dans une seule transaction : si l'une échoue, rien n'est modifié.",
     "cancel": "Annuler",
     "apply": "Exécuter"
+  },
+  "editor": {
+    "tab": "Requête {n}",
+    "new": "Nouvelle requête",
+    "run": "Exécuter",
+    "runHint": "Tout exécuter, ou la sélection (⌘/Ctrl+Entrée, F9)",
+    "runCurrent": "Courante",
+    "runCurrentHint": "Exécuter l'instruction sous le curseur (⌘/Ctrl+Maj+Entrée)",
+    "cancel": "Arrêter",
+    "maxRows": "Lignes max",
+    "schema": "Base courante",
+    "noSchema": "(aucune base)",
+    "history": "Historique",
+    "favorites": "Favoris",
+    "result": "Résultat {n}",
+    "messages": "Messages",
+    "rows": "{n} lignes",
+    "capped": "affichage plafonné, le serveur en a envoyé {total}",
+    "elapsed": "{ms} ms",
+    "affected": "{n} lignes touchées",
+    "warnings": "{n} avertissements",
+    "nothing": "Rien à exécuter.",
+    "hint": "Saisissez du SQL puis Exécuter. Plusieurs instructions donnent plusieurs résultats ; utilisez DELIMITER pour les corps de routines.",
+    "addFavorite": "Enregistrer",
+    "clearHistory": "Vider",
+    "emptyHistory": "Aucune requête exécutée.",
+    "removeFavorite": "Retirer",
+    "emptyFavorites": "Aucun favori.",
+    "confirmTitle": "Instruction destructrice",
+    "confirmText": "Ces instructions peuvent supprimer des données ou des objets. Les exécuter quand même ?",
+    "confirmRun": "Exécuter quand même",
+    "favoriteName": "Nom du favori",
+    "save": "Enregistrer"
   }
 }

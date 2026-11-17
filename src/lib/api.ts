@@ -101,6 +101,34 @@ export type Change =
 /** Secrets: undefined/null = keep the saved one (or none). */
 type Secrets = { password?: string | null; sshSecret?: string | null };
 
+export interface StmtResult {
+  sql: string;
+  /** Empty = no result set (INSERT, SET…). */
+  columns: string[];
+  rows: (string | null)[][];
+  /** Rows sent by the server; above rows.length when the display cap was hit. */
+  totalRows: number;
+  affectedRows: number;
+  warnings: number;
+  elapsedMs: number;
+}
+
+export interface RunOutput {
+  results: StmtResult[];
+  error: AppError | null;
+  errorSql: string | null;
+  schema: string | null;
+}
+
+export interface RunRequest {
+  schema: string | null;
+  sql: string;
+  /** UTF-8 byte offset: run only the statement there. */
+  cursor: number | null;
+  maxRows: number;
+  confirmed: boolean;
+}
+
 export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
   listProfiles: () => invoke<Profile[]>("list_profiles"),
@@ -119,6 +147,9 @@ export const api = {
   previewChanges: (schema: string, table: string, changes: Change[]) => invoke<string[]>("preview_changes", { schema, table, changes }),
   applyChanges: (sessionId: string, schema: string, table: string, changes: Change[]) =>
     invoke<number>("apply_changes", { sessionId, schema, table, changes }),
+  runSql: (sessionId: string, editorId: string, r: RunRequest) => invoke<RunOutput>("run_sql", { sessionId, editorId, ...r }),
+  cancelSql: (sessionId: string, editorId: string) => invoke<void>("cancel_sql", { sessionId, editorId }),
+  closeEditor: (sessionId: string, editorId: string) => invoke<void>("close_editor", { sessionId, editorId }),
 };
 
 export function newProfile(): Profile {

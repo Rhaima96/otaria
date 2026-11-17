@@ -107,7 +107,9 @@
     "SSH": "SSH tunnel error.",
     "NO_PRIMARY_KEY": "This table has no primary key, so its rows cannot be edited.",
     "ROW_CONFLICT": "A row was changed or deleted by someone else meanwhile. Nothing was saved; reload and try again.",
-    "NO_DDL": "The definition is not available (missing privilege?)."
+    "NO_DDL": "The definition is not available (missing privilege?).",
+    "QUERY_CANCELLED": "The query was stopped.",
+    "CONFIRM_RISKY": "Confirmation required for a destructive statement."
   },
   "tree": {
     "title": "Databases",
@@ -159,5 +161,38 @@
     "previewHint": "These statements run in one transaction: if one fails, nothing is changed.",
     "cancel": "Cancel",
     "apply": "Run"
+  },
+  "editor": {
+    "tab": "Query {n}",
+    "new": "New query",
+    "run": "Run",
+    "runHint": "Run everything, or the selection (⌘/Ctrl+Enter, F9)",
+    "runCurrent": "Current",
+    "runCurrentHint": "Run the statement under the cursor (⌘/Ctrl+Shift+Enter)",
+    "cancel": "Stop",
+    "maxRows": "Max rows",
+    "schema": "Current database",
+    "noSchema": "(no database)",
+    "history": "History",
+    "favorites": "Favorites",
+    "result": "Result {n}",
+    "messages": "Messages",
+    "rows": "{n} rows",
+    "capped": "display capped, the server sent {total}",
+    "elapsed": "{ms} ms",
+    "affected": "{n} rows affected",
+    "warnings": "{n} warnings",
+    "nothing": "Nothing to run.",
+    "hint": "Type SQL, then Run. Several statements give several results; use DELIMITER for routine bodies.",
+    "addFavorite": "Save current",
+    "clearHistory": "Clear",
+    "emptyHistory": "No query run yet.",
+    "removeFavorite": "Remove",
+    "emptyFavorites": "No favorite yet.",
+    "confirmTitle": "Destructive statement",
+    "confirmText": "These statements can delete data or objects. Run them anyway?",
+    "confirmRun": "Run anyway",
+    "favoriteName": "Favorite name",
+    "save": "Save"
   }
 }

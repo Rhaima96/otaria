@@ -107,7 +107,9 @@
     "SSH": "Error del túnel SSH.",
     "NO_PRIMARY_KEY": "Esta tabla no tiene clave primaria, así que sus filas no se pueden editar.",
     "ROW_CONFLICT": "Otra persona cambió o eliminó una fila mientras tanto. No se guardó nada; recargue e inténtelo de nuevo.",
-    "NO_DDL": "La definición no está disponible (¿falta un privilegio?)."
+    "NO_DDL": "La definición no está disponible (¿falta un privilegio?).",
+    "QUERY_CANCELLED": "La consulta se detuvo.",
+    "CONFIRM_RISKY": "Se requiere confirmación para una sentencia destructiva."
   },
   "tree": {
     "title": "Bases de datos",
@@ -159,5 +161,38 @@
     "previewHint": "Estas sentencias se ejecutan en una sola transacción: si una falla, no se cambia nada.",
     "cancel": "Cancelar",
     "apply": "Ejecutar"
+  },
+  "editor": {
+    "tab": "Consulta {n}",
+    "new": "Nueva consulta",
+    "run": "Ejecutar",
+    "runHint": "Ejecutar todo, o la selección (⌘/Ctrl+Intro, F9)",
+    "runCurrent": "Actual",
+    "runCurrentHint": "Ejecutar la sentencia bajo el cursor (⌘/Ctrl+Mayús+Intro)",
+    "cancel": "Detener",
+    "maxRows": "Filas máx.",
+    "schema": "Base de datos actual",
+    "noSchema": "(sin base de datos)",
+    "history": "Historial",
+    "favorites": "Favoritos",
+    "result": "Resultado {n}",
+    "messages": "Mensajes",
+    "rows": "{n} filas",
+    "capped": "visualización limitada, el servidor envió {total}",
+    "elapsed": "{ms} ms",
+    "affected": "{n} filas afectadas",
+    "warnings": "{n} advertencias",
+    "nothing": "Nada que ejecutar.",
+    "hint": "Escriba SQL y pulse Ejecutar. Varias sentencias dan varios resultados; use DELIMITER para el cuerpo de rutinas.",
+    "addFavorite": "Guardar actual",
+    "clearHistory": "Vaciar",
+    "emptyHistory": "Aún no se ha ejecutado ninguna consulta.",
+    "removeFavorite": "Quitar",
+    "emptyFavorites": "Aún no hay favoritos.",
+    "confirmTitle": "Sentencia destructiva",
+    "confirmText": "Estas sentencias pueden borrar datos u objetos. ¿Ejecutarlas de todos modos?",
+    "confirmRun": "Ejecutar de todos modos",
+    "favoriteName": "Nombre del favorito",
+    "save": "Guardar"
   }
 }

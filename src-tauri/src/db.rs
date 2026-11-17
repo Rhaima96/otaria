@@ -102,11 +102,15 @@ async fn server_info(conn: &mut Conn, via_ssh: bool) -> AppResult<ServerInfo> {
 pub struct Session {
     pub pool: Pool,
     pub info: ServerInfo,
+    /// SQL editor tabs, each holding its own connection (see query.rs).
+    pub editors: crate::query::Editors,
     _tunnel: Option<Tunnel>,
 }
 
 impl Session {
     pub async fn close(self) {
+        // Editor connections must go back to the pool first, or disconnect() waits for them forever.
+        drop(self.editors);
         let _ = self.pool.disconnect().await;
     }
 }
@@ -133,7 +137,7 @@ pub async fn open(profile: &Profile, password: Option<&str>, ssh_secret: Option<
         }
         r => r?,
     };
-    Ok(Session { pool, info, _tunnel: tunnel })
+    Ok(Session { pool, info, editors: Default::default(), _tunnel: tunnel })
 }
 
 #[cfg(test)]

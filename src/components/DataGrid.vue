@@ -2,12 +2,11 @@
 import { computed, onMounted, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { AgGridVue } from "ag-grid-vue3";
-import { AllCommunityModule, ModuleRegistry, themeQuartz, type ColDef, type GridApi, type GridReadyEvent, type SortChangedEvent } from "ag-grid-community";
+import { type ColDef, type GridApi, type GridReadyEvent, type SortChangedEvent } from "ag-grid-community";
 import { Ban, Filter, Plus, RefreshCw, Save, Trash2, Undo2 } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
+import { theme } from "@/lib/grid";
 import { api, toAppError, type AppError, type Change, type Pairs, type Sort, type TableInfo } from "@/lib/api";
-
-ModuleRegistry.registerModules([AllCommunityModule]);
 
 const props = defineProps<{ sessionId: string; schema: string; table: string; info: TableInfo }>();
 const { t } = useI18n();
@@ -106,21 +105,6 @@ const colDefs = computed<ColDef<GridRow>[]>(() =>
   })),
 );
 
-const theme = themeQuartz.withParams({
-  backgroundColor: "var(--background)",
-  foregroundColor: "var(--foreground)",
-  borderColor: "var(--border)",
-  chromeBackgroundColor: "var(--sidebar)",
-  accentColor: "var(--primary)",
-  selectedRowBackgroundColor: "var(--selection)",
-  fontFamily: "var(--font-mono)",
-  headerFontFamily: "var(--font-sans)",
-  fontSize: 12,
-  rowHeight: 24,
-  headerHeight: 28,
-  wrapperBorderRadius: 0,
-  borderRadius: 2,
-});
 
 function onReady(e: GridReadyEvent<GridRow>) {
   grid = e.api;

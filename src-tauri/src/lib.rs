@@ -3,6 +3,7 @@ mod db;
 mod edit;
 mod error;
 mod profiles;
+mod query;
 mod ssh;
 
 use std::collections::HashMap;
@@ -193,6 +194,71 @@ async fn apply_changes(
     edit::apply(&pool(&state, &session_id).await?, &schema, &table, &changes).await
 }
 
+/// Pool and connection of an editor tab, opened on first use.
+async fn editor(state: &AppState, session_id: &str, editor_id: &str, schema: Option<&str>) -> AppResult<(mysql_async::Pool, u32, std::sync::Arc<Mutex<mysql_async::Conn>>)> {
+    let pool = pool(state, session_id).await?;
+    let found = {
+        let sessions = state.sessions.lock().await;
+        let eds = sessions.get(session_id).map(|s| s.editors.lock().unwrap());
+        eds.and_then(|e| e.get(editor_id).map(|e| (e.conn_id, e.conn.clone())))
+    };
+    if let Some((id, conn)) = found {
+        return Ok((pool, id, conn));
+    }
+    let ed = query::open_editor(&pool, schema).await?;
+    let out = (pool, ed.conn_id, ed.conn.clone());
+    match state.sessions.lock().await.get(session_id) {
+        Some(s) => s.editors.lock().unwrap().insert(editor_id.to_string(), ed),
+        None => return Err(AppError::new("SESSION_NOT_FOUND", session_id)),
+    };
+    Ok(out)
+}
+
+/// Run the script (or only the statement under `cursor`, a byte offset) in the editor's connection.
+/// Destructive statements are refused with CONFIRM_RISKY until the UI sends `confirmed`.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn run_sql(
+    state: State<'_, AppState>,
+    session_id: String,
+    editor_id: String,
+    schema: Option<String>,
+    sql: String,
+    cursor: Option<usize>,
+    max_rows: usize,
+    confirmed: bool,
+) -> AppResult<query::RunOutput> {
+    let stmts = query::pick(&sql, cursor);
+    let risky: Vec<&str> = stmts.iter().map(String::as_str).filter(|s| query::risky(s)).collect();
+    if !confirmed && !risky.is_empty() {
+        return Err(AppError { detail: Some(risky.join(";\n")), ..AppError::new("CONFIRM_RISKY", "") });
+    }
+    let (_, _, conn) = editor(&state, &session_id, &editor_id, schema.as_deref()).await?;
+    let mut conn = conn.lock().await;
+    Ok(query::run(&mut conn, &stmts, max_rows).await)
+}
+
+#[tauri::command]
+async fn cancel_sql(state: State<'_, AppState>, session_id: String, editor_id: String) -> AppResult<()> {
+    let id = {
+        let sessions = state.sessions.lock().await;
+        let eds = sessions.get(&session_id).map(|s| s.editors.lock().unwrap());
+        eds.and_then(|e| e.get(&editor_id).map(|e| e.conn_id))
+    };
+    match id {
+        Some(id) => query::cancel(&pool(&state, &session_id).await?, id).await,
+        None => Ok(()), // nothing ever ran in this tab
+    }
+}
+
+#[tauri::command]
+async fn close_editor(state: State<'_, AppState>, session_id: String, editor_id: String) -> AppResult<()> {
+    if let Some(s) = state.sessions.lock().await.get(&session_id) {
+        s.editors.lock().unwrap().remove(&editor_id);
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -215,7 +281,10 @@ pub fn run() {
             object_ddl,
             table_data,
             preview_changes,
-            apply_changes
+            apply_changes,
+            run_sql,
+            cancel_sql,
+            close_editor
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

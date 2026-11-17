@@ -30,6 +30,7 @@ impl From<mysql_async::Error> for AppError {
                 let code = match s.code {
                     1045 | 1044 | 1698 => "DB_ACCESS_DENIED",
                     1049 => "DB_UNKNOWN_DATABASE",
+                    1317 => "QUERY_CANCELLED",
                     _ => "DB_SERVER",
                 };
                 AppError { code, message: s.message, server_code: Some(s.code), detail: None }

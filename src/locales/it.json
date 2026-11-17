@@ -107,7 +107,9 @@
     "SSH": "Errore del tunnel SSH.",
     "NO_PRIMARY_KEY": "Questa tabella non ha una chiave primaria, quindi le sue righe non si possono modificare.",
     "ROW_CONFLICT": "Qualcun altro ha modificato o eliminato una riga nel frattempo. Non è stato salvato nulla; ricarica e riprova.",
-    "NO_DDL": "La definizione non è disponibile (privilegio mancante?)."
+    "NO_DDL": "La definizione non è disponibile (privilegio mancante?).",
+    "QUERY_CANCELLED": "La query è stata fermata.",
+    "CONFIRM_RISKY": "Conferma richiesta per un'istruzione distruttiva."
   },
   "tree": {
     "title": "Database",
@@ -159,5 +161,38 @@
     "previewHint": "Queste istruzioni vengono eseguite in un'unica transazione: se una fallisce, non cambia nulla.",
     "cancel": "Annulla",
     "apply": "Esegui"
+  },
+  "editor": {
+    "tab": "Query {n}",
+    "new": "Nuova query",
+    "run": "Esegui",
+    "runHint": "Esegui tutto, o la selezione (⌘/Ctrl+Invio, F9)",
+    "runCurrent": "Corrente",
+    "runCurrentHint": "Esegui l'istruzione sotto il cursore (⌘/Ctrl+Maiusc+Invio)",
+    "cancel": "Ferma",
+    "maxRows": "Righe max",
+    "schema": "Database corrente",
+    "noSchema": "(nessun database)",
+    "history": "Cronologia",
+    "favorites": "Preferiti",
+    "result": "Risultato {n}",
+    "messages": "Messaggi",
+    "rows": "{n} righe",
+    "capped": "visualizzazione limitata, il server ne ha inviate {total}",
+    "elapsed": "{ms} ms",
+    "affected": "{n} righe interessate",
+    "warnings": "{n} avvisi",
+    "nothing": "Niente da eseguire.",
+    "hint": "Scrivi SQL e premi Esegui. Più istruzioni danno più risultati; usa DELIMITER per i corpi delle routine.",
+    "addFavorite": "Salva corrente",
+    "clearHistory": "Svuota",
+    "emptyHistory": "Nessuna query eseguita.",
+    "removeFavorite": "Rimuovi",
+    "emptyFavorites": "Nessun preferito.",
+    "confirmTitle": "Istruzione distruttiva",
+    "confirmText": "Queste istruzioni possono eliminare dati o oggetti. Eseguirle comunque?",
+    "confirmRun": "Esegui comunque",
+    "favoriteName": "Nome del preferito",
+    "save": "Salva"
   }
 }

@@ -107,7 +107,9 @@
     "SSH": "SSH-Tunnel-Fehler.",
     "NO_PRIMARY_KEY": "Diese Tabelle hat keinen Primärschlüssel, daher können ihre Zeilen nicht bearbeitet werden.",
     "ROW_CONFLICT": "Eine Zeile wurde inzwischen von jemand anderem geändert oder gelöscht. Es wurde nichts gespeichert; neu laden und erneut versuchen.",
-    "NO_DDL": "Die Definition ist nicht verfügbar (fehlendes Recht?)."
+    "NO_DDL": "Die Definition ist nicht verfügbar (fehlendes Recht?).",
+    "QUERY_CANCELLED": "Die Abfrage wurde gestoppt.",
+    "CONFIRM_RISKY": "Bestätigung für eine destruktive Anweisung erforderlich."
   },
   "tree": {
     "title": "Datenbanken",
@@ -159,5 +161,38 @@
     "previewHint": "Diese Anweisungen laufen in einer einzigen Transaktion: Schlägt eine fehl, wird nichts geändert.",
     "cancel": "Abbrechen",
     "apply": "Ausführen"
+  },
+  "editor": {
+    "tab": "Abfrage {n}",
+    "new": "Neue Abfrage",
+    "run": "Ausführen",
+    "runHint": "Alles ausführen, oder die Auswahl (⌘/Strg+Eingabe, F9)",
+    "runCurrent": "Aktuelle",
+    "runCurrentHint": "Anweisung unter dem Cursor ausführen (⌘/Strg+Umschalt+Eingabe)",
+    "cancel": "Stoppen",
+    "maxRows": "Max. Zeilen",
+    "schema": "Aktuelle Datenbank",
+    "noSchema": "(keine Datenbank)",
+    "history": "Verlauf",
+    "favorites": "Favoriten",
+    "result": "Ergebnis {n}",
+    "messages": "Meldungen",
+    "rows": "{n} Zeilen",
+    "capped": "Anzeige begrenzt, der Server sandte {total}",
+    "elapsed": "{ms} ms",
+    "affected": "{n} Zeilen betroffen",
+    "warnings": "{n} Warnungen",
+    "nothing": "Nichts auszuführen.",
+    "hint": "SQL eingeben, dann Ausführen. Mehrere Anweisungen ergeben mehrere Ergebnisse; DELIMITER für Routinenrümpfe verwenden.",
+    "addFavorite": "Aktuelle speichern",
+    "clearHistory": "Leeren",
+    "emptyHistory": "Noch keine Abfrage ausgeführt.",
+    "removeFavorite": "Entfernen",
+    "emptyFavorites": "Noch keine Favoriten.",
+    "confirmTitle": "Destruktive Anweisung",
+    "confirmText": "Diese Anweisungen können Daten oder Objekte löschen. Trotzdem ausführen?",
+    "confirmRun": "Trotzdem ausführen",
+    "favoriteName": "Name des Favoriten",
+    "save": "Speichern"
   }
 }

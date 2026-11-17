@@ -140,7 +140,7 @@ pub fn data_sql(schema: &str, table: &str, filter: Option<&str>, order: &[Sort],
     sql + &format!(" LIMIT {limit} OFFSET {offset}")
 }
 
-fn cell(v: Value) -> Option<String> {
+pub fn cell(v: Value) -> Option<String> {
     match v {
         Value::NULL => None,
         Value::Bytes(b) => Some(String::from_utf8(b).unwrap_or_else(|e| {
