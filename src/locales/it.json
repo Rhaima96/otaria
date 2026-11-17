@@ -80,7 +80,7 @@
     "viaSsh": "tramite SSH",
     "notMariadb": "Questo server non è MariaDB. Le funzioni di base funzionano; quelle specifiche di MariaDB sono nascoste.",
     "disconnect": "Disconnetti",
-    "nextPhase": "La navigazione nei database arriverà nella prossima versione."
+    "pickObject": "Scegli una tabella o un altro oggetto nell'albero per aprirlo."
   },
   "errors": {
     "UNKNOWN": "Errore imprevisto.",
@@ -104,6 +104,60 @@
     "SSH_HOST_CHANGED": "Attenzione: la chiave del server SSH è cambiata. Può trattarsi di un attacco. Fidati solo se il server è stato reinstallato.",
     "SSH_AUTH": "Accesso SSH rifiutato: controlla utente, password o chiave.",
     "SSH_KEY": "Impossibile leggere la chiave privata SSH (percorso o passphrase errati?).",
-    "SSH": "Errore del tunnel SSH."
+    "SSH": "Errore del tunnel SSH.",
+    "NO_PRIMARY_KEY": "Questa tabella non ha una chiave primaria, quindi le sue righe non si possono modificare.",
+    "ROW_CONFLICT": "Qualcun altro ha modificato o eliminato una riga nel frattempo. Non è stato salvato nulla; ricarica e riprova.",
+    "NO_DDL": "La definizione non è disponibile (privilegio mancante?)."
+  },
+  "tree": {
+    "title": "Database",
+    "refresh": "Aggiorna",
+    "empty": "Vuoto"
+  },
+  "kinds": {
+    "table": "Tabella",
+    "view": "Vista",
+    "sequence": "Sequenza",
+    "procedure": "Procedura",
+    "function": "Funzione",
+    "trigger": "Trigger",
+    "event": "Evento"
+  },
+  "object": {
+    "data": "Dati",
+    "structure": "Struttura",
+    "ddl": "DDL",
+    "close": "Chiudi"
+  },
+  "structure": {
+    "name": "Colonna",
+    "type": "Tipo",
+    "nullable": "Ammette NULL",
+    "default": "Predefinito",
+    "extra": "Extra",
+    "comment": "Commento",
+    "primaryKey": "Chiave primaria",
+    "yes": "Sì",
+    "no": "No"
+  },
+  "grid": {
+    "default": "(predefinito)",
+    "filter": "Filtro",
+    "filterPlaceholder": "Condizione WHERE, es. id > 100",
+    "reload": "Ricarica",
+    "addRow": "Aggiungi riga",
+    "deleteRows": "Elimina",
+    "setNull": "Imposta NULL",
+    "discard": "Annulla modifiche",
+    "save": "Salva ({n})",
+    "readOnly": "Sola lettura: nessuna chiave primaria",
+    "noRows": "Nessuna riga",
+    "loading": "Caricamento…",
+    "rowCount": "{n} righe caricate",
+    "loadMore": "Carica altre {n}",
+    "previewTitle": "SQL da eseguire",
+    "previewHint": "Queste istruzioni vengono eseguite in un'unica transazione: se una fallisce, non cambia nulla.",
+    "cancel": "Annulla",
+    "apply": "Esegui"
   }
 }

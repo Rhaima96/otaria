@@ -1,0 +1,276 @@
+<script setup lang="ts">
+import { computed, onMounted, ref, shallowRef } from "vue";
+import { useI18n } from "vue-i18n";
+import { AgGridVue } from "ag-grid-vue3";
+import { AllCommunityModule, ModuleRegistry, themeQuartz, type ColDef, type GridApi, type GridReadyEvent, type SortChangedEvent } from "ag-grid-community";
+import { Ban, Filter, Plus, RefreshCw, Save, Trash2, Undo2 } from "lucide-vue-next";
+import ErrorLine from "@/components/ErrorLine.vue";
+import { api, toAppError, type AppError, type Change, type Pairs, type Sort, type TableInfo } from "@/lib/api";
+
+ModuleRegistry.registerModules([AllCommunityModule]);
+
+const props = defineProps<{ sessionId: string; schema: string; table: string; info: TableInfo }>();
+const { t } = useI18n();
+const PAGE = 1000;
+
+/** One grid row. `orig` = values as loaded (null for a new row); `undefined` in `v` = not set (server default). */
+interface GridRow {
+  id: number;
+  v: (string | null | undefined)[];
+  orig: (string | null)[] | null;
+  deleted: boolean;
+}
+
+const columns = ref<string[]>([]);
+const rows = shallowRef<GridRow[]>([]);
+const hasMore = ref(false);
+const filter = ref("");
+const order = ref<Sort[]>([]);
+const error = ref<AppError | null>(null);
+const busy = ref(false);
+/** Bumped on every edit: rows are mutated in place by the grid. */
+const tick = ref(0);
+let nextId = 0;
+let grid: GridApi<GridRow> | null = null;
+
+// Edits need the full primary key in the result; tables without one are read-only (like HeidiSQL).
+const pkIndex = computed(() => props.info.primaryKey.map((k) => columns.value.indexOf(k)));
+const editable = computed(() => pkIndex.value.length > 0 && !pkIndex.value.includes(-1));
+const BINARY = /blob|binary|bit|geometry|point|linestring|polygon/i;
+const readOnlyCol = (name: string) => {
+  const c = props.info.columns.find((c) => c.name === name);
+  return !c || BINARY.test(c.dataType) || /GENERATED|PERSISTENT/i.test(c.extra);
+};
+
+async function load(append = false) {
+  busy.value = true;
+  error.value = null;
+  try {
+    // Server-side sort, with the primary key as tie-breaker so pages are stable.
+    const pk = props.info.primaryKey.filter((k) => !order.value.some((s) => s.column === k)).map((column) => ({ column, desc: false }));
+    const res = await api.tableData(props.sessionId, props.schema, props.table, {
+      filter: filter.value,
+      order: [...order.value, ...pk],
+      offset: append ? rows.value.filter((r) => r.orig).length : 0,
+      limit: PAGE,
+    });
+    columns.value = res.columns;
+    const loaded = res.rows.map((r) => ({ id: nextId++, v: [...r], orig: r, deleted: false }));
+    rows.value = append ? [...rows.value, ...loaded] : loaded;
+    hasMore.value = res.rows.length === PAGE;
+    tick.value++;
+  } catch (e) {
+    error.value = toAppError(e);
+  } finally {
+    busy.value = false;
+  }
+}
+
+const keyOf = (r: GridRow): Pairs => pkIndex.value.map((i) => [columns.value[i], r.orig![i]]);
+
+const changes = computed<Change[]>(() => {
+  void tick.value;
+  return rows.value.flatMap((r): Change[] => {
+    if (!r.orig) {
+      if (r.deleted) return [];
+      return [{ kind: "insert", values: r.v.flatMap((v, i): Pairs => (v === undefined ? [] : [[columns.value[i], v]])) }];
+    }
+    if (r.deleted) return [{ kind: "delete", key: keyOf(r) }];
+    const set = r.v.flatMap((v, i): Pairs => (v !== r.orig![i] && v !== undefined ? [[columns.value[i], v]] : []));
+    return set.length ? [{ kind: "update", key: keyOf(r), set }] : [];
+  });
+});
+const dirty = computed(() => changes.value.length > 0);
+
+const colDefs = computed<ColDef<GridRow>[]>(() =>
+  columns.value.map((name, i) => ({
+    colId: String(i),
+    headerName: name,
+    headerTooltip: props.info.columns.find((c) => c.name === name)?.columnType,
+    valueGetter: (p) => p.data?.v[i],
+    valueSetter: (p) => {
+      p.data.v[i] = p.newValue;
+      return true;
+    },
+    // The editor gives "" for an empty cell; NULL is set with its own button.
+    valueParser: (p) => p.newValue ?? "",
+    valueFormatter: (p) => (p.value === null ? "NULL" : p.value === undefined ? t("grid.default") : String(p.value)),
+    editable: (p) => editable.value && !readOnlyCol(name) && !p.data?.deleted,
+    // Rows come sorted from the server: a constant comparator keeps that order on the client.
+    sortable: !dirty.value,
+    comparator: () => 0,
+    cellClassRules: {
+      "text-muted-foreground italic": (p) => p.value == null,
+      "bg-warning/15!": (p) => !!p.data?.orig && p.data.v[i] !== p.data.orig[i] && p.data.v[i] !== undefined,
+    },
+  })),
+);
+
+const theme = themeQuartz.withParams({
+  backgroundColor: "var(--background)",
+  foregroundColor: "var(--foreground)",
+  borderColor: "var(--border)",
+  chromeBackgroundColor: "var(--sidebar)",
+  accentColor: "var(--primary)",
+  selectedRowBackgroundColor: "var(--selection)",
+  fontFamily: "var(--font-mono)",
+  headerFontFamily: "var(--font-sans)",
+  fontSize: 12,
+  rowHeight: 24,
+  headerHeight: 28,
+  wrapperBorderRadius: 0,
+  borderRadius: 2,
+});
+
+function onReady(e: GridReadyEvent<GridRow>) {
+  grid = e.api;
+}
+
+function onSort(e: SortChangedEvent) {
+  order.value = e.api
+    .getColumnState()
+    .filter((c) => c.sort)
+    .sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0))
+    .map((c) => ({ column: columns.value[Number(c.colId)], desc: c.sort === "desc" }));
+  load();
+}
+
+function refreshStyles() {
+  tick.value++;
+  grid?.redrawRows();
+}
+
+function addRow() {
+  const r: GridRow = { id: nextId++, v: columns.value.map(() => undefined), orig: null, deleted: false };
+  rows.value = [...rows.value, r];
+  tick.value++;
+  setTimeout(() => grid?.ensureIndexVisible(rows.value.length - 1));
+}
+
+function deleteSelected() {
+  const sel = grid?.getSelectedRows() ?? [];
+  const drop = new Set(sel.filter((r) => !r.orig));
+  for (const r of sel) r.deleted = !r.deleted; // toggle: a second click restores the row
+  rows.value = rows.value.filter((r) => !drop.has(r));
+  refreshStyles();
+}
+
+function setNull() {
+  const cell = grid?.getFocusedCell();
+  const node = cell && grid?.getDisplayedRowAtIndex(cell.rowIndex);
+  if (cell && node?.data && editable.value && !readOnlyCol(columns.value[Number(cell.column.getColId())]) && !node.data.deleted) {
+    node.setDataValue(cell.column, null);
+  }
+}
+
+function discard() {
+  rows.value = rows.value.filter((r) => r.orig).map((r) => ({ ...r, v: [...r.orig!], deleted: false }));
+  tick.value++;
+}
+
+// Save: show the generated SQL, then run it in one transaction.
+const dialog = ref<HTMLDialogElement | null>(null);
+const preview = ref<string[]>([]);
+const saveError = ref<AppError | null>(null);
+
+async function openPreview() {
+  grid?.stopEditing();
+  saveError.value = null;
+  try {
+    preview.value = await api.previewChanges(props.schema, props.table, changes.value);
+    dialog.value?.showModal();
+  } catch (e) {
+    error.value = toAppError(e);
+  }
+}
+
+async function apply() {
+  busy.value = true;
+  saveError.value = null;
+  try {
+    await api.applyChanges(props.sessionId, props.schema, props.table, changes.value);
+    dialog.value?.close();
+    await load();
+  } catch (e) {
+    saveError.value = toAppError(e);
+  } finally {
+    busy.value = false;
+  }
+}
+
+onMounted(load);
+const btn = "flex h-6 items-center gap-1 rounded-sm px-2 hover:bg-secondary disabled:opacity-40 disabled:hover:bg-transparent";
+</script>
+
+<template>
+  <div class="flex flex-col">
+    <div class="flex h-9 shrink-0 items-center gap-1 border-b px-2">
+      <form class="flex min-w-0 flex-1 items-center gap-1" @submit.prevent="load()">
+        <Filter class="size-3.5 shrink-0 text-muted-foreground" />
+        <input
+          v-model="filter"
+          :disabled="dirty"
+          :placeholder="t('grid.filterPlaceholder')"
+          :aria-label="t('grid.filter')"
+          class="h-6 min-w-0 flex-1 rounded-sm border bg-background px-2 font-mono text-xs disabled:opacity-50"
+        />
+        <button type="submit" :disabled="dirty || busy" :class="btn" :title="t('grid.reload')">
+          <RefreshCw class="size-3.5" /><span class="sr-only">{{ t("grid.reload") }}</span>
+        </button>
+      </form>
+      <template v-if="editable">
+        <span class="mx-1 h-4 border-l" />
+        <button :class="btn" :disabled="busy" @click="addRow"><Plus class="size-3.5" />{{ t("grid.addRow") }}</button>
+        <button :class="btn" :disabled="busy" @click="deleteSelected"><Trash2 class="size-3.5" />{{ t("grid.deleteRows") }}</button>
+        <button :class="btn" :disabled="busy" @click="setNull"><Ban class="size-3.5" />{{ t("grid.setNull") }}</button>
+        <span class="mx-1 h-4 border-l" />
+        <button :class="btn" :disabled="!dirty || busy" @click="discard"><Undo2 class="size-3.5" />{{ t("grid.discard") }}</button>
+        <button
+          :disabled="!dirty || busy"
+          class="flex h-6 items-center gap-1 rounded-sm bg-primary px-2 font-semibold text-primary-foreground disabled:opacity-40"
+          @click="openPreview"
+        >
+          <Save class="size-3.5" />{{ t("grid.save", { n: changes.length }) }}
+        </button>
+      </template>
+      <span v-else class="ml-1 text-muted-foreground">{{ t("grid.readOnly") }}</span>
+    </div>
+
+    <ErrorLine v-if="error" :error="error" class="m-2" />
+
+    <AgGridVue
+      class="min-h-0 flex-1"
+      :theme="theme"
+      :row-data="rows"
+      :column-defs="colDefs"
+      :get-row-id="(p) => String(p.data.id)"
+      :row-selection="{ mode: 'multiRow', checkboxes: false, headerCheckbox: false, enableClickSelection: true }"
+      :row-class-rules="{ 'line-through opacity-50': (p) => !!p.data?.deleted, 'bg-success/10!': (p) => !!p.data && !p.data.orig }"
+      :default-col-def="{ resizable: true, minWidth: 60, maxWidth: 480 }"
+      :locale-text="{ noRowsToShow: t('grid.noRows'), loadingOoo: t('grid.loading') }"
+      :stop-editing-when-cells-lose-focus="true"
+      :loading="busy"
+      @grid-ready="onReady"
+      @cell-value-changed="refreshStyles"
+      @sort-changed="onSort"
+    />
+
+    <div class="flex h-7 shrink-0 items-center gap-2 border-t px-2 text-muted-foreground">
+      <span>{{ t("grid.rowCount", { n: rows.filter((r) => r.orig).length }) }}</span>
+      <button v-if="hasMore" :class="btn" :disabled="busy" class="text-foreground" @click="load(true)">{{ t("grid.loadMore", { n: PAGE }) }}</button>
+    </div>
+
+    <dialog ref="dialog" class="m-auto w-[min(56rem,90vw)] rounded-lg border bg-popover p-0 text-popover-foreground backdrop:bg-black/40">
+      <div class="border-b px-4 py-2 font-semibold">{{ t("grid.previewTitle") }}</div>
+      <pre class="max-h-[50vh] overflow-auto p-4 font-mono text-xs whitespace-pre-wrap select-text">{{ preview.join("\n") }}</pre>
+      <p class="px-4 text-muted-foreground">{{ t("grid.previewHint") }}</p>
+      <ErrorLine v-if="saveError" :error="saveError" class="mx-4 mt-2" />
+      <div class="flex justify-end gap-2 px-4 py-3">
+        <button class="h-7 rounded-sm border px-3 font-medium hover:bg-secondary" @click="dialog?.close()">{{ t("grid.cancel") }}</button>
+        <button :disabled="busy" class="h-7 rounded-sm bg-primary px-3 font-semibold text-primary-foreground disabled:opacity-50" @click="apply">
+          {{ t("grid.apply") }}
+        </button>
+      </div>
+    </dialog>
+  </div>
+</template>

@@ -80,7 +80,7 @@
     "viaSsh": "via SSH",
     "notMariadb": "Ce serveur n'est pas MariaDB. Les fonctions de base marchent ; les fonctions propres à MariaDB sont masquées.",
     "disconnect": "Se déconnecter",
-    "nextPhase": "La navigation dans les bases arrive dans la prochaine version."
+    "pickObject": "Choisissez une table ou un autre objet dans l'arbre pour l'ouvrir."
   },
   "errors": {
     "UNKNOWN": "Erreur inattendue.",
@@ -104,6 +104,60 @@
     "SSH_HOST_CHANGED": "Attention : la clé du serveur SSH a changé depuis la dernière fois. Ce peut être une attaque. N'approuvez que si le serveur a été réinstallé.",
     "SSH_AUTH": "Connexion SSH refusée : vérifiez l'utilisateur, le mot de passe ou la clé.",
     "SSH_KEY": "Impossible de lire la clé privée SSH (chemin ou phrase secrète incorrects ?).",
-    "SSH": "Erreur du tunnel SSH."
+    "SSH": "Erreur du tunnel SSH.",
+    "NO_PRIMARY_KEY": "Cette table n'a pas de clé primaire : ses lignes ne peuvent pas être modifiées.",
+    "ROW_CONFLICT": "Une ligne a été modifiée ou supprimée par quelqu'un d'autre entre-temps. Rien n'a été enregistré ; rechargez et réessayez.",
+    "NO_DDL": "La définition n'est pas disponible (privilège manquant ?)."
+  },
+  "tree": {
+    "title": "Bases de données",
+    "refresh": "Actualiser",
+    "empty": "Vide"
+  },
+  "kinds": {
+    "table": "Table",
+    "view": "Vue",
+    "sequence": "Séquence",
+    "procedure": "Procédure",
+    "function": "Fonction",
+    "trigger": "Trigger",
+    "event": "Événement"
+  },
+  "object": {
+    "data": "Données",
+    "structure": "Structure",
+    "ddl": "DDL",
+    "close": "Fermer"
+  },
+  "structure": {
+    "name": "Colonne",
+    "type": "Type",
+    "nullable": "NULL autorisé",
+    "default": "Défaut",
+    "extra": "Extra",
+    "comment": "Commentaire",
+    "primaryKey": "Clé primaire",
+    "yes": "Oui",
+    "no": "Non"
+  },
+  "grid": {
+    "default": "(défaut)",
+    "filter": "Filtre",
+    "filterPlaceholder": "Condition WHERE, ex. id > 100",
+    "reload": "Recharger",
+    "addRow": "Ajouter une ligne",
+    "deleteRows": "Supprimer",
+    "setNull": "Mettre à NULL",
+    "discard": "Annuler les modifs",
+    "save": "Enregistrer ({n})",
+    "readOnly": "Lecture seule : pas de clé primaire",
+    "noRows": "Aucune ligne",
+    "loading": "Chargement…",
+    "rowCount": "{n} lignes chargées",
+    "loadMore": "Charger {n} de plus",
+    "previewTitle": "SQL à exécuter",
+    "previewHint": "Ces requêtes s'exécutent dans une seule transaction : si l'une échoue, rien n'est modifié.",
+    "cancel": "Annuler",
+    "apply": "Exécuter"
   }
 }

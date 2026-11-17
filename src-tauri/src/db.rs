@@ -64,6 +64,8 @@ fn opts(profile: &Profile, password: Option<&str>, tunnel: Option<&Tunnel>, mode
         .socket(socket)
         // Without this, mysql_async silently switches localhost connections to the server's socket.
         .prefer_socket(false)
+        // Affected rows = matched rows, so a grid UPDATE that changes nothing still counts as 1 (edit.rs checks it).
+        .client_found_rows(true)
         .user(Some(profile.user.clone()))
         .pass(password.map(str::to_string))
         .db_name(profile.database.clone().filter(|d| !d.is_empty()))

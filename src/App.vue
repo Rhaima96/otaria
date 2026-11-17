@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { Monitor, Moon, Plug, Sun, X } from "lucide-vue-next";
 import mark from "@/assets/mark.svg";
@@ -14,7 +13,6 @@ import { cn } from "@/lib/utils";
 const { t, locale } = useI18n();
 const { preference } = useTheme();
 const { sessions, activeTab, closeSession } = useSessions();
-const active = computed(() => sessions.value.find((s) => s.sessionId === activeTab.value));
 
 const themes: { value: ThemePreference; icon: typeof Sun }[] = [
   { value: "system", icon: Monitor },
@@ -76,7 +74,7 @@ const tab = "flex h-full items-center gap-1.5 border-r px-3 hover:bg-secondary";
 
     <main class="min-h-0 flex-1">
       <ConnectionManager v-show="activeTab === 'manager'" />
-      <SessionView v-if="active" :key="active.sessionId" :session="active" />
+      <SessionView v-for="s in sessions" v-show="activeTab === s.sessionId" :key="s.sessionId" :session="s" />
     </main>
   </div>
 </template>

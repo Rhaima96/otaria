@@ -80,7 +80,7 @@
     "viaSsh": "through SSH",
     "notMariadb": "This server is not MariaDB. Basic features work; MariaDB-specific features are hidden.",
     "disconnect": "Disconnect",
-    "nextPhase": "Database browsing arrives in the next version."
+    "pickObject": "Pick a table or another object in the tree to open it."
   },
   "errors": {
     "UNKNOWN": "Unexpected error.",
@@ -104,6 +104,60 @@
     "SSH_HOST_CHANGED": "Warning: the SSH server's key changed since last time. This can be an attack. Trust it only if the server was reinstalled.",
     "SSH_AUTH": "SSH login refused: check the user, password or key.",
     "SSH_KEY": "Cannot read the SSH private key (wrong path or passphrase?).",
-    "SSH": "SSH tunnel error."
+    "SSH": "SSH tunnel error.",
+    "NO_PRIMARY_KEY": "This table has no primary key, so its rows cannot be edited.",
+    "ROW_CONFLICT": "A row was changed or deleted by someone else meanwhile. Nothing was saved; reload and try again.",
+    "NO_DDL": "The definition is not available (missing privilege?)."
+  },
+  "tree": {
+    "title": "Databases",
+    "refresh": "Refresh",
+    "empty": "Empty"
+  },
+  "kinds": {
+    "table": "Table",
+    "view": "View",
+    "sequence": "Sequence",
+    "procedure": "Procedure",
+    "function": "Function",
+    "trigger": "Trigger",
+    "event": "Event"
+  },
+  "object": {
+    "data": "Data",
+    "structure": "Structure",
+    "ddl": "DDL",
+    "close": "Close"
+  },
+  "structure": {
+    "name": "Column",
+    "type": "Type",
+    "nullable": "Nullable",
+    "default": "Default",
+    "extra": "Extra",
+    "comment": "Comment",
+    "primaryKey": "Primary key",
+    "yes": "Yes",
+    "no": "No"
+  },
+  "grid": {
+    "default": "(default)",
+    "filter": "Filter",
+    "filterPlaceholder": "WHERE condition, e.g. id > 100",
+    "reload": "Reload",
+    "addRow": "Add row",
+    "deleteRows": "Delete",
+    "setNull": "Set NULL",
+    "discard": "Discard",
+    "save": "Save ({n})",
+    "readOnly": "Read-only: no primary key",
+    "noRows": "No rows",
+    "loading": "Loading…",
+    "rowCount": "{n} rows loaded",
+    "loadMore": "Load {n} more",
+    "previewTitle": "SQL to run",
+    "previewHint": "These statements run in one transaction: if one fails, nothing is changed.",
+    "cancel": "Cancel",
+    "apply": "Run"
   }
 }

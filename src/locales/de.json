@@ -80,7 +80,7 @@
     "viaSsh": "über SSH",
     "notMariadb": "Dieser Server ist kein MariaDB. Grundfunktionen gehen; MariaDB-spezifische Funktionen sind ausgeblendet.",
     "disconnect": "Trennen",
-    "nextPhase": "Das Durchsuchen der Datenbanken kommt in der nächsten Version."
+    "pickObject": "Wählen Sie eine Tabelle oder ein anderes Objekt im Baum, um es zu öffnen."
   },
   "errors": {
     "UNKNOWN": "Unerwarteter Fehler.",
@@ -104,6 +104,60 @@
     "SSH_HOST_CHANGED": "Achtung: Der Schlüssel des SSH-Servers hat sich geändert. Das kann ein Angriff sein. Nur vertrauen, wenn der Server neu installiert wurde.",
     "SSH_AUTH": "SSH-Anmeldung abgelehnt: Benutzer, Passwort oder Schlüssel prüfen.",
     "SSH_KEY": "SSH-Schlüssel nicht lesbar (falscher Pfad oder Passphrase?).",
-    "SSH": "SSH-Tunnel-Fehler."
+    "SSH": "SSH-Tunnel-Fehler.",
+    "NO_PRIMARY_KEY": "Diese Tabelle hat keinen Primärschlüssel, daher können ihre Zeilen nicht bearbeitet werden.",
+    "ROW_CONFLICT": "Eine Zeile wurde inzwischen von jemand anderem geändert oder gelöscht. Es wurde nichts gespeichert; neu laden und erneut versuchen.",
+    "NO_DDL": "Die Definition ist nicht verfügbar (fehlendes Recht?)."
+  },
+  "tree": {
+    "title": "Datenbanken",
+    "refresh": "Aktualisieren",
+    "empty": "Leer"
+  },
+  "kinds": {
+    "table": "Tabelle",
+    "view": "View",
+    "sequence": "Sequenz",
+    "procedure": "Prozedur",
+    "function": "Funktion",
+    "trigger": "Trigger",
+    "event": "Event"
+  },
+  "object": {
+    "data": "Daten",
+    "structure": "Struktur",
+    "ddl": "DDL",
+    "close": "Schließen"
+  },
+  "structure": {
+    "name": "Spalte",
+    "type": "Typ",
+    "nullable": "NULL erlaubt",
+    "default": "Standard",
+    "extra": "Extra",
+    "comment": "Kommentar",
+    "primaryKey": "Primärschlüssel",
+    "yes": "Ja",
+    "no": "Nein"
+  },
+  "grid": {
+    "default": "(Standard)",
+    "filter": "Filter",
+    "filterPlaceholder": "WHERE-Bedingung, z. B. id > 100",
+    "reload": "Neu laden",
+    "addRow": "Zeile hinzufügen",
+    "deleteRows": "Löschen",
+    "setNull": "Auf NULL setzen",
+    "discard": "Verwerfen",
+    "save": "Speichern ({n})",
+    "readOnly": "Schreibgeschützt: kein Primärschlüssel",
+    "noRows": "Keine Zeilen",
+    "loading": "Wird geladen…",
+    "rowCount": "{n} Zeilen geladen",
+    "loadMore": "{n} weitere laden",
+    "previewTitle": "Auszuführendes SQL",
+    "previewHint": "Diese Anweisungen laufen in einer einzigen Transaktion: Schlägt eine fehl, wird nichts geändert.",
+    "cancel": "Abbrechen",
+    "apply": "Ausführen"
   }
 }

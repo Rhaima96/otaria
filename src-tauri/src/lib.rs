@@ -1,4 +1,6 @@
+mod browse;
 mod db;
+mod edit;
 mod error;
 mod profiles;
 mod ssh;
@@ -131,6 +133,66 @@ async fn disconnect(state: State<'_, AppState>, session_id: String) -> AppResult
     }
 }
 
+/// Clone the session's pool so the sessions lock is not held during queries.
+async fn pool(state: &AppState, session_id: &str) -> AppResult<mysql_async::Pool> {
+    match state.sessions.lock().await.get(session_id) {
+        Some(s) => Ok(s.pool.clone()),
+        None => Err(AppError::new("SESSION_NOT_FOUND", session_id)),
+    }
+}
+
+#[tauri::command]
+async fn list_schemas(state: State<'_, AppState>, session_id: String) -> AppResult<Vec<String>> {
+    browse::schemas(&pool(&state, &session_id).await?).await
+}
+
+#[tauri::command]
+async fn list_objects(state: State<'_, AppState>, session_id: String, schema: String) -> AppResult<Vec<browse::DbObject>> {
+    browse::objects(&pool(&state, &session_id).await?, &schema).await
+}
+
+#[tauri::command]
+async fn table_info(state: State<'_, AppState>, session_id: String, schema: String, table: String) -> AppResult<browse::TableInfo> {
+    browse::table_info(&pool(&state, &session_id).await?, &schema, &table).await
+}
+
+#[tauri::command]
+async fn object_ddl(state: State<'_, AppState>, session_id: String, schema: String, name: String, kind: String) -> AppResult<String> {
+    browse::ddl(&pool(&state, &session_id).await?, &schema, &name, &kind).await
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn table_data(
+    state: State<'_, AppState>,
+    session_id: String,
+    schema: String,
+    table: String,
+    filter: Option<String>,
+    order: Vec<browse::Sort>,
+    offset: u64,
+    limit: u64,
+) -> AppResult<browse::Rows> {
+    let sql = browse::data_sql(&schema, &table, filter.as_deref(), &order, offset, limit);
+    browse::data(&pool(&state, &session_id).await?, &sql).await
+}
+
+#[tauri::command]
+fn preview_changes(schema: String, table: String, changes: Vec<edit::Change>) -> AppResult<Vec<String>> {
+    edit::preview(&schema, &table, &changes)
+}
+
+#[tauri::command]
+async fn apply_changes(
+    state: State<'_, AppState>,
+    session_id: String,
+    schema: String,
+    table: String,
+    changes: Vec<edit::Change>,
+) -> AppResult<u64> {
+    edit::apply(&pool(&state, &session_id).await?, &schema, &table, &changes).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -146,7 +208,14 @@ pub fn run() {
             delete_profile,
             test_connection,
             connect,
-            disconnect
+            disconnect,
+            list_schemas,
+            list_objects,
+            table_info,
+            object_ddl,
+            table_data,
+            preview_changes,
+            apply_changes
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
