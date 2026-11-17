@@ -17,7 +17,8 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith(".json") && f !== "
 }
 
 // Words allowed as literal text: brand names and symbols, never translated.
-const ALLOWED = /^(Otaria|for MariaDB|MariaDB|[✓⚠✕·—\s\d.:]+)$/;
+// SQL keywords shown as-is (NULL) are never translated either.
+const ALLOWED = /^(Otaria|for MariaDB|MariaDB|NULL|[✓⚠✕·—\s\d.:]+)$/;
 const walk = (d) => readdirSync(d).flatMap((f) => (statSync(join(d, f)).isDirectory() ? walk(join(d, f)) : [join(d, f)]));
 for (const file of walk("src").filter((f) => f.endsWith(".vue") && !f.includes("components/ui/"))) {
   const tpl = readFileSync(file, "utf8").match(/<template>([\s\S]*)<\/template>/)?.[1] ?? "";

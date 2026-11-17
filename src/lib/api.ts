@@ -126,6 +126,67 @@ export interface SeqState {
   cycleCount: string;
 }
 
+// Table designer. `original` = name as loaded (null = new), so a rename is not a drop + add.
+export type DefaultValue =
+  | { kind: "none" }
+  | { kind: "null" }
+  | { kind: "literal"; value: string }
+  | { kind: "expr"; value: string };
+
+export interface ColumnDef {
+  original: string | null;
+  name: string;
+  colType: string;
+  nullable: boolean;
+  default: DefaultValue;
+  generated: { expr: string; stored: boolean } | null;
+  autoIncrement: boolean;
+  onUpdate: string | null;
+  invisible: boolean;
+  collation: string | null;
+  check: string | null;
+  comment: string;
+}
+
+export interface IndexDef {
+  original: string | null;
+  name: string;
+  kind: "PRIMARY" | "UNIQUE" | "INDEX" | "FULLTEXT" | "SPATIAL";
+  columns: { name: string; length: number | null }[];
+  comment: string;
+}
+
+export interface FkDef {
+  original: string | null;
+  name: string;
+  columns: string[];
+  refSchema: string;
+  refTable: string;
+  refColumns: string[];
+  onUpdate: string;
+  onDelete: string;
+}
+
+export interface CheckDef {
+  original: string | null;
+  name: string;
+  clause: string;
+}
+
+export interface TableDef {
+  name: string;
+  engine: string;
+  collation: string;
+  comment: string;
+  columns: ColumnDef[];
+  indexes: IndexDef[];
+  fks: FkDef[];
+  checks: CheckDef[];
+}
+
+/** instant → online (INPLACE, LOCK=NONE) → default (server's choice, may copy). */
+export type Algorithm = "instant" | "online" | "default";
+
 export interface StmtResult {
   sql: string;
   /** Empty = no result set (INSERT, SET…). */
@@ -179,6 +240,15 @@ export const api = {
     invoke<void>("sequence_apply", { sessionId, schema, name, opts, create }),
   sequenceSetval: (sessionId: string, schema: string, name: string, value: string) =>
     invoke<string | null>("sequence_setval", { sessionId, schema, name, value }),
+  tableDef: (sessionId: string, schema: string, table: string) => invoke<TableDef>("table_def", { sessionId, schema, table }),
+  listEngines: (sessionId: string) => invoke<string[]>("list_engines", { sessionId }),
+  designerSql: (schema: string, old: TableDef | null, next: TableDef, algorithm: Algorithm) =>
+    invoke<string[]>("designer_sql", { schema, old, new: next, algorithm }),
+  designerApply: (sessionId: string, schema: string, old: TableDef | null, next: TableDef, algorithm: Algorithm) =>
+    invoke<void>("designer_apply", { sessionId, schema, old, new: next, algorithm }),
+  dropSql: (schema: string, name: string, kind: ObjectKind, truncate: boolean) => invoke<string>("drop_sql", { schema, name, kind, truncate }),
+  dropObject: (sessionId: string, schema: string, name: string, kind: ObjectKind, truncate: boolean) =>
+    invoke<void>("drop_object", { sessionId, schema, name, kind, truncate }),
   runSql: (sessionId: string, editorId: string, r: RunRequest) => invoke<RunOutput>("run_sql", { sessionId, editorId, ...r }),
   cancelSql: (sessionId: string, editorId: string) => invoke<void>("cancel_sql", { sessionId, editorId }),
   closeEditor: (sessionId: string, editorId: string) => invoke<void>("close_editor", { sessionId, editorId }),

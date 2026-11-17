@@ -1,5 +1,6 @@
 mod browse;
 mod db;
+mod designer;
 mod edit;
 mod error;
 mod profiles;
@@ -185,6 +186,58 @@ async fn table_data(
 }
 
 #[tauri::command]
+async fn table_def(state: State<'_, AppState>, session_id: String, schema: String, table: String) -> AppResult<designer::TableDef> {
+    let mariadb = match state.sessions.lock().await.get(&session_id) {
+        Some(s) => s.info.is_mariadb,
+        None => return Err(AppError::new("SESSION_NOT_FOUND", session_id)),
+    };
+    designer::load(&pool(&state, &session_id).await?, &schema, &table, mariadb).await
+}
+
+#[tauri::command]
+async fn list_engines(state: State<'_, AppState>, session_id: String) -> AppResult<Vec<String>> {
+    designer::engines(&pool(&state, &session_id).await?).await
+}
+
+/// Statements for the designer: CREATE TABLE when `old` is None, else RENAME + one ALTER TABLE.
+fn designer_stmts(schema: &str, old: Option<&designer::TableDef>, new: &designer::TableDef, algorithm: designer::Algorithm) -> AppResult<Vec<String>> {
+    match old {
+        None => Ok(vec![designer::create_sql(schema, new)?]),
+        Some(old) => designer::alter_sql(schema, old, new, algorithm),
+    }
+}
+
+#[tauri::command]
+fn designer_sql(schema: String, old: Option<designer::TableDef>, new: designer::TableDef, algorithm: designer::Algorithm) -> AppResult<Vec<String>> {
+    designer_stmts(&schema, old.as_ref(), &new, algorithm)
+}
+
+/// Rebuilt from the same inputs as the preview, so what runs is what was shown.
+#[tauri::command]
+async fn designer_apply(
+    state: State<'_, AppState>,
+    session_id: String,
+    schema: String,
+    old: Option<designer::TableDef>,
+    new: designer::TableDef,
+    algorithm: designer::Algorithm,
+) -> AppResult<()> {
+    let stmts = designer_stmts(&schema, old.as_ref(), &new, algorithm)?;
+    designer::run(&pool(&state, &session_id).await?, &stmts).await
+}
+
+#[tauri::command]
+fn drop_sql(schema: String, name: String, kind: String, truncate: bool) -> AppResult<String> {
+    designer::drop_sql(&schema, &name, &kind, truncate)
+}
+
+#[tauri::command]
+async fn drop_object(state: State<'_, AppState>, session_id: String, schema: String, name: String, kind: String, truncate: bool) -> AppResult<()> {
+    let sql = designer::drop_sql(&schema, &name, &kind, truncate)?;
+    designer::run(&pool(&state, &session_id).await?, &[sql]).await
+}
+
+#[tauri::command]
 async fn row_history(state: State<'_, AppState>, session_id: String, schema: String, table: String, key: edit::Pairs) -> AppResult<browse::History> {
     browse::row_history(&pool(&state, &session_id).await?, &schema, &table, &key).await
 }
@@ -323,7 +376,13 @@ pub fn run() {
             sequence_state,
             sequence_ddl,
             sequence_apply,
-            sequence_setval
+            sequence_setval,
+            table_def,
+            list_engines,
+            designer_sql,
+            designer_apply,
+            drop_sql,
+            drop_object
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

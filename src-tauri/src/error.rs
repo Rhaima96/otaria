@@ -31,6 +31,8 @@ impl From<mysql_async::Error> for AppError {
                     1045 | 1044 | 1698 => "DB_ACCESS_DENIED",
                     1049 => "DB_UNKNOWN_DATABASE",
                     1317 => "QUERY_CANCELLED",
+                    // ALGORITHM=INSTANT / LOCK=NONE not possible for this change.
+                    1845 | 1846 => "ALTER_ALGORITHM",
                     _ => "DB_SERVER",
                 };
                 AppError { code, message: s.message, server_code: Some(s.code), detail: None }

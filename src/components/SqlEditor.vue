@@ -11,7 +11,8 @@ import { theme } from "@/lib/grid";
 import { monaco, sources } from "@/lib/monaco";
 import { cn } from "@/lib/utils";
 
-const props = defineProps<{ sessionId: string; profileId: string; editorId: string; schema: string | null }>();
+/** `initialSql`: script to start with (object edit, template). */
+const props = defineProps<{ sessionId: string; profileId: string; editorId: string; schema: string | null; initialSql?: string }>();
 const { t, locale } = useI18n();
 const lib = useQueryLibrary(props.profileId);
 
@@ -45,6 +46,7 @@ const completion = {
 
 onMounted(() => {
   editor = monaco.editor.create(host.value!, {
+    value: props.initialSql ?? "",
     language: "mysql",
     theme: "otaria",
     automaticLayout: true,

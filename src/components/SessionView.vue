@@ -1,26 +1,30 @@
 <script setup lang="ts">
 import { defineAsyncComponent, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { FileCode, Info, ListPlus, Lock, LockOpen, Plus, TriangleAlert, X } from "lucide-vue-next";
+import { FileCode, Info, ListPlus, Lock, LockOpen, Plus, TableProperties, TriangleAlert, X } from "lucide-vue-next";
 import ObjectTree from "@/components/ObjectTree.vue";
 import ObjectView from "@/components/ObjectView.vue";
 // Monaco is heavy: load the editor on first use.
 const SqlEditor = defineAsyncComponent(() => import("@/components/SqlEditor.vue"));
 import SequenceView from "@/components/SequenceView.vue";
-import type { DbObject, OpenedSession } from "@/lib/api";
+import TableDesigner from "@/components/TableDesigner.vue";
+import type { DbObject, ObjectKind, OpenedSession } from "@/lib/api";
+import { newScript } from "@/lib/templates";
 import { objectIcon } from "@/lib/objects";
 import { cn } from "@/lib/utils";
 
 const props = defineProps<{ session: OpenedSession }>();
 const { t } = useI18n();
 
-/** An object tab, an SQL editor tab (obj = null), or a "new sequence" form (create). */
+/** An object tab, an SQL editor tab (obj = null), or a "new table / sequence" form (create). */
 interface Tab {
   id: string;
   schema: string | null;
   obj: DbObject | null;
   n?: number;
-  create?: boolean;
+  create?: "table" | "sequence";
+  /** Editor tabs: script to start with. */
+  sql?: string;
 }
 const tabs = ref<Tab[]>([]);
 /** null = server info tab. */
@@ -34,25 +38,39 @@ function open(schema: string, obj: DbObject) {
 
 const tree = ref<InstanceType<typeof ObjectTree> | null>(null);
 
-function newSequence(schema: string) {
-  const id = crypto.randomUUID();
-  tabs.value.push({ id, schema, obj: null, create: true });
-  active.value = id;
+/** "New…" from the tree: table and sequence have a form, the other kinds start from a template in the editor. */
+function create(schema: string, kind: ObjectKind) {
+  if (kind === "table" || kind === "sequence") {
+    const id = crypto.randomUUID();
+    tabs.value.push({ id, schema, obj: null, create: kind });
+    active.value = id;
+  } else newQuery(schema, newScript(kind));
 }
 
-/** The form becomes the new sequence's tab. */
-function created(id: string, schema: string, name: string) {
+/** The form becomes the new object's tab. */
+function created(id: string, schema: string, kind: "table" | "sequence", name: string) {
   close(id);
-  open(schema, { name, kind: "sequence", versioned: false });
+  open(schema, { name, kind, versioned: false });
+  tree.value?.load();
+}
+
+function renamed(x: Tab, name: string) {
+  x.obj = { ...x.obj!, name };
+  x.id = `${x.schema}.${x.obj.kind}.${name}`;
+  active.value = x.id;
+  tree.value?.load();
+}
+
+function dropped(id: string) {
+  close(id);
   tree.value?.load();
 }
 
 let queries = 0;
-function newQuery() {
-  // Start on the schema of the tab in front, else the profile's default database.
-  const schema = tabs.value.find((x) => x.id === active.value)?.schema ?? props.session.profile.database;
+// Start on the schema of the tab in front, else the profile's default database.
+function newQuery(schema = tabs.value.find((x) => x.id === active.value)?.schema ?? props.session.profile.database, sql?: string) {
   const id = crypto.randomUUID();
-  tabs.value.push({ id, schema, obj: null, n: ++queries });
+  tabs.value.push({ id, schema, obj: null, n: ++queries, sql });
   active.value = id;
 }
 
@@ -73,7 +91,7 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
     </div>
     <div class="flex min-h-0 flex-1">
       <aside class="w-64 shrink-0 border-r bg-sidebar">
-        <ObjectTree ref="tree" :session-id="session.sessionId" :selected="active" :mariadb="session.info.isMariadb" @open="open" @new-sequence="newSequence" />
+        <ObjectTree ref="tree" :session-id="session.sessionId" :selected="active" :mariadb="session.info.isMariadb" @open="open" @create="create" />
       </aside>
       <main class="flex min-w-0 flex-1 flex-col">
         <nav class="flex h-8 shrink-0 items-stretch overflow-x-auto border-b bg-sidebar" role="tablist">
@@ -90,22 +108,34 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
             @click="active = x.id"
             @auxclick.middle="close(x.id)"
           >
-            <component :is="x.obj ? objectIcon(x.obj) : x.create ? ListPlus : FileCode" class="size-3.5 text-muted-foreground" />
-            <span class="max-w-48 truncate">{{ x.obj ? x.obj.name : x.create ? t("sequence.new") : t("editor.tab", { n: x.n }) }}</span>
+            <component :is="x.obj ? objectIcon(x.obj) : x.create === 'table' ? TableProperties : x.create ? ListPlus : FileCode" class="size-3.5 text-muted-foreground" />
+            <span class="max-w-48 truncate">{{ x.obj ? x.obj.name : x.create ? t(`newObject.${x.create}`) : t("editor.tab", { n: x.n }) }}</span>
             <button :title="t('object.close')" class="flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-secondary hover:text-foreground" @click.stop="close(x.id)">
               <X class="size-3" /><span class="sr-only">{{ t("object.close") }}</span>
             </button>
           </div>
-          <button :title="t('editor.new')" :class="cn(tab, 'border-r-0 text-muted-foreground')" @click="newQuery">
+          <button :title="t('editor.new')" :class="cn(tab, 'border-r-0 text-muted-foreground')" @click="newQuery()">
             <Plus class="size-3.5" /><span class="sr-only">{{ t("editor.new") }}</span>
           </button>
         </nav>
 
         <!-- v-show keeps each tab alive, so unsaved grid edits survive switching tabs. -->
         <template v-for="x in tabs" :key="x.id">
-          <ObjectView v-if="x.obj" v-show="active === x.id" :session-id="session.sessionId" :schema="x.schema!" :obj="x.obj" class="min-h-0 flex-1" />
-          <SequenceView v-else-if="x.create" v-show="active === x.id" :session-id="session.sessionId" :schema="x.schema!" name="" create class="min-h-0 flex-1" @created="(n) => created(x.id, x.schema!, n)" />
-          <SqlEditor v-else v-show="active === x.id" :session-id="session.sessionId" :profile-id="session.profile.id" :editor-id="x.id" :schema="x.schema" class="min-h-0 flex-1" />
+          <ObjectView
+            v-if="x.obj"
+            v-show="active === x.id"
+            :session-id="session.sessionId"
+            :schema="x.schema!"
+            :obj="x.obj"
+            :mariadb="session.info.isMariadb"
+            class="min-h-0 flex-1"
+            @renamed="(n) => renamed(x, n)"
+            @dropped="dropped(x.id)"
+            @edit-sql="(sql) => newQuery(x.schema, sql)"
+          />
+          <SequenceView v-else-if="x.create === 'sequence'" v-show="active === x.id" :session-id="session.sessionId" :schema="x.schema!" name="" create class="min-h-0 flex-1" @created="(n) => created(x.id, x.schema!, 'sequence', n)" />
+          <TableDesigner v-else-if="x.create === 'table'" v-show="active === x.id" :session-id="session.sessionId" :schema="x.schema!" :table="null" class="min-h-0 flex-1" @saved="(n) => created(x.id, x.schema!, 'table', n)" />
+          <SqlEditor v-else v-show="active === x.id" :session-id="session.sessionId" :profile-id="session.profile.id" :editor-id="x.id" :schema="x.schema" :initial-sql="x.sql" class="min-h-0 flex-1" />
         </template>
 
         <div v-if="active === null" class="overflow-auto p-5">
@@ -125,7 +155,7 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
             </dd>
           </dl>
           <p class="mt-6 text-muted-foreground">{{ t("session.pickObject") }}</p>
-          <button class="mt-3 flex h-7 items-center gap-1.5 rounded-sm border px-3 font-medium hover:bg-secondary" @click="newQuery">
+          <button class="mt-3 flex h-7 items-center gap-1.5 rounded-sm border px-3 font-medium hover:bg-secondary" @click="newQuery()">
             <FileCode class="size-3.5" />{{ t("editor.new") }}
           </button>
         </div>
