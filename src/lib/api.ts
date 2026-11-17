@@ -255,6 +255,58 @@ export interface Variable {
   choices: string | null;
 }
 
+export interface Account {
+  user: string;
+  host: string;
+  isRole: boolean;
+  plugin: string;
+  locked: boolean;
+  expired: boolean;
+  /** Days: null = server default, 0 = never. */
+  lifetime: number | null;
+  maxQuestions: number;
+  maxUpdates: number;
+  maxConnections: number;
+  maxUserConnections: number;
+  /** Seconds, MariaDB only. */
+  maxStatementTime: number;
+  defaultRole: string | null;
+  roles: string[];
+}
+
+/** What the account editor sends: original = [user, host] being edited, null to create. password null = unchanged. */
+export interface AccountForm extends Account {
+  original: [string, string] | null;
+  password: string | null;
+  expireNow: boolean;
+}
+
+/** All null = global; then database, table, column. */
+export interface GrantTarget {
+  schema: string | null;
+  table: string | null;
+  column: string | null;
+}
+
+export interface Grant {
+  target: GrantTarget;
+  privileges: string[];
+}
+
+export interface Privilege {
+  name: string;
+  global: boolean;
+  schema: boolean;
+  table: boolean;
+  column: boolean;
+}
+
+export interface PrivChange {
+  target: GrantTarget;
+  grant: string[];
+  revoke: string[];
+}
+
 export type ExportFormat = "csv" | "json" | "xlsx" | "sql";
 
 export interface ExportReq {
@@ -347,6 +399,18 @@ export const api = {
   variableSql: (name: string, kind: string | null, value: string | null) => invoke<string>("variable_sql", { name, kind, value }),
   setVariable: (sessionId: string, name: string, value: string | null) => invoke<void>("set_variable", { sessionId, name, value }),
   serverStatus: (sessionId: string) => invoke<Record<string, string>>("server_status", { sessionId }),
+  listAccounts: (sessionId: string) => invoke<Account[]>("list_accounts", { sessionId }),
+  accountGrants: (sessionId: string, user: string, host: string, isRole: boolean) => invoke<Grant[]>("account_grants", { sessionId, user, host, isRole }),
+  /** [privileges from SHOW PRIVILEGES, active authentication plugins]. */
+  usersMeta: (sessionId: string) => invoke<[Privilege[], string[]]>("users_meta", { sessionId }),
+  /** Preview, password masked. */
+  accountSql: (sessionId: string, form: AccountForm) => invoke<string[]>("account_sql", { sessionId, form }),
+  accountApply: (sessionId: string, form: AccountForm) => invoke<void>("account_apply", { sessionId, form }),
+  privilegesSql: (user: string, host: string, isRole: boolean, changes: PrivChange[]) => invoke<string[]>("privileges_sql", { user, host, isRole, changes }),
+  privilegesApply: (sessionId: string, user: string, host: string, isRole: boolean, changes: PrivChange[]) =>
+    invoke<void>("privileges_apply", { sessionId, user, host, isRole, changes }),
+  accountDropSql: (user: string, host: string, isRole: boolean) => invoke<string>("account_drop_sql", { user, host, isRole }),
+  accountDrop: (sessionId: string, user: string, host: string, isRole: boolean) => invoke<void>("account_drop", { sessionId, user, host, isRole }),
   exportData: (sessionId: string, jobId: string, req: ExportReq) => invoke<number>("export_data", { sessionId, jobId, req }),
   importSql: (sessionId: string, jobId: string, schema: string, path: string) => invoke<number>("import_sql", { sessionId, jobId, schema, path }),
   csvPreview: (path: string, delimiter: string | null, header: boolean) => invoke<CsvPreview>("csv_preview", { path, delimiter, header }),

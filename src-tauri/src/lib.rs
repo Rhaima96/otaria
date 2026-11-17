@@ -10,6 +10,7 @@ mod query;
 mod sequence;
 mod ssh;
 mod transfer;
+mod users;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -332,6 +333,58 @@ async fn server_status(state: State<'_, AppState>, session_id: String) -> AppRes
 }
 
 #[tauri::command]
+async fn list_accounts(state: State<'_, AppState>, session_id: String) -> AppResult<Vec<users::Account>> {
+    users::accounts(&pool(&state, &session_id).await?, is_mariadb(&state, &session_id).await?).await
+}
+
+#[tauri::command]
+async fn account_grants(state: State<'_, AppState>, session_id: String, user: String, host: String, is_role: bool) -> AppResult<Vec<users::Grant>> {
+    users::grants(&pool(&state, &session_id).await?, &user, &host, is_role).await
+}
+
+/// Privileges from SHOW PRIVILEGES and the active authentication plugins.
+#[tauri::command]
+async fn users_meta(state: State<'_, AppState>, session_id: String) -> AppResult<(Vec<users::Privilege>, Vec<String>)> {
+    let pool = pool(&state, &session_id).await?;
+    Ok((users::privileges(&pool).await?, users::auth_plugins(&pool).await?))
+}
+
+/// Password masked: this is what the preview shows.
+#[tauri::command]
+async fn account_sql(state: State<'_, AppState>, session_id: String, form: users::AccountForm) -> AppResult<Vec<String>> {
+    let mariadb = is_mariadb(&state, &session_id).await?;
+    let old = users::load(&pool(&state, &session_id).await?, mariadb, &form.original).await?;
+    users::account_sql(old.as_ref(), &form, mariadb, users::Secret::Masked)
+}
+
+#[tauri::command]
+async fn account_apply(state: State<'_, AppState>, session_id: String, form: users::AccountForm) -> AppResult<()> {
+    users::apply_account(&pool(&state, &session_id).await?, is_mariadb(&state, &session_id).await?, &form).await
+}
+
+#[tauri::command]
+fn privileges_sql(user: String, host: String, is_role: bool, changes: Vec<users::PrivChange>) -> AppResult<Vec<String>> {
+    users::privileges_sql(&user, &host, is_role, &changes)
+}
+
+#[tauri::command]
+async fn privileges_apply(state: State<'_, AppState>, session_id: String, user: String, host: String, is_role: bool, changes: Vec<users::PrivChange>) -> AppResult<()> {
+    let sql = users::privileges_sql(&user, &host, is_role, &changes)?;
+    users::run(&pool(&state, &session_id).await?, &sql, &sql).await
+}
+
+#[tauri::command]
+fn account_drop_sql(user: String, host: String, is_role: bool) -> String {
+    users::drop_sql(&user, &host, is_role)
+}
+
+#[tauri::command]
+async fn account_drop(state: State<'_, AppState>, session_id: String, user: String, host: String, is_role: bool) -> AppResult<()> {
+    let sql = [users::drop_sql(&user, &host, is_role)];
+    users::run(&pool(&state, &session_id).await?, &sql, &sql).await
+}
+
+#[tauri::command]
 async fn list_plugins(state: State<'_, AppState>, session_id: String) -> AppResult<Vec<plugins::Plugin>> {
     plugins::list(&pool(&state, &session_id).await?).await
 }
@@ -570,6 +623,15 @@ pub fn run() {
             variable_sql,
             set_variable,
             server_status,
+            list_accounts,
+            account_grants,
+            users_meta,
+            account_sql,
+            account_apply,
+            privileges_sql,
+            privileges_apply,
+            account_drop_sql,
+            account_drop,
             export_data,
             import_sql,
             csv_preview,

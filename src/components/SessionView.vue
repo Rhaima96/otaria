@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { defineAsyncComponent, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { Activity, FileCode, Gauge, Info, ListPlus, Lock, LockOpen, Plus, Puzzle, SlidersHorizontal, TableProperties, TriangleAlert, X } from "lucide-vue-next";
+import { Activity, FileCode, Gauge, Info, ListPlus, Lock, LockOpen, Plus, Puzzle, SlidersHorizontal, TableProperties, TriangleAlert, Users, X } from "lucide-vue-next";
 import ObjectTree from "@/components/ObjectTree.vue";
 import ObjectView from "@/components/ObjectView.vue";
 // Monaco is heavy: load the editor on first use.
@@ -13,6 +13,7 @@ import VariablesView from "@/components/VariablesView.vue";
 import SequenceView from "@/components/SequenceView.vue";
 import TableDesigner from "@/components/TableDesigner.vue";
 import TransferDialog from "@/components/TransferDialog.vue";
+import UsersView from "@/components/UsersView.vue";
 import type { DbObject, ObjectKind, OpenedSession } from "@/lib/api";
 import { newScript } from "@/lib/templates";
 import { objectIcon } from "@/lib/objects";
@@ -74,8 +75,8 @@ function dropped(id: string) {
 }
 
 /** Server screens, one tab each; plugins (ALL_PLUGINS) is MariaDB-only. */
-type Admin = "processes" | "variables" | "status" | "plugins";
-const adminViews = { processes: { icon: Activity, view: ProcessesView }, variables: { icon: SlidersHorizontal, view: VariablesView }, status: { icon: Gauge, view: StatusView }, plugins: { icon: Puzzle, view: PluginsView } };
+type Admin = "processes" | "variables" | "status" | "users" | "plugins";
+const adminViews = { processes: { icon: Activity, view: ProcessesView }, variables: { icon: SlidersHorizontal, view: VariablesView }, status: { icon: Gauge, view: StatusView }, users: { icon: Users, view: UsersView }, plugins: { icon: Puzzle, view: PluginsView } };
 const adminList = (Object.keys(adminViews) as Admin[]).filter((a) => a !== "plugins" || props.session.info.isMariadb);
 
 function openAdmin(a: Admin) {
@@ -161,7 +162,7 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
           />
           <SequenceView v-else-if="x.create === 'sequence'" v-show="active === x.id" :session-id="session.sessionId" :schema="x.schema!" name="" create class="min-h-0 flex-1" @created="(n) => created(x.id, x.schema!, 'sequence', n)" />
           <TableDesigner v-else-if="x.create === 'table'" v-show="active === x.id" :session-id="session.sessionId" :schema="x.schema!" :table="null" class="min-h-0 flex-1" @saved="(n) => created(x.id, x.schema!, 'table', n)" />
-          <component :is="adminViews[x.admin].view" v-else-if="x.admin" v-show="active === x.id" :session-id="session.sessionId" :active="active === x.id" class="min-h-0 flex-1" />
+          <component :is="adminViews[x.admin].view" v-else-if="x.admin" v-show="active === x.id" :session-id="session.sessionId" :active="active === x.id" v-bind="x.admin === 'users' ? { mariadb: session.info.isMariadb } : {}" class="min-h-0 flex-1" />
           <SqlEditor v-else v-show="active === x.id" :session-id="session.sessionId" :profile-id="session.profile.id" :editor-id="x.id" :schema="x.schema" :initial-sql="x.sql" class="min-h-0 flex-1" />
         </template>
 
