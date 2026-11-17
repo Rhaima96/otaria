@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import { KeyRound } from "lucide-vue-next";
 import DataGrid from "@/components/DataGrid.vue";
 import ErrorLine from "@/components/ErrorLine.vue";
+import SequenceView from "@/components/SequenceView.vue";
 import { api, toAppError, type AppError, type DbObject, type TableInfo } from "@/lib/api";
 import { hasRows } from "@/lib/objects";
 import { cn } from "@/lib/utils";
@@ -11,8 +12,9 @@ import { cn } from "@/lib/utils";
 const props = defineProps<{ sessionId: string; schema: string; obj: DbObject }>();
 const { t } = useI18n();
 
-type View = "data" | "structure" | "ddl";
-const views: View[] = hasRows(props.obj.kind) ? ["data", "structure", "ddl"] : ["ddl"];
+type View = "sequence" | "data" | "structure" | "ddl";
+// A sequence's "rows" are its state: shown by the Sequence panel instead of a grid.
+const views: View[] = props.obj.kind === "sequence" ? ["sequence", "ddl"] : hasRows(props.obj.kind) ? ["data", "structure", "ddl"] : ["ddl"];
 const view = ref<View>(views[0]);
 
 const info = ref<TableInfo | null>(null);
@@ -25,7 +27,7 @@ watch(
   async (v) => {
     error.value = null;
     try {
-      if (v !== "ddl" && !info.value) info.value = await api.tableInfo(props.sessionId, props.schema, props.obj.name);
+      if ((v === "data" || v === "structure") && !info.value) info.value = await api.tableInfo(props.sessionId, props.schema, props.obj.name);
       if (v === "ddl" && ddl.value === null) ddl.value = await api.objectDdl(props.sessionId, props.schema, props.obj.name, props.obj.kind);
     } catch (e) {
       error.value = toAppError(e);
@@ -55,7 +57,9 @@ const cell = "border-b px-2 py-1 text-left align-top";
 
     <ErrorLine v-if="error" :error="error" class="m-3" />
 
-    <DataGrid v-else-if="view === 'data' && info" :session-id="sessionId" :schema="schema" :table="obj.name" :info="info" class="min-h-0 flex-1" />
+    <SequenceView v-else-if="view === 'sequence'" :session-id="sessionId" :schema="schema" :name="obj.name" class="min-h-0 flex-1" />
+
+    <DataGrid v-else-if="view === 'data' && info" :session-id="sessionId" :schema="schema" :table="obj.name" :info="info" :versioned="obj.versioned" class="min-h-0 flex-1" />
 
     <div v-else-if="view === 'structure' && info" class="min-h-0 flex-1 overflow-auto">
       <table class="w-full border-collapse">

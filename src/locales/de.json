@@ -109,7 +109,8 @@
     "ROW_CONFLICT": "Eine Zeile wurde inzwischen von jemand anderem geändert oder gelöscht. Es wurde nichts gespeichert; neu laden und erneut versuchen.",
     "NO_DDL": "Die Definition ist nicht verfügbar (fehlendes Recht?).",
     "QUERY_CANCELLED": "Die Abfrage wurde gestoppt.",
-    "CONFIRM_RISKY": "Bestätigung für eine destruktive Anweisung erforderlich."
+    "CONFIRM_RISKY": "Bestätigung für eine destruktive Anweisung erforderlich.",
+    "INVALID_NUMBER": "Keine ganze Zahl."
   },
   "tree": {
     "title": "Datenbanken",
@@ -129,7 +130,8 @@
     "data": "Daten",
     "structure": "Struktur",
     "ddl": "DDL",
-    "close": "Schließen"
+    "close": "Schließen",
+    "sequence": "Sequenz"
   },
   "structure": {
     "name": "Spalte",
@@ -194,5 +196,43 @@
     "confirmRun": "Trotzdem ausführen",
     "favoriteName": "Name des Favoriten",
     "save": "Speichern"
+  },
+  "versioned": {
+    "asOf": "Stand vom",
+    "asOfHint": "Tabelle so zeigen, wie sie zu diesem Zeitpunkt war (Ortszeit). Frühere Daten sind schreibgeschützt.",
+    "now": "Zurück zu den aktuellen Daten",
+    "rowHistory": "Zeilenverlauf",
+    "rowHistoryHint": "Alle Versionen der ausgewählten Zeile",
+    "pastReadOnly": "Frühere Daten: schreibgeschützt",
+    "current": "aktuell",
+    "historyTitle": "Zeilenverlauf ({n} Versionen)"
+  },
+  "sequence": {
+    "state": "Aktueller Stand",
+    "nextNotCached": "Nächster nicht gecachter Wert",
+    "cycleCount": "Abgeschlossene Zyklen",
+    "cacheHint": "Bereits vom Server gecachte Werte werden vor diesem vergeben.",
+    "options": "Optionen",
+    "new": "Neue Sequenz",
+    "name": "Name",
+    "start": "Start",
+    "min": "Minimum",
+    "max": "Maximum",
+    "increment": "Schrittweite",
+    "cache": "Cache",
+    "cycle": "Nach dem Maximum neu beginnen (Zyklus)",
+    "restart": "Neu starten bei",
+    "restartPlaceholder": "Leer lassen, um den aktuellen Wert zu behalten",
+    "create": "Erstellen…",
+    "alter": "Änderungen anwenden…",
+    "setval": "Nächsten Wert setzen (SETVAL)",
+    "setvalRun": "Setzen",
+    "setvalOk": "Erledigt: dieser Wert wird als Nächstes vergeben.",
+    "setvalIgnored": "Ignoriert: SETVAL geht nie zurück. „Neu starten bei“ verwenden.",
+    "asDefault": "Als Standardwert einer Spalte verwenden",
+    "asDefaultHint": "In eine Spaltendefinition einfügen, damit neue Zeilen den nächsten Wert erhalten.",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "ddlHint": "Diese Anweisung wirkt sofort und kann nicht rückgängig gemacht werden."
   }
 }

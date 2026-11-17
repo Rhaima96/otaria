@@ -101,6 +101,31 @@ export type Change =
 /** Secrets: undefined/null = keep the saved one (or none). */
 type Secrets = { password?: string | null; sshSecret?: string | null };
 
+/** Every version of one row; `start`/`end` name the period columns (UTC). */
+export interface History {
+  rows: Rows;
+  start: string;
+  end: string;
+}
+
+/** Sequence options; numbers are strings because BIGINT bounds do not fit in a JS number. */
+export interface SeqOpts {
+  start: string;
+  min: string;
+  max: string;
+  increment: string;
+  cache: string;
+  cycle: boolean;
+  /** ALTER only: next value to hand out, "" = unchanged. */
+  restart: string;
+}
+
+export interface SeqState {
+  opts: SeqOpts;
+  nextNotCached: string;
+  cycleCount: string;
+}
+
 export interface StmtResult {
   sql: string;
   /** Empty = no result set (INSERT, SET…). */
@@ -142,11 +167,18 @@ export const api = {
   tableInfo: (sessionId: string, schema: string, table: string) => invoke<TableInfo>("table_info", { sessionId, schema, table }),
   objectDdl: (sessionId: string, schema: string, name: string, kind: ObjectKind) =>
     invoke<string>("object_ddl", { sessionId, schema, name, kind }),
-  tableData: (sessionId: string, schema: string, table: string, q: { filter: string; order: Sort[]; offset: number; limit: number }) =>
+  tableData: (sessionId: string, schema: string, table: string, q: { filter: string; order: Sort[]; offset: number; limit: number; asOf: string | null }) =>
     invoke<Rows>("table_data", { sessionId, schema, table, ...q }),
   previewChanges: (schema: string, table: string, changes: Change[]) => invoke<string[]>("preview_changes", { schema, table, changes }),
   applyChanges: (sessionId: string, schema: string, table: string, changes: Change[]) =>
     invoke<number>("apply_changes", { sessionId, schema, table, changes }),
+  rowHistory: (sessionId: string, schema: string, table: string, key: Pairs) => invoke<History>("row_history", { sessionId, schema, table, key }),
+  sequenceState: (sessionId: string, schema: string, name: string) => invoke<SeqState>("sequence_state", { sessionId, schema, name }),
+  sequenceDdl: (schema: string, name: string, opts: SeqOpts, create: boolean) => invoke<string>("sequence_ddl", { schema, name, opts, create }),
+  sequenceApply: (sessionId: string, schema: string, name: string, opts: SeqOpts, create: boolean) =>
+    invoke<void>("sequence_apply", { sessionId, schema, name, opts, create }),
+  sequenceSetval: (sessionId: string, schema: string, name: string, value: string) =>
+    invoke<string | null>("sequence_setval", { sessionId, schema, name, value }),
   runSql: (sessionId: string, editorId: string, r: RunRequest) => invoke<RunOutput>("run_sql", { sessionId, editorId, ...r }),
   cancelSql: (sessionId: string, editorId: string) => invoke<void>("cancel_sql", { sessionId, editorId }),
   closeEditor: (sessionId: string, editorId: string) => invoke<void>("close_editor", { sessionId, editorId }),

@@ -109,7 +109,8 @@
     "ROW_CONFLICT": "Une ligne a été modifiée ou supprimée par quelqu'un d'autre entre-temps. Rien n'a été enregistré ; rechargez et réessayez.",
     "NO_DDL": "La définition n'est pas disponible (privilège manquant ?).",
     "QUERY_CANCELLED": "La requête a été arrêtée.",
-    "CONFIRM_RISKY": "Confirmation requise pour une instruction destructrice."
+    "CONFIRM_RISKY": "Confirmation requise pour une instruction destructrice.",
+    "INVALID_NUMBER": "Ce n'est pas un nombre entier."
   },
   "tree": {
     "title": "Bases de données",
@@ -129,7 +130,8 @@
     "data": "Données",
     "structure": "Structure",
     "ddl": "DDL",
-    "close": "Fermer"
+    "close": "Fermer",
+    "sequence": "Séquence"
   },
   "structure": {
     "name": "Colonne",
@@ -194,5 +196,43 @@
     "confirmRun": "Exécuter quand même",
     "favoriteName": "Nom du favori",
     "save": "Enregistrer"
+  },
+  "versioned": {
+    "asOf": "À la date du",
+    "asOfHint": "Afficher la table telle qu'elle était à ce moment (heure locale). Les données passées sont en lecture seule.",
+    "now": "Revenir aux données actuelles",
+    "rowHistory": "Historique de la ligne",
+    "rowHistoryHint": "Toutes les versions de la ligne sélectionnée",
+    "pastReadOnly": "Données passées : lecture seule",
+    "current": "actuelle",
+    "historyTitle": "Historique de la ligne ({n} versions)"
+  },
+  "sequence": {
+    "state": "État courant",
+    "nextNotCached": "Prochaine valeur hors cache",
+    "cycleCount": "Cycles effectués",
+    "cacheHint": "Les valeurs déjà en cache sur le serveur sont distribuées avant celle-ci.",
+    "options": "Options",
+    "new": "Nouvelle séquence",
+    "name": "Nom",
+    "start": "Début",
+    "min": "Minimum",
+    "max": "Maximum",
+    "increment": "Pas",
+    "cache": "Cache",
+    "cycle": "Recommencer après le maximum (cycle)",
+    "restart": "Redémarrer à",
+    "restartPlaceholder": "Laisser vide pour garder la valeur actuelle",
+    "create": "Créer…",
+    "alter": "Appliquer…",
+    "setval": "Fixer la prochaine valeur (SETVAL)",
+    "setvalRun": "Fixer",
+    "setvalOk": "Fait : cette valeur sera distribuée ensuite.",
+    "setvalIgnored": "Ignoré : SETVAL ne recule jamais. Utilisez « Redémarrer à ».",
+    "asDefault": "Utiliser comme valeur par défaut d'une colonne",
+    "asDefaultHint": "Collez ceci dans la définition d'une colonne pour que les nouvelles lignes prennent la valeur suivante.",
+    "copy": "Copier",
+    "copied": "Copié",
+    "ddlHint": "Cette instruction prend effet immédiatement et ne peut pas être annulée."
   }
 }

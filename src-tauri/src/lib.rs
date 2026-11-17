@@ -4,6 +4,7 @@ mod edit;
 mod error;
 mod profiles;
 mod query;
+mod sequence;
 mod ssh;
 
 use std::collections::HashMap;
@@ -173,9 +174,42 @@ async fn table_data(
     order: Vec<browse::Sort>,
     offset: u64,
     limit: u64,
+    as_of: Option<String>,
 ) -> AppResult<browse::Rows> {
-    let sql = browse::data_sql(&schema, &table, filter.as_deref(), &order, offset, limit);
-    browse::data(&pool(&state, &session_id).await?, &sql).await
+    let sql = browse::data_sql(&schema, &table, filter.as_deref(), &order, offset, limit, as_of.is_some());
+    let vars = match as_of {
+        Some(t) => vec![(browse::AS_OF_VAR, Some(t))],
+        None => vec![],
+    };
+    browse::data(&pool(&state, &session_id).await?, &sql, &vars).await
+}
+
+#[tauri::command]
+async fn row_history(state: State<'_, AppState>, session_id: String, schema: String, table: String, key: edit::Pairs) -> AppResult<browse::History> {
+    browse::row_history(&pool(&state, &session_id).await?, &schema, &table, &key).await
+}
+
+#[tauri::command]
+async fn sequence_state(state: State<'_, AppState>, session_id: String, schema: String, name: String) -> AppResult<sequence::SeqState> {
+    sequence::state(&pool(&state, &session_id).await?, &schema, &name).await
+}
+
+/// The CREATE / ALTER SEQUENCE statement, shown before it runs.
+#[tauri::command]
+fn sequence_ddl(schema: String, name: String, opts: sequence::SeqOpts, create: bool) -> AppResult<String> {
+    sequence::ddl(&schema, &name, &opts, create)
+}
+
+/// Rebuilds the statement from the same inputs as the preview, so what runs is what was shown.
+#[tauri::command]
+async fn sequence_apply(state: State<'_, AppState>, session_id: String, schema: String, name: String, opts: sequence::SeqOpts, create: bool) -> AppResult<()> {
+    let sql = sequence::ddl(&schema, &name, &opts, create)?;
+    sequence::apply(&pool(&state, &session_id).await?, &sql).await
+}
+
+#[tauri::command]
+async fn sequence_setval(state: State<'_, AppState>, session_id: String, schema: String, name: String, value: String) -> AppResult<Option<String>> {
+    sequence::setval(&pool(&state, &session_id).await?, &schema, &name, &value).await
 }
 
 #[tauri::command]
@@ -284,7 +318,12 @@ pub fn run() {
             apply_changes,
             run_sql,
             cancel_sql,
-            close_editor
+            close_editor,
+            row_history,
+            sequence_state,
+            sequence_ddl,
+            sequence_apply,
+            sequence_setval
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

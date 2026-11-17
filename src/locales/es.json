@@ -109,7 +109,8 @@
     "ROW_CONFLICT": "Otra persona cambió o eliminó una fila mientras tanto. No se guardó nada; recargue e inténtelo de nuevo.",
     "NO_DDL": "La definición no está disponible (¿falta un privilegio?).",
     "QUERY_CANCELLED": "La consulta se detuvo.",
-    "CONFIRM_RISKY": "Se requiere confirmación para una sentencia destructiva."
+    "CONFIRM_RISKY": "Se requiere confirmación para una sentencia destructiva.",
+    "INVALID_NUMBER": "No es un número entero."
   },
   "tree": {
     "title": "Bases de datos",
@@ -129,7 +130,8 @@
     "data": "Datos",
     "structure": "Estructura",
     "ddl": "DDL",
-    "close": "Cerrar"
+    "close": "Cerrar",
+    "sequence": "Secuencia"
   },
   "structure": {
     "name": "Columna",
@@ -194,5 +196,43 @@
     "confirmRun": "Ejecutar de todos modos",
     "favoriteName": "Nombre del favorito",
     "save": "Guardar"
+  },
+  "versioned": {
+    "asOf": "A fecha de",
+    "asOfHint": "Mostrar la tabla tal como estaba en ese momento (hora local). Los datos pasados son de solo lectura.",
+    "now": "Volver a los datos actuales",
+    "rowHistory": "Historial de la fila",
+    "rowHistoryHint": "Todas las versiones de la fila seleccionada",
+    "pastReadOnly": "Datos pasados: solo lectura",
+    "current": "actual",
+    "historyTitle": "Historial de la fila ({n} versiones)"
+  },
+  "sequence": {
+    "state": "Estado actual",
+    "nextNotCached": "Siguiente valor fuera de caché",
+    "cycleCount": "Ciclos completados",
+    "cacheHint": "Los valores ya en caché en el servidor se entregan antes que este.",
+    "options": "Opciones",
+    "new": "Nueva secuencia",
+    "name": "Nombre",
+    "start": "Inicio",
+    "min": "Mínimo",
+    "max": "Máximo",
+    "increment": "Incremento",
+    "cache": "Caché",
+    "cycle": "Volver a empezar tras el máximo (ciclo)",
+    "restart": "Reiniciar en",
+    "restartPlaceholder": "Dejar vacío para mantener el valor actual",
+    "create": "Crear…",
+    "alter": "Aplicar cambios…",
+    "setval": "Fijar el siguiente valor (SETVAL)",
+    "setvalRun": "Fijar",
+    "setvalOk": "Hecho: este valor se entregará a continuación.",
+    "setvalIgnored": "Ignorado: SETVAL nunca retrocede. Use «Reiniciar en».",
+    "asDefault": "Usar como valor por defecto de una columna",
+    "asDefaultHint": "Pegue esto en la definición de una columna para que las filas nuevas tomen el siguiente valor.",
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "ddlHint": "Esta sentencia surte efecto de inmediato y no se puede deshacer."
   }
 }

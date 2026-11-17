@@ -169,8 +169,8 @@ mod tests {
         ];
         assert_eq!(apply(&pool, "otaria_t", "p", &bad).await.unwrap_err().code, "ROW_CONFLICT");
 
-        let sql = browse::data_sql("otaria_t", "p", None, &[browse::Sort { column: "id".into(), desc: false }], 0, 10);
-        let rows = browse::data(&pool, &sql).await.unwrap();
+        let sql = browse::data_sql("otaria_t", "p", None, &[browse::Sort { column: "id".into(), desc: false }], 0, 10, false);
+        let rows = browse::data(&pool, &sql, &[]).await.unwrap();
         assert_eq!(rows.columns, ["id", "name", "note"]);
         assert_eq!(rows.rows.len(), 3);
         assert_eq!(rows.rows[1][2].as_deref(), Some("it's"));

@@ -109,7 +109,8 @@
     "ROW_CONFLICT": "Qualcun altro ha modificato o eliminato una riga nel frattempo. Non è stato salvato nulla; ricarica e riprova.",
     "NO_DDL": "La definizione non è disponibile (privilegio mancante?).",
     "QUERY_CANCELLED": "La query è stata fermata.",
-    "CONFIRM_RISKY": "Conferma richiesta per un'istruzione distruttiva."
+    "CONFIRM_RISKY": "Conferma richiesta per un'istruzione distruttiva.",
+    "INVALID_NUMBER": "Non è un numero intero."
   },
   "tree": {
     "title": "Database",
@@ -129,7 +130,8 @@
     "data": "Dati",
     "structure": "Struttura",
     "ddl": "DDL",
-    "close": "Chiudi"
+    "close": "Chiudi",
+    "sequence": "Sequenza"
   },
   "structure": {
     "name": "Colonna",
@@ -194,5 +196,43 @@
     "confirmRun": "Esegui comunque",
     "favoriteName": "Nome del preferito",
     "save": "Salva"
+  },
+  "versioned": {
+    "asOf": "Alla data del",
+    "asOfHint": "Mostra la tabella com'era in quel momento (ora locale). I dati passati sono di sola lettura.",
+    "now": "Torna ai dati attuali",
+    "rowHistory": "Cronologia della riga",
+    "rowHistoryHint": "Tutte le versioni della riga selezionata",
+    "pastReadOnly": "Dati passati: sola lettura",
+    "current": "attuale",
+    "historyTitle": "Cronologia della riga ({n} versioni)"
+  },
+  "sequence": {
+    "state": "Stato attuale",
+    "nextNotCached": "Prossimo valore fuori cache",
+    "cycleCount": "Cicli completati",
+    "cacheHint": "I valori già in cache sul server vengono distribuiti prima di questo.",
+    "options": "Opzioni",
+    "new": "Nuova sequenza",
+    "name": "Nome",
+    "start": "Inizio",
+    "min": "Minimo",
+    "max": "Massimo",
+    "increment": "Incremento",
+    "cache": "Cache",
+    "cycle": "Ricomincia dopo il massimo (ciclo)",
+    "restart": "Riparti da",
+    "restartPlaceholder": "Lascia vuoto per mantenere il valore attuale",
+    "create": "Crea…",
+    "alter": "Applica modifiche…",
+    "setval": "Imposta il prossimo valore (SETVAL)",
+    "setvalRun": "Imposta",
+    "setvalOk": "Fatto: questo valore verrà distribuito come prossimo.",
+    "setvalIgnored": "Ignorato: SETVAL non torna mai indietro. Usa «Riparti da».",
+    "asDefault": "Usa come valore predefinito di una colonna",
+    "asDefaultHint": "Incolla questo nella definizione di una colonna perché le nuove righe prendano il valore successivo.",
+    "copy": "Copia",
+    "copied": "Copiato",
+    "ddlHint": "Questa istruzione ha effetto immediato e non può essere annullata."
   }
 }

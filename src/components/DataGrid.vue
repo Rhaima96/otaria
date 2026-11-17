@@ -3,13 +3,13 @@ import { computed, onMounted, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { AgGridVue } from "ag-grid-vue3";
 import { type ColDef, type GridApi, type GridReadyEvent, type SortChangedEvent } from "ag-grid-community";
-import { Ban, Filter, Plus, RefreshCw, Save, Trash2, Undo2 } from "lucide-vue-next";
+import { Ban, Filter, History, Plus, RefreshCw, Save, Trash2, Undo2, X } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
 import { theme } from "@/lib/grid";
-import { api, toAppError, type AppError, type Change, type Pairs, type Sort, type TableInfo } from "@/lib/api";
+import { api, toAppError, type AppError, type Change, type History as RowHistory, type Pairs, type Sort, type TableInfo } from "@/lib/api";
 
-const props = defineProps<{ sessionId: string; schema: string; table: string; info: TableInfo }>();
-const { t } = useI18n();
+const props = defineProps<{ sessionId: string; schema: string; table: string; info: TableInfo; versioned?: boolean }>();
+const { t, locale } = useI18n();
 const PAGE = 1000;
 
 /** One grid row. `orig` = values as loaded (null for a new row); `undefined` in `v` = not set (server default). */
@@ -32,9 +32,17 @@ const tick = ref(0);
 let nextId = 0;
 let grid: GridApi<GridRow> | null = null;
 
+// System-versioned tables: view the table "as of" a past moment (read-only), and the history of a row.
+/** <input type="datetime-local"> value, local time; "" = current data. */
+const asOfLocal = ref("");
+/** Sent as UTC: the backend runs these queries with time_zone = '+00:00'. */
+const asOf = computed(() => (asOfLocal.value ? new Date(asOfLocal.value).toISOString().slice(0, 23).replace("T", " ") : null));
+const selected = ref(0);
+
 // Edits need the full primary key in the result; tables without one are read-only (like HeidiSQL).
 const pkIndex = computed(() => props.info.primaryKey.map((k) => columns.value.indexOf(k)));
-const editable = computed(() => pkIndex.value.length > 0 && !pkIndex.value.includes(-1));
+const hasKey = computed(() => pkIndex.value.length > 0 && !pkIndex.value.includes(-1));
+const editable = computed(() => hasKey.value && !asOf.value);
 const BINARY = /blob|binary|bit|geometry|point|linestring|polygon/i;
 const readOnlyCol = (name: string) => {
   const c = props.info.columns.find((c) => c.name === name);
@@ -52,6 +60,7 @@ async function load(append = false) {
       order: [...order.value, ...pk],
       offset: append ? rows.value.filter((r) => r.orig).length : 0,
       limit: PAGE,
+      asOf: asOf.value,
     });
     columns.value = res.columns;
     const loaded = res.rows.map((r) => ({ id: nextId++, v: [...r], orig: r, deleted: false }));
@@ -182,6 +191,41 @@ async function apply() {
   }
 }
 
+const historyDialog = ref<HTMLDialogElement | null>(null);
+const history = shallowRef<RowHistory | null>(null);
+
+async function openHistory() {
+  const row = grid?.getSelectedRows().find((r) => r.orig);
+  if (!row) return;
+  try {
+    history.value = await api.rowHistory(props.sessionId, props.schema, props.table, keyOf(row));
+    historyDialog.value?.showModal();
+  } catch (e) {
+    error.value = toAppError(e);
+  }
+}
+
+/** Period values are UTC; the open end of the current version is the TIMESTAMP maximum. */
+function periodValue(v: string | null) {
+  if (v === null) return "NULL";
+  if (/^(2038-01-19 03:14:07|2106-02-07 06:28:15)/.test(v)) return t("versioned.current");
+  return new Date(v.replace(" ", "T") + "Z").toLocaleString(locale.value);
+}
+
+const historyCols = computed<ColDef<(string | null)[]>[]>(() => {
+  const h = history.value;
+  return (h?.rows.columns ?? []).map((name, i) => {
+    const period = name === h!.start || name === h!.end;
+    return {
+      colId: String(i),
+      headerName: name,
+      valueGetter: (p) => p.data?.[i],
+      valueFormatter: (p) => (period ? periodValue(p.value) : p.value === null ? "NULL" : String(p.value)),
+      cellClassRules: { "text-muted-foreground italic": (p) => p.value === null, "font-semibold": () => period },
+    };
+  });
+});
+
 onMounted(load);
 const btn = "flex h-6 items-center gap-1 rounded-sm px-2 hover:bg-secondary disabled:opacity-40 disabled:hover:bg-transparent";
 </script>
@@ -202,6 +246,26 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 hover:bg-secondary disa
           <RefreshCw class="size-3.5" /><span class="sr-only">{{ t("grid.reload") }}</span>
         </button>
       </form>
+      <template v-if="versioned">
+        <span class="mx-1 h-4 border-l" />
+        <label class="flex items-center gap-1 text-muted-foreground" :title="t('versioned.asOfHint')">
+          <History class="size-3.5" />{{ t("versioned.asOf") }}
+          <input
+            v-model="asOfLocal"
+            type="datetime-local"
+            step="1"
+            :disabled="dirty || busy"
+            class="h-6 rounded-sm border bg-background px-1 font-mono text-xs text-foreground disabled:opacity-50"
+            @change="load()"
+          />
+        </label>
+        <button v-if="asOfLocal" :class="btn" :title="t('versioned.now')" @click="(asOfLocal = ''), load()">
+          <X class="size-3.5" /><span class="sr-only">{{ t("versioned.now") }}</span>
+        </button>
+        <button :class="btn" :disabled="!hasKey || selected !== 1 || busy" :title="hasKey ? t('versioned.rowHistoryHint') : t('grid.readOnly')" @click="openHistory">
+          {{ t("versioned.rowHistory") }}
+        </button>
+      </template>
       <template v-if="editable">
         <span class="mx-1 h-4 border-l" />
         <button :class="btn" :disabled="busy" @click="addRow"><Plus class="size-3.5" />{{ t("grid.addRow") }}</button>
@@ -217,7 +281,7 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 hover:bg-secondary disa
           <Save class="size-3.5" />{{ t("grid.save", { n: changes.length }) }}
         </button>
       </template>
-      <span v-else class="ml-1 text-muted-foreground">{{ t("grid.readOnly") }}</span>
+      <span v-else class="ml-1 text-muted-foreground">{{ asOf ? t("versioned.pastReadOnly") : t("grid.readOnly") }}</span>
     </div>
 
     <ErrorLine v-if="error" :error="error" class="m-2" />
@@ -237,12 +301,29 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 hover:bg-secondary disa
       @grid-ready="onReady"
       @cell-value-changed="refreshStyles"
       @sort-changed="onSort"
+      @selection-changed="selected = grid?.getSelectedRows().length ?? 0"
     />
 
     <div class="flex h-7 shrink-0 items-center gap-2 border-t px-2 text-muted-foreground">
       <span>{{ t("grid.rowCount", { n: rows.filter((r) => r.orig).length }) }}</span>
       <button v-if="hasMore" :class="btn" :disabled="busy" class="text-foreground" @click="load(true)">{{ t("grid.loadMore", { n: PAGE }) }}</button>
     </div>
+
+    <dialog ref="historyDialog" class="m-auto w-[min(72rem,92vw)] rounded-lg border bg-popover p-0 text-popover-foreground backdrop:bg-black/40">
+      <div class="border-b px-4 py-2 font-semibold">{{ t("versioned.historyTitle", { n: history?.rows.rows.length ?? 0 }) }}</div>
+      <AgGridVue
+        v-if="history"
+        class="h-[50vh]"
+        :theme="theme"
+        :row-data="history.rows.rows"
+        :column-defs="historyCols"
+        :default-col-def="{ resizable: true, minWidth: 60, maxWidth: 480 }"
+        :enable-cell-text-selection="true"
+      />
+      <div class="flex justify-end px-4 py-3">
+        <button class="h-7 rounded-sm border px-3 font-medium hover:bg-secondary" @click="historyDialog?.close()">{{ t("object.close") }}</button>
+      </div>
+    </dialog>
 
     <dialog ref="dialog" class="m-auto w-[min(56rem,90vw)] rounded-lg border bg-popover p-0 text-popover-foreground backdrop:bg-black/40">
       <div class="border-b px-4 py-2 font-semibold">{{ t("grid.previewTitle") }}</div>

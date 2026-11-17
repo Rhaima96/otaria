@@ -109,7 +109,8 @@
     "ROW_CONFLICT": "A row was changed or deleted by someone else meanwhile. Nothing was saved; reload and try again.",
     "NO_DDL": "The definition is not available (missing privilege?).",
     "QUERY_CANCELLED": "The query was stopped.",
-    "CONFIRM_RISKY": "Confirmation required for a destructive statement."
+    "CONFIRM_RISKY": "Confirmation required for a destructive statement.",
+    "INVALID_NUMBER": "Not a whole number."
   },
   "tree": {
     "title": "Databases",
@@ -129,7 +130,8 @@
     "data": "Data",
     "structure": "Structure",
     "ddl": "DDL",
-    "close": "Close"
+    "close": "Close",
+    "sequence": "Sequence"
   },
   "structure": {
     "name": "Column",
@@ -194,5 +196,43 @@
     "confirmRun": "Run anyway",
     "favoriteName": "Favorite name",
     "save": "Save"
+  },
+  "versioned": {
+    "asOf": "As of",
+    "asOfHint": "Show the table as it was at this moment (your local time). Past data is read-only.",
+    "now": "Back to current data",
+    "rowHistory": "Row history",
+    "rowHistoryHint": "Every version of the selected row",
+    "pastReadOnly": "Past data: read-only",
+    "current": "current",
+    "historyTitle": "Row history ({n} versions)"
+  },
+  "sequence": {
+    "state": "Current state",
+    "nextNotCached": "Next value not cached",
+    "cycleCount": "Cycles completed",
+    "cacheHint": "Values already cached by the server are handed out before this one.",
+    "options": "Options",
+    "new": "New sequence",
+    "name": "Name",
+    "start": "Start",
+    "min": "Minimum",
+    "max": "Maximum",
+    "increment": "Increment",
+    "cache": "Cache",
+    "cycle": "Restart after the maximum (cycle)",
+    "restart": "Restart with",
+    "restartPlaceholder": "Leave empty to keep the current value",
+    "create": "Create…",
+    "alter": "Apply changes…",
+    "setval": "Set the next value (SETVAL)",
+    "setvalRun": "Set",
+    "setvalOk": "Done: this value is handed out next.",
+    "setvalIgnored": "Ignored: SETVAL never goes backwards. Use “Restart with” instead.",
+    "asDefault": "Use as a column default",
+    "asDefaultHint": "Paste this into a column definition so new rows take the next value.",
+    "copy": "Copy",
+    "copied": "Copied",
+    "ddlHint": "This statement takes effect immediately and cannot be rolled back."
   }
 }
