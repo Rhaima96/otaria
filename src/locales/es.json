@@ -116,7 +116,11 @@
     "REQUIRED": "Falta un campo obligatorio.",
     "NOT_FOUND": "Este objeto ya no existe.",
     "INDEX_READ_ONLY": "Los índices vectoriales no se crean ni se editan en el diseñador; use el editor SQL.",
-    "PLUGIN_UNAVAILABLE": "Este plugin no se puede instalar: no figura como disponible en este servidor."
+    "PLUGIN_UNAVAILABLE": "Este plugin no se puede instalar: no figura como disponible en este servidor.",
+    "EXPORT_FORMAT": "Este formato no puede exportar una base de datos completa.",
+    "EXPORT_TOO_MANY_ROWS": "Demasiadas filas para una hoja de Excel. Use CSV o JSON.",
+    "IMPORT_STATEMENT": "La importación se detuvo en una instrucción con error. Las instrucciones anteriores se aplicaron.",
+    "FILE_NOT_UTF8": "El archivo no es texto UTF-8."
   },
   "tree": {
     "title": "Bases de datos",
@@ -325,5 +329,32 @@
     "none": "Ningún plugin coincide.",
     "installHint": "El plugin sigue instalado tras reiniciar el servidor. Requiere el privilegio INSERT en mysql.plugin.",
     "notStable": "Este plugin no es estable (madurez: {maturity}). El servidor puede rechazarlo según plugin_maturity."
+  },
+  "transfer": {
+    "export": "Exportar",
+    "exportSchema": "Exportar como SQL…",
+    "importSql": "Importar un archivo SQL…",
+    "exportTitle": "Exportar {name}",
+    "importTitle": "Importar en {name}",
+    "format": "Formato",
+    "formats": {
+      "csv": "CSV",
+      "json": "JSON",
+      "xlsx": "Excel (.xlsx)",
+      "sql": "SQL"
+    },
+    "withData": "Incluir las filas",
+    "withDrop": "Añadir DROP … IF EXISTS antes de cada CREATE",
+    "sqlHint": "El script no nombra ninguna base de datos: se puede cargar en cualquiera.",
+    "importHint": "Las instrucciones se ejecutan una tras otra en {schema}. El primer error detiene la importación; las instrucciones anteriores quedan aplicadas.",
+    "chooseSave": "Elegir el archivo y exportar",
+    "chooseOpen": "Elegir el archivo e importar",
+    "starting": "Iniciando…",
+    "progressRows": "{n} filas",
+    "progressBytes": "{done} MB de {total} MB",
+    "exported": "{n} filas escritas en {path}",
+    "imported": "{n} instrucciones ejecutadas.",
+    "stop": "Detener",
+    "close": "Cerrar"
   }
 }

@@ -116,7 +116,11 @@
     "REQUIRED": "Un campo obbligatorio è vuoto.",
     "NOT_FOUND": "Questo oggetto non esiste più.",
     "INDEX_READ_ONLY": "Gli indici vettoriali non si creano né si modificano nel designer; usa l'editor SQL.",
-    "PLUGIN_UNAVAILABLE": "Questo plugin non può essere installato: non risulta disponibile su questo server."
+    "PLUGIN_UNAVAILABLE": "Questo plugin non può essere installato: non risulta disponibile su questo server.",
+    "EXPORT_FORMAT": "Questo formato non può esportare un intero database.",
+    "EXPORT_TOO_MANY_ROWS": "Troppe righe per un foglio Excel. Usa CSV o JSON.",
+    "IMPORT_STATEMENT": "L’importazione si è fermata su un’istruzione in errore. Le istruzioni precedenti sono state applicate.",
+    "FILE_NOT_UTF8": "Il file non è testo UTF-8."
   },
   "tree": {
     "title": "Database",
@@ -325,5 +329,32 @@
     "none": "Nessun plugin corrisponde.",
     "installHint": "Il plugin resta installato dopo il riavvio del server. Richiede il privilegio INSERT su mysql.plugin.",
     "notStable": "Questo plugin non è stabile (maturità: {maturity}). Il server può rifiutarlo in base a plugin_maturity."
+  },
+  "transfer": {
+    "export": "Esporta",
+    "exportSchema": "Esporta in SQL…",
+    "importSql": "Importa un file SQL…",
+    "exportTitle": "Esporta {name}",
+    "importTitle": "Importa in {name}",
+    "format": "Formato",
+    "formats": {
+      "csv": "CSV",
+      "json": "JSON",
+      "xlsx": "Excel (.xlsx)",
+      "sql": "SQL"
+    },
+    "withData": "Includi le righe",
+    "withDrop": "Aggiungi DROP … IF EXISTS prima di ogni CREATE",
+    "sqlHint": "Lo script non nomina alcun database: può essere caricato in qualsiasi database.",
+    "importHint": "Le istruzioni vengono eseguite una dopo l’altra in {schema}. Il primo errore interrompe l’importazione; le istruzioni precedenti restano applicate.",
+    "chooseSave": "Scegli il file ed esporta",
+    "chooseOpen": "Scegli il file e importa",
+    "starting": "Avvio…",
+    "progressRows": "{n} righe",
+    "progressBytes": "{done} MB di {total} MB",
+    "exported": "{n} righe scritte in {path}",
+    "imported": "{n} istruzioni eseguite.",
+    "stop": "Interrompi",
+    "close": "Chiudi"
   }
 }

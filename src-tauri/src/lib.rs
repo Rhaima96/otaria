@@ -8,11 +8,14 @@ mod profiles;
 mod query;
 mod sequence;
 mod ssh;
+mod transfer;
 
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::Serialize;
-use tauri::{Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::Mutex;
 
 use db::{ServerInfo, Session};
@@ -22,6 +25,8 @@ use profiles::{Profile, Secret, Store};
 struct AppState {
     store: Store,
     sessions: Mutex<HashMap<String, Session>>,
+    /// Running imports / exports by job id: cancel flag, and the connection to KILL QUERY (0 = none).
+    jobs: std::sync::Mutex<HashMap<String, (Arc<AtomicBool>, u32)>>,
 }
 
 /// Basic facts about the running app, shown in the UI and used as an IPC smoke test.
@@ -305,6 +310,70 @@ async fn plugin_install(state: State<'_, AppState>, session_id: String, name: St
     plugins::install(&pool(&state, &session_id).await?, &name, &library).await
 }
 
+/// Progress of a running import / export, sent as the `transfer-progress` event.
+#[derive(Clone, Serialize)]
+struct Progress<'a> {
+    id: &'a str,
+    done: u64,
+    total: u64,
+}
+
+/// Register a job so `cancel_job` can stop it; removed again when the job ends, whatever the outcome.
+struct Job<'a> {
+    state: &'a AppState,
+    id: String,
+    cancel: Arc<AtomicBool>,
+}
+
+impl<'a> Job<'a> {
+    fn new(state: &'a AppState, id: &str, conn_id: u32) -> Self {
+        let cancel = Arc::new(AtomicBool::new(false));
+        state.jobs.lock().unwrap().insert(id.to_string(), (cancel.clone(), conn_id));
+        Job { state, id: id.to_string(), cancel }
+    }
+}
+
+impl Drop for Job<'_> {
+    fn drop(&mut self) {
+        self.state.jobs.lock().unwrap().remove(&self.id);
+    }
+}
+
+/// Export rows or DDL to `req.path` (chosen in the save dialog). Returns the number of rows written.
+#[tauri::command]
+async fn export_data(app: AppHandle, state: State<'_, AppState>, session_id: String, job_id: String, req: transfer::ExportReq) -> AppResult<u64> {
+    let pool = pool(&state, &session_id).await?;
+    let job = Job::new(&state, &job_id, 0);
+    transfer::export(&pool, &req, &job.cancel, |done| {
+        let _ = app.emit("transfer-progress", Progress { id: &job_id, done, total: 0 });
+    })
+    .await
+}
+
+/// Run an SQL file in `schema`. Returns the number of statements run.
+#[tauri::command]
+async fn import_sql(app: AppHandle, state: State<'_, AppState>, session_id: String, job_id: String, schema: String, path: String) -> AppResult<u64> {
+    let pool = pool(&state, &session_id).await?;
+    let mut conn = query::open_editor(&pool, Some(&schema)).await?;
+    let job = Job::new(&state, &job_id, conn.conn_id);
+    let conn = Arc::get_mut(&mut conn.conn).expect("connection not shared yet").get_mut();
+    transfer::import_sql(conn, &path, &job.cancel, |done, total| {
+        let _ = app.emit("transfer-progress", Progress { id: &job_id, done, total });
+    })
+    .await
+}
+
+#[tauri::command]
+async fn cancel_job(state: State<'_, AppState>, session_id: String, job_id: String) -> AppResult<()> {
+    let found = state.jobs.lock().unwrap().get(&job_id).cloned();
+    let Some((cancel, conn_id)) = found else { return Ok(()) };
+    cancel.store(true, Ordering::Relaxed);
+    if conn_id > 0 {
+        query::cancel(&pool(&state, &session_id).await?, conn_id).await?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn preview_changes(schema: String, table: String, changes: Vec<edit::Change>) -> AppResult<Vec<String>> {
     edit::preview(&schema, &table, &changes)
@@ -389,9 +458,10 @@ async fn close_editor(state: State<'_, AppState>, session_id: String, editor_id:
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
-            app.manage(AppState { store: Store::new(dir), sessions: Mutex::new(HashMap::new()) });
+            app.manage(AppState { store: Store::new(dir), sessions: Mutex::new(HashMap::new()), jobs: Default::default() });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -426,7 +496,10 @@ pub fn run() {
             drop_object,
             list_plugins,
             plugin_install_sql,
-            plugin_install
+            plugin_install,
+            export_data,
+            import_sql,
+            cancel_job
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

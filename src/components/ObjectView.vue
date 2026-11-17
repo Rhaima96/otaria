@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Eraser, KeyRound, Pencil, Trash2 } from "lucide-vue-next";
+import { Download, Eraser, KeyRound, Pencil, Trash2 } from "lucide-vue-next";
 import DataGrid from "@/components/DataGrid.vue";
 import ErrorLine from "@/components/ErrorLine.vue";
 import SequenceView from "@/components/SequenceView.vue";
@@ -12,7 +12,7 @@ import { editScript } from "@/lib/templates";
 import { cn } from "@/lib/utils";
 
 const props = defineProps<{ sessionId: string; schema: string; obj: DbObject; mariadb: boolean }>();
-const emit = defineEmits<{ renamed: [name: string]; dropped: []; editSql: [sql: string] }>();
+const emit = defineEmits<{ renamed: [name: string]; dropped: []; editSql: [sql: string]; export: [] }>();
 const { t } = useI18n();
 
 type View = "sequence" | "data" | "structure" | "ddl";
@@ -97,6 +97,7 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
         {{ t(`object.${v}`) }}
       </button>
       <div class="ml-auto flex items-center gap-1">
+        <button v-if="hasRows(obj.kind) && obj.kind !== 'sequence'" :class="btn" @click="emit('export')"><Download class="size-3.5" />{{ t("transfer.export") }}</button>
         <button v-if="isTable" :class="btn" @click="askDrop(true)"><Eraser class="size-3.5" />{{ t("object.truncate") }}</button>
         <button :class="cn(btn, 'hover:text-destructive')" @click="askDrop(false)"><Trash2 class="size-3.5" />{{ t("object.drop") }}</button>
       </div>

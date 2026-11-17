@@ -2,7 +2,7 @@
 import { onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui";
-import { ChevronRight, Database, LoaderCircle, Plus, RefreshCw } from "lucide-vue-next";
+import { ChevronRight, Database, Download, LoaderCircle, Plus, RefreshCw, Upload } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
 import { api, toAppError, type AppError, type DbObject, type ObjectKind } from "@/lib/api";
 import { KIND_ORDER, objectIcon } from "@/lib/objects";
@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 
 /** `mariadb`: offer MariaDB-only actions (new sequence); hidden on MySQL. */
 const props = defineProps<{ sessionId: string; selected: string | null; mariadb: boolean }>();
-const emit = defineEmits<{ open: [schema: string, obj: DbObject]; create: [schema: string, kind: ObjectKind] }>();
+const emit = defineEmits<{ open: [schema: string, obj: DbObject]; create: [schema: string, kind: ObjectKind]; transfer: [schema: string, mode: "export" | "import"] }>();
 const creatable = (): ObjectKind[] => KIND_ORDER.filter((k) => k !== "sequence" || props.mariadb);
 const { t } = useI18n();
 
@@ -49,6 +49,11 @@ function toggle(schema: string) {
 onMounted(load);
 defineExpose({ load });
 const row = "flex w-full items-center gap-1.5 py-0.5 pr-2 text-left hover:bg-secondary";
+// Row actions on hover. Transfer icons match the dialog: export = Download (to a file), import = Upload (a file).
+const trigger =
+  "absolute top-0 hidden size-5 items-center justify-center rounded-sm text-muted-foreground group-hover:flex hover:bg-background hover:text-foreground focus-visible:flex data-[state=open]:flex";
+const menu = "z-50 min-w-40 rounded-md border bg-popover p-1 text-popover-foreground shadow-md";
+const item = "cursor-default rounded-sm px-2 py-1 outline-none data-highlighted:bg-secondary";
 </script>
 
 <template>
@@ -70,25 +75,23 @@ const row = "flex w-full items-center gap-1.5 py-0.5 pr-2 text-left hover:bg-sec
             <LoaderCircle v-if="expanded[s] === 'loading'" class="ml-auto size-3.5 shrink-0 animate-spin text-muted-foreground" />
           </button>
           <DropdownMenuRoot>
-            <DropdownMenuTrigger
-              :title="t('newObject.menu')"
-              class="absolute top-0 right-1 hidden size-5 items-center justify-center rounded-sm text-muted-foreground group-hover:flex hover:bg-background hover:text-foreground focus-visible:flex data-[state=open]:flex"
-            >
+            <DropdownMenuTrigger :title="t('newObject.menu')" :class="cn(trigger, 'right-1')">
               <Plus class="size-3.5" /><span class="sr-only">{{ t("newObject.menu") }}</span>
             </DropdownMenuTrigger>
             <DropdownMenuPortal>
-              <DropdownMenuContent align="start" class="z-50 min-w-40 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
-                <DropdownMenuItem
-                  v-for="k in creatable()"
-                  :key="k"
-                  class="cursor-default rounded-sm px-2 py-1 outline-none data-highlighted:bg-secondary"
-                  @select="emit('create', s, k)"
-                >
+              <DropdownMenuContent align="start" :class="menu">
+                <DropdownMenuItem v-for="k in creatable()" :key="k" :class="item" @select="emit('create', s, k)">
                   {{ t(`newObject.${k}`) }}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenuPortal>
           </DropdownMenuRoot>
+          <button :title="t('transfer.importSql')" :class="cn(trigger, 'right-7')" @click="emit('transfer', s, 'import')">
+            <Upload class="size-3.5" /><span class="sr-only">{{ t("transfer.importSql") }}</span>
+          </button>
+          <button :title="t('transfer.exportSchema')" :class="cn(trigger, 'right-13')" @click="emit('transfer', s, 'export')">
+            <Download class="size-3.5" /><span class="sr-only">{{ t("transfer.exportSchema") }}</span>
+          </button>
         </div>
         <ul v-if="Array.isArray(expanded[s])" role="group">
           <li v-for="o in expanded[s]" :key="o.kind + o.name" role="treeitem">

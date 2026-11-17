@@ -41,21 +41,32 @@ pub struct Stmt {
 /// Split a script into statements. Honours quotes, backticks, `--`/`#`/`/* */` comments and the
 /// client-side `DELIMITER` command (needed for routine bodies). Statements come without their delimiter.
 pub fn split(src: &str) -> Vec<Stmt> {
+    let (mut out, tail, _) = split_from(src, ";");
+    push_stmt(src, &mut out, tail, src.len());
+    out
+}
+
+fn push_stmt(src: &str, out: &mut Vec<Stmt>, s: usize, e: usize) {
+    let text = &src[s..e];
+    let trimmed = text.trim();
+    if !trimmed.is_empty() {
+        let lead = text.len() - text.trim_start().len();
+        out.push(Stmt { sql: trimmed.to_string(), start: s + lead, end: s + lead + trimmed.len() });
+    }
+}
+
+/// Streaming form of `split`: only statements closed by their delimiter, plus where the unterminated
+/// tail starts and the delimiter in force there (to resume on the next chunk of a file).
+pub fn split_from(src: &str, delim: &str) -> (Vec<Stmt>, usize, String) {
     let b = src.as_bytes();
     let mut out = Vec::new();
-    let mut delim = ";".to_string();
+    let mut delim = delim.to_string();
     let (mut i, mut start) = (0, 0);
-    let push = |out: &mut Vec<Stmt>, s: usize, e: usize| {
-        let text = &src[s..e];
-        let trimmed = text.trim();
-        if !trimmed.is_empty() {
-            let lead = text.len() - text.trim_start().len();
-            out.push(Stmt { sql: trimmed.to_string(), start: s + lead, end: s + lead + trimmed.len() });
-        }
-    };
+    // Nothing but whitespace and comments since `start`: where DELIMITER may appear.
+    let mut blank = true;
     while i < b.len() {
         // DELIMITER is only recognised at the start of a statement (ignoring whitespace).
-        if src[start..i].trim().is_empty() && src[i..].len() >= 10 && src[i..i + 10].eq_ignore_ascii_case("delimiter ") {
+        if blank && src[i..].len() >= 10 && src[i..i + 10].eq_ignore_ascii_case("delimiter ") {
             let line_end = src[i..].find('\n').map_or(b.len(), |n| i + n);
             let d = src[i + 10..line_end].trim();
             if !d.is_empty() {
@@ -67,6 +78,7 @@ pub fn split(src: &str) -> Vec<Stmt> {
         }
         match b[i] {
             q @ (b'\'' | b'"' | b'`') => {
+                blank = false;
                 i += 1;
                 while i < b.len() {
                     if b[i] == b'\\' && q != b'`' {
@@ -91,15 +103,18 @@ pub fn split(src: &str) -> Vec<Stmt> {
             }
             b'/' if src[i..].starts_with("/*") => i = src[i + 2..].find("*/").map_or(b.len(), |n| i + n + 4),
             _ if src[i..].starts_with(delim.as_str()) => {
-                push(&mut out, start, i);
+                push_stmt(src, &mut out, start, i);
                 i += delim.len();
                 start = i;
+                blank = true;
             }
-            _ => i += 1,
+            c => {
+                blank &= c.is_ascii_whitespace();
+                i += 1;
+            }
         }
     }
-    push(&mut out, start, b.len().max(start));
-    out
+    (out, start.min(b.len()), delim)
 }
 
 /// Destructive statements that need an explicit confirmation (PLAN §4).
@@ -232,6 +247,9 @@ mod tests {
         assert_eq!(sqls(src), ["CREATE PROCEDURE p() BEGIN SELECT 1; SELECT 2; END", "CALL p()"]);
         let s = &split(src)[1];
         assert_eq!(&src[s.start..s.end], "CALL p()");
+        // A comment before DELIMITER (as in dumps) does not hide it.
+        let dump = "-- procedure p\nDELIMITER ;;\nCREATE PROCEDURE p() BEGIN SELECT 1; END;;\nDELIMITER ;\nSELECT 'DELIMITER x';";
+        assert_eq!(sqls(dump), ["CREATE PROCEDURE p() BEGIN SELECT 1; END", "SELECT 'DELIMITER x'"]);
     }
 
     #[test]

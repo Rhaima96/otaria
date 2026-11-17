@@ -228,6 +228,25 @@ export interface Plugin {
   description: string;
 }
 
+export type ExportFormat = "csv" | "json" | "xlsx" | "sql";
+
+export interface ExportReq {
+  schema: string;
+  /** null = the whole schema (SQL only). */
+  table: string | null;
+  format: ExportFormat;
+  path: string;
+  data: boolean;
+  drop: boolean;
+}
+
+/** Payload of the `transfer-progress` event. Export: rows so far (total 0); import: bytes read of total. */
+export interface TransferProgress {
+  id: string;
+  done: number;
+  total: number;
+}
+
 export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
   listProfiles: () => invoke<Profile[]>("list_profiles"),
@@ -266,6 +285,9 @@ export const api = {
   listPlugins: (sessionId: string) => invoke<Plugin[]>("list_plugins", { sessionId }),
   pluginInstallSql: (name: string, library: string) => invoke<string>("plugin_install_sql", { name, library }),
   pluginInstall: (sessionId: string, name: string, library: string) => invoke<void>("plugin_install", { sessionId, name, library }),
+  exportData: (sessionId: string, jobId: string, req: ExportReq) => invoke<number>("export_data", { sessionId, jobId, req }),
+  importSql: (sessionId: string, jobId: string, schema: string, path: string) => invoke<number>("import_sql", { sessionId, jobId, schema, path }),
+  cancelJob: (sessionId: string, jobId: string) => invoke<void>("cancel_job", { sessionId, jobId }),
   runSql: (sessionId: string, editorId: string, r: RunRequest) => invoke<RunOutput>("run_sql", { sessionId, editorId, ...r }),
   cancelSql: (sessionId: string, editorId: string) => invoke<void>("cancel_sql", { sessionId, editorId }),
   closeEditor: (sessionId: string, editorId: string) => invoke<void>("close_editor", { sessionId, editorId }),

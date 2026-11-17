@@ -116,7 +116,11 @@
     "REQUIRED": "A required field is empty.",
     "NOT_FOUND": "This object no longer exists.",
     "INDEX_READ_ONLY": "Vector indexes cannot be created or edited in the designer; use the SQL editor.",
-    "PLUGIN_UNAVAILABLE": "This plugin cannot be installed: it is not listed as available on this server."
+    "PLUGIN_UNAVAILABLE": "This plugin cannot be installed: it is not listed as available on this server.",
+    "EXPORT_FORMAT": "This format cannot export a whole database.",
+    "EXPORT_TOO_MANY_ROWS": "Too many rows for an Excel sheet. Use CSV or JSON.",
+    "IMPORT_STATEMENT": "The import stopped at a failing statement. The statements before it were applied.",
+    "FILE_NOT_UTF8": "The file is not UTF-8 text."
   },
   "tree": {
     "title": "Databases",
@@ -325,5 +329,32 @@
     "none": "No plugin matches.",
     "installHint": "The plugin stays installed after a server restart. Requires the INSERT privilege on mysql.plugin.",
     "notStable": "This plugin is not stable (maturity: {maturity}). The server may refuse it depending on plugin_maturity."
+  },
+  "transfer": {
+    "export": "Export",
+    "exportSchema": "Export as SQL…",
+    "importSql": "Import an SQL file…",
+    "exportTitle": "Export {name}",
+    "importTitle": "Import into {name}",
+    "format": "Format",
+    "formats": {
+      "csv": "CSV",
+      "json": "JSON",
+      "xlsx": "Excel (.xlsx)",
+      "sql": "SQL"
+    },
+    "withData": "Include the rows",
+    "withDrop": "Add DROP … IF EXISTS before each CREATE",
+    "sqlHint": "The script names no database: it can be loaded into any database.",
+    "importHint": "Statements run one after the other in {schema}. The first error stops the import; the statements before it stay applied.",
+    "chooseSave": "Choose the file and export",
+    "chooseOpen": "Choose the file and import",
+    "starting": "Starting…",
+    "progressRows": "{n} rows",
+    "progressBytes": "{done} MB of {total} MB",
+    "exported": "{n} rows written to {path}",
+    "imported": "{n} statements run.",
+    "stop": "Stop",
+    "close": "Close"
   }
 }

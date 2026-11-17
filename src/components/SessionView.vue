@@ -9,6 +9,7 @@ const SqlEditor = defineAsyncComponent(() => import("@/components/SqlEditor.vue"
 import PluginsView from "@/components/PluginsView.vue";
 import SequenceView from "@/components/SequenceView.vue";
 import TableDesigner from "@/components/TableDesigner.vue";
+import TransferDialog from "@/components/TransferDialog.vue";
 import type { DbObject, ObjectKind, OpenedSession } from "@/lib/api";
 import { newScript } from "@/lib/templates";
 import { objectIcon } from "@/lib/objects";
@@ -39,6 +40,7 @@ function open(schema: string, obj: DbObject) {
 }
 
 const tree = ref<InstanceType<typeof ObjectTree> | null>(null);
+const transfer = ref<InstanceType<typeof TransferDialog> | null>(null);
 
 /** "New…" from the tree: table and sequence have a form, the other kinds start from a template in the editor. */
 function create(schema: string, kind: ObjectKind) {
@@ -98,7 +100,15 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
     </div>
     <div class="flex min-h-0 flex-1">
       <aside class="w-64 shrink-0 border-r bg-sidebar">
-        <ObjectTree ref="tree" :session-id="session.sessionId" :selected="active" :mariadb="session.info.isMariadb" @open="open" @create="create" />
+        <ObjectTree
+          ref="tree"
+          :session-id="session.sessionId"
+          :selected="active"
+          :mariadb="session.info.isMariadb"
+          @open="open"
+          @create="create"
+          @transfer="(schema, mode) => transfer?.open({ mode, schema, table: null })"
+        />
       </aside>
       <main class="flex min-w-0 flex-1 flex-col">
         <nav class="flex h-8 shrink-0 items-stretch overflow-x-auto border-b bg-sidebar" role="tablist">
@@ -139,6 +149,7 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
             @renamed="(n) => renamed(x, n)"
             @dropped="dropped(x.id)"
             @edit-sql="(sql) => newQuery(x.schema, sql)"
+            @export="transfer?.open({ mode: 'export', schema: x.schema!, table: x.obj.name, view: x.obj.kind === 'view' })"
           />
           <SequenceView v-else-if="x.create === 'sequence'" v-show="active === x.id" :session-id="session.sessionId" :schema="x.schema!" name="" create class="min-h-0 flex-1" @created="(n) => created(x.id, x.schema!, 'sequence', n)" />
           <TableDesigner v-else-if="x.create === 'table'" v-show="active === x.id" :session-id="session.sessionId" :schema="x.schema!" :table="null" class="min-h-0 flex-1" @saved="(n) => created(x.id, x.schema!, 'table', n)" />
@@ -175,5 +186,6 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
         </div>
       </main>
     </div>
+    <TransferDialog ref="transfer" :session-id="session.sessionId" @imported="tree?.load()" />
   </div>
 </template>

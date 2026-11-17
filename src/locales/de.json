@@ -116,7 +116,11 @@
     "REQUIRED": "Ein Pflichtfeld ist leer.",
     "NOT_FOUND": "Dieses Objekt existiert nicht mehr.",
     "INDEX_READ_ONLY": "Vektorindizes werden im Designer weder erstellt noch bearbeitet; den SQL-Editor verwenden.",
-    "PLUGIN_UNAVAILABLE": "Dieses Plugin kann nicht installiert werden: Es ist auf diesem Server nicht als verfügbar aufgeführt."
+    "PLUGIN_UNAVAILABLE": "Dieses Plugin kann nicht installiert werden: Es ist auf diesem Server nicht als verfügbar aufgeführt.",
+    "EXPORT_FORMAT": "Dieses Format kann keine ganze Datenbank exportieren.",
+    "EXPORT_TOO_MANY_ROWS": "Zu viele Zeilen für ein Excel-Blatt. Verwenden Sie CSV oder JSON.",
+    "IMPORT_STATEMENT": "Der Import wurde bei einer fehlerhaften Anweisung gestoppt. Die vorherigen Anweisungen wurden angewendet.",
+    "FILE_NOT_UTF8": "Die Datei ist kein UTF-8-Text."
   },
   "tree": {
     "title": "Datenbanken",
@@ -325,5 +329,32 @@
     "none": "Kein Plugin passt.",
     "installHint": "Das Plugin bleibt nach einem Serverneustart installiert. Erfordert das INSERT-Recht auf mysql.plugin.",
     "notStable": "Dieses Plugin ist nicht stabil (Reife: {maturity}). Der Server kann es je nach plugin_maturity ablehnen."
+  },
+  "transfer": {
+    "export": "Exportieren",
+    "exportSchema": "Als SQL exportieren…",
+    "importSql": "SQL-Datei importieren…",
+    "exportTitle": "{name} exportieren",
+    "importTitle": "In {name} importieren",
+    "format": "Format",
+    "formats": {
+      "csv": "CSV",
+      "json": "JSON",
+      "xlsx": "Excel (.xlsx)",
+      "sql": "SQL"
+    },
+    "withData": "Zeilen einschließen",
+    "withDrop": "DROP … IF EXISTS vor jedem CREATE einfügen",
+    "sqlHint": "Das Skript nennt keine Datenbank: Es kann in jede Datenbank geladen werden.",
+    "importHint": "Die Anweisungen laufen nacheinander in {schema}. Der erste Fehler stoppt den Import; die vorherigen Anweisungen bleiben angewendet.",
+    "chooseSave": "Datei wählen und exportieren",
+    "chooseOpen": "Datei wählen und importieren",
+    "starting": "Wird gestartet…",
+    "progressRows": "{n} Zeilen",
+    "progressBytes": "{done} MB von {total} MB",
+    "exported": "{n} Zeilen in {path} geschrieben",
+    "imported": "{n} Anweisungen ausgeführt.",
+    "stop": "Stoppen",
+    "close": "Schließen"
   }
 }

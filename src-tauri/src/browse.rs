@@ -94,6 +94,11 @@ pub async fn table_info(pool: &Pool, schema: &str, table: &str) -> AppResult<Tab
 
 /// `SHOW CREATE …` for any object kind of the tree.
 pub async fn ddl(pool: &Pool, schema: &str, name: &str, kind: &str) -> AppResult<String> {
+    ddl_on(&mut pool.get_conn().await?, schema, name, kind).await
+}
+
+/// Same on a given connection. After `USE schema`, views come without the schema name in their text.
+pub async fn ddl_on(conn: &mut impl Queryable, schema: &str, name: &str, kind: &str) -> AppResult<String> {
     // Column holding the statement differs per kind.
     let (keyword, col) = match kind {
         "table" => ("TABLE", 1),
@@ -105,7 +110,6 @@ pub async fn ddl(pool: &Pool, schema: &str, name: &str, kind: &str) -> AppResult
         "event" => ("EVENT", 3),
         _ => return Err(AppError::new("UNKNOWN", format!("kind {kind}"))),
     };
-    let mut conn = pool.get_conn().await?;
     let row: Option<Row> = conn.query_first(format!("SHOW CREATE {keyword} {}.{}", ident(schema), ident(name))).await?;
     // Routines return NULL here when the user lacks the privilege to see the body.
     let text: Option<String> = row.and_then(|mut r| r.take::<Option<String>, _>(col).flatten());

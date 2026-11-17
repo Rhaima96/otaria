@@ -116,7 +116,11 @@
     "REQUIRED": "Un champ obligatoire est vide.",
     "NOT_FOUND": "Cet objet n'existe plus.",
     "INDEX_READ_ONLY": "Les index vectoriels ne se créent ni ne se modifient dans le concepteur ; passez par l'éditeur SQL.",
-    "PLUGIN_UNAVAILABLE": "Ce plugin ne peut pas être installé : il n’est pas listé comme disponible sur ce serveur."
+    "PLUGIN_UNAVAILABLE": "Ce plugin ne peut pas être installé : il n’est pas listé comme disponible sur ce serveur.",
+    "EXPORT_FORMAT": "Ce format ne peut pas exporter une base entière.",
+    "EXPORT_TOO_MANY_ROWS": "Trop de lignes pour une feuille Excel. Utilisez CSV ou JSON.",
+    "IMPORT_STATEMENT": "L’import s’est arrêté sur une instruction en erreur. Les instructions précédentes ont été appliquées.",
+    "FILE_NOT_UTF8": "Le fichier n’est pas un texte UTF-8."
   },
   "tree": {
     "title": "Bases de données",
@@ -325,5 +329,32 @@
     "none": "Aucun plugin ne correspond.",
     "installHint": "Le plugin reste installé après un redémarrage du serveur. Nécessite le privilège INSERT sur mysql.plugin.",
     "notStable": "Ce plugin n’est pas stable (maturité : {maturity}). Le serveur peut le refuser selon plugin_maturity."
+  },
+  "transfer": {
+    "export": "Exporter",
+    "exportSchema": "Exporter en SQL…",
+    "importSql": "Importer un fichier SQL…",
+    "exportTitle": "Exporter {name}",
+    "importTitle": "Importer dans {name}",
+    "format": "Format",
+    "formats": {
+      "csv": "CSV",
+      "json": "JSON",
+      "xlsx": "Excel (.xlsx)",
+      "sql": "SQL"
+    },
+    "withData": "Inclure les lignes",
+    "withDrop": "Ajouter DROP … IF EXISTS avant chaque CREATE",
+    "sqlHint": "Le script ne nomme aucune base : il peut être chargé dans n’importe quelle base.",
+    "importHint": "Les instructions s’exécutent l’une après l’autre dans {schema}. La première erreur arrête l’import ; les instructions précédentes restent appliquées.",
+    "chooseSave": "Choisir le fichier et exporter",
+    "chooseOpen": "Choisir le fichier et importer",
+    "starting": "Démarrage…",
+    "progressRows": "{n} lignes",
+    "progressBytes": "{done} Mo sur {total} Mo",
+    "exported": "{n} lignes écrites dans {path}",
+    "imported": "{n} instructions exécutées.",
+    "stop": "Arrêter",
+    "close": "Fermer"
   }
 }
