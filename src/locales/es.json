@@ -1,0 +1,17 @@
+{
+  "app": {
+    "tagline": "Cliente de escritorio para MariaDB",
+    "welcome": "La fase 0 está lista: tema, idiomas y el puente con Rust funcionan.",
+    "version": "Versión {version} en {os}"
+  },
+  "settings": {
+    "theme": "Tema",
+    "language": "Idioma",
+    "system": "Sistema",
+    "light": "Claro",
+    "dark": "Oscuro"
+  },
+  "errors": {
+    "ipc": "No se pudo contactar con el backend de la aplicación."
+  }
+}

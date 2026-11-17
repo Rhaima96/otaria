@@ -1,0 +1,17 @@
+{
+  "app": {
+    "tagline": "Desktop client for MariaDB",
+    "welcome": "Phase 0 is ready: theme, languages and the Rust bridge work.",
+    "version": "Version {version} on {os}"
+  },
+  "settings": {
+    "theme": "Theme",
+    "language": "Language",
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark"
+  },
+  "errors": {
+    "ipc": "Could not reach the app backend."
+  }
+}

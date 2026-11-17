@@ -1,0 +1,118 @@
+/*
+ * Otaria design tokens: single source of truth for colours, fonts and radii.
+ * Values come from docs/brand/otaria-brand-guidelines.pdf (UI tokens page).
+ * Variable names follow shadcn-vue conventions so its components pick them up.
+ *   brand guide name -> variable here
+ *   --bg -> --background, --fg -> --foreground, --surface -> --card / --sidebar,
+ *   --muted (text) -> --muted-foreground, --danger -> --destructive.
+ * Components must use these (via Tailwind classes), never raw hex values.
+ */
+@import "tailwindcss";
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-sans/700.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/700.css";
+
+/* `dark:` follows the .dark class on <html>, set by useTheme() */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: #ffffff;
+  --foreground: #0f1e2b;
+  --card: #f4f7f9;
+  --card-foreground: #0f1e2b;
+  --popover: #ffffff;
+  --popover-foreground: #0f1e2b;
+  --primary: #0e7c7b;
+  --primary-foreground: #ffffff;
+  --secondary: #e9eef2;
+  --secondary-foreground: #0f1e2b;
+  --muted: #e9eef2;
+  --muted-foreground: #5b6b7a;
+  --accent: #e9eef2;
+  --accent-foreground: #0f1e2b;
+  --destructive: #c62828;
+  --border: #d5dde4;
+  --input: #d5dde4;
+  --ring: #0e7c7b;
+  --sidebar: #f4f7f9;
+  --selection: #d8f1ef;
+  --success: #1b7f3b;
+  --warning: #9a5b00;
+  --radius: 0.375rem;
+}
+
+.dark {
+  --background: #0b1622;
+  --foreground: #e6edf3;
+  --card: #122130;
+  --card-foreground: #e6edf3;
+  --popover: #122130;
+  --popover-foreground: #e6edf3;
+  --primary: #2dd4bf;
+  --primary-foreground: #0b1622;
+  --secondary: #1a2d3f;
+  --secondary-foreground: #e6edf3;
+  --muted: #1a2d3f;
+  --muted-foreground: #8fa1b3;
+  --accent: #1a2d3f;
+  --accent-foreground: #e6edf3;
+  --destructive: #f87171;
+  --border: #26394c;
+  --input: #26394c;
+  --ring: #2dd4bf;
+  --sidebar: #122130;
+  --selection: #123b3e;
+  --success: #4ade80;
+  --warning: #fbbf24;
+}
+
+@theme inline {
+  --font-sans: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", Menlo, Consolas, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-selection: var(--selection);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+
+  --radius-sm: calc(var(--radius) - 2px); /* 4px controls */
+  --radius-md: var(--radius); /* 6px panels */
+  --radius-lg: calc(var(--radius) + 2px); /* 8px dialogs */
+}
+
+@layer base {
+  * { @apply border-border; }
+  html { color-scheme: light; }
+  html.dark { color-scheme: dark; }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-size: 13px;
+    line-height: 18px;
+  }
+  :focus-visible { @apply outline-2 outline-offset-1 outline-ring; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+}
