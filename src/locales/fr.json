@@ -165,6 +165,8 @@
     "close": "Fermer",
     "closeHint": "Fermer l'onglet (⌘W / Ctrl+W)",
     "closeDirty": "Fermer cet onglet ? Les modifications non enregistrées seront perdues.",
+    "leaveDirty": "Changer de vue ? Les modifications non enregistrées seront perdues.",
+    "leave": "Changer de vue",
     "sequence": "Séquence",
     "truncate": "Vider",
     "drop": "Supprimer",

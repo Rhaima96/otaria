@@ -165,6 +165,8 @@
     "close": "Cerrar",
     "closeHint": "Cerrar pestaña (⌘W / Ctrl+W)",
     "closeDirty": "¿Cerrar esta pestaña? Se perderán los cambios no guardados.",
+    "leaveDirty": "¿Cambiar de vista? Se perderán los cambios no guardados.",
+    "leave": "Cambiar de vista",
     "sequence": "Secuencia",
     "truncate": "Vaciar",
     "drop": "Eliminar",

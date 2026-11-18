@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { Download, Eraser, KeyRound, Pencil, Trash2, Upload } from "lucide-vue-next";
 import DataGrid from "@/components/DataGrid.vue";
 import ErrorLine from "@/components/ErrorLine.vue";
@@ -43,7 +44,13 @@ const error = ref<AppError | null>(null);
 // Unsaved grid rows or designer changes: SessionView asks before closing the tab.
 const grid = ref<InstanceType<typeof DataGrid> | null>(null);
 const designer = ref<InstanceType<typeof TableDesigner> | null>(null);
-defineExpose({ dirty: computed(() => !!(grid.value?.dirty || designer.value?.dirty)) });
+const dirty = computed(() => !!(grid.value?.dirty || designer.value?.dirty));
+defineExpose({ dirty });
+/** Views are v-if: leaving the grid or the designer drops their unsaved changes, so ask first. */
+async function switchView(v: View) {
+  if (v === view.value || (dirty.value && !(await ask(t("object.leaveDirty"), { kind: "warning", okLabel: t("object.leave"), cancelLabel: t("grid.cancel") })))) return;
+  view.value = v;
+}
 /** Bumped after a structure change: remounts the grid on the new columns. */
 const version = ref(0);
 
@@ -120,7 +127,7 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
         role="tab"
         :aria-selected="view === v"
         :class="cn(subtab, view === v ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground')"
-        @click="view = v"
+        @click="switchView(v)"
       >
         {{ t(`object.${v}`) }}
       </button>

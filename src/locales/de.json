@@ -165,6 +165,8 @@
     "close": "Schließen",
     "closeHint": "Tab schließen (⌘W / Strg+W)",
     "closeDirty": "Diesen Tab schließen? Nicht gespeicherte Änderungen gehen verloren.",
+    "leaveDirty": "Ansicht wechseln? Nicht gespeicherte Änderungen gehen verloren.",
+    "leave": "Ansicht wechseln",
     "sequence": "Sequenz",
     "truncate": "Leeren",
     "drop": "Löschen",

@@ -165,6 +165,8 @@
     "close": "Chiudi",
     "closeHint": "Chiudi scheda (⌘W / Ctrl+W)",
     "closeDirty": "Chiudere questa scheda? Le modifiche non salvate andranno perse.",
+    "leaveDirty": "Cambiare vista? Le modifiche non salvate andranno perse.",
+    "leave": "Cambia vista",
     "sequence": "Sequenza",
     "truncate": "Svuota",
     "drop": "Elimina",

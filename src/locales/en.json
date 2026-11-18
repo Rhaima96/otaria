@@ -165,6 +165,8 @@
     "close": "Close",
     "closeHint": "Close tab (⌘W / Ctrl+W)",
     "closeDirty": "Close this tab? Unsaved changes will be lost.",
+    "leaveDirty": "Switch view? Unsaved changes will be lost.",
+    "leave": "Switch view",
     "sequence": "Sequence",
     "truncate": "Empty",
     "drop": "Delete",
