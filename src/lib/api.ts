@@ -186,12 +186,15 @@ export interface ColumnDef {
 export interface IndexDef {
   original: string | null;
   name: string;
-  /** VECTOR: kept or dropped, never edited in the designer (its M / DISTANCE options are not loaded). */
+  /** VECTOR: MariaDB 11.7+, one VECTOR NOT NULL column. */
   kind: "PRIMARY" | "UNIQUE" | "INDEX" | "FULLTEXT" | "SPATIAL" | "VECTOR";
   columns: { name: string; length: number | null; desc: boolean }[];
   comment: string;
   /** Not used by the optimizer: IGNORED (MariaDB) / INVISIBLE (MySQL). */
   ignored: boolean;
+  /** VECTOR only: graph neighbours (3–200) and metric; null = server default. */
+  m?: number | null;
+  distance?: "euclidean" | "cosine" | null;
 }
 
 export interface FkDef {
@@ -253,6 +256,26 @@ export interface RunRequest {
   confirmed: boolean;
   /** Run the statement as ANALYZE FORMAT=JSON (one SELECT only). */
   analyze?: boolean;
+}
+
+export interface VectorColumn {
+  name: string;
+  dimensions: number;
+  index: { name: string; m: number | null; distance: string | null } | null;
+}
+
+export type VectorDistance = "euclidean" | "cosine";
+/** Compare with a typed vector, or with the vector of the row whose (single-column) primary key is `value`. */
+export type VectorProbe = { kind: "text"; value: string } | { kind: "row"; value: string };
+
+export interface Engine {
+  name: string;
+  /** YES | NO | DEFAULT | DISABLED */
+  support: string;
+  comment: string;
+  transactions: boolean;
+  xa: boolean;
+  savepoints: boolean;
 }
 
 export interface Plugin {
@@ -433,6 +456,10 @@ export const api = {
     invoke<void>("drop_object", { sessionId, schema, name, kind, truncate }),
   erDiagram: (sessionId: string, schema: string, tables: string[], neighbors: boolean) => invoke<string>("er_diagram", { sessionId, schema, tables, neighbors }),
   saveDiagram: (path: string, text: string) => invoke<void>("save_diagram", { path, text }),
+  vectorColumns: (sessionId: string, schema: string, table: string) => invoke<VectorColumn[]>("vector_columns", { sessionId, schema, table }),
+  vectorSearch: (sessionId: string, schema: string, table: string, column: string, distance: VectorDistance, probe: VectorProbe, k: number) =>
+    invoke<Rows>("vector_search", { sessionId, schema, table, column, distance, probe, k }),
+  engineList: (sessionId: string) => invoke<Engine[]>("engine_list", { sessionId }),
   listPlugins: (sessionId: string) => invoke<Plugin[]>("list_plugins", { sessionId }),
   pluginInstallSql: (name: string, library: string) => invoke<string>("plugin_install_sql", { name, library }),
   pluginInstall: (sessionId: string, name: string, library: string) => invoke<void>("plugin_install", { sessionId, name, library }),

@@ -6,7 +6,7 @@ import { type ColDef, type GridApi, type GridReadyEvent, type SortChangedEvent }
 import { Ban, Braces, Filter, History, Plus, RefreshCw, Save, Trash2, Undo2, X } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
 import JsonDialog from "@/components/JsonDialog.vue";
-import { theme } from "@/lib/grid";
+import { theme, vectorText } from "@/lib/grid";
 import { api, toAppError, type AppError, type Change, type History as RowHistory, type Pairs, type Sort, type TableInfo } from "@/lib/api";
 
 const props = defineProps<{ sessionId: string; schema: string; table: string; info: TableInfo; versioned?: boolean }>();
@@ -45,7 +45,9 @@ const selected = ref(0);
 const pkIndex = computed(() => props.info.primaryKey.map((k) => columns.value.indexOf(k)));
 const hasKey = computed(() => pkIndex.value.length > 0 && !pkIndex.value.includes(-1));
 const editable = computed(() => hasKey.value && !asOf.value);
-const BINARY = /blob|binary|bit|geometry|point|linestring|polygon/i;
+// VECTOR cells are shown as text but stored as bytes: edited in SQL (VEC_FromText), not in the grid.
+const BINARY = /blob|binary|bit|geometry|point|linestring|polygon|vector/i;
+const vectorCols = computed(() => new Set(props.info.columns.filter((c) => c.dataType === "vector").map((c) => c.name)));
 const readOnlyCol = (name: string) => {
   const c = props.info.columns.find((c) => c.name === name);
   return !c || BINARY.test(c.dataType) || /GENERATED|PERSISTENT/i.test(c.extra);
@@ -104,7 +106,8 @@ const colDefs = computed<ColDef<GridRow>[]>(() =>
     },
     // The editor gives "" for an empty cell; NULL is set with its own button.
     valueParser: (p) => p.newValue ?? "",
-    valueFormatter: (p) => (p.value === null ? "NULL" : p.value === undefined ? t("grid.default") : String(p.value)),
+    valueFormatter: (p) =>
+      p.value === null ? "NULL" : p.value === undefined ? t("grid.default") : vectorCols.value.has(name) ? vectorText(p.value) : String(p.value),
     editable: (p) => editable.value && !readOnlyCol(name) && !p.data?.deleted,
     // Rows come sorted from the server: a constant comparator keeps that order on the client.
     sortable: !dirty.value,

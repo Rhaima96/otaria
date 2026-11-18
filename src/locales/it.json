@@ -117,7 +117,6 @@
     "INVALID_NAME": "Nome o parola chiave non validi.",
     "REQUIRED": "Un campo obbligatorio è vuoto.",
     "NOT_FOUND": "Questo oggetto non esiste più.",
-    "INDEX_READ_ONLY": "Gli indici vettoriali non si creano né si modificano nel designer; usa l'editor SQL.",
     "PLUGIN_UNAVAILABLE": "Questo plugin non può essere installato: non risulta disponibile su questo server.",
     "EXPORT_FORMAT": "Questo formato non può esportare un intero database.",
     "EXPORT_TOO_MANY_ROWS": "Troppe righe per un foglio Excel. Usa CSV o JSON.",
@@ -131,7 +130,11 @@
     "ANALYZE_SELECT_ONLY": "Analizza funziona su una sola query SELECT: metti il cursore al suo interno o selezionala.",
     "NOT_VERSIONED": "Questa tabella non è versionata.",
     "INVALID_TIMESTAMP": "Data e ora non valide.",
-    "LAST_HISTORY_PARTITION": "Una tabella versionata conserva almeno una partizione di cronologia: questa non può essere eliminata."
+    "LAST_HISTORY_PARTITION": "Una tabella versionata conserva almeno una partizione di cronologia: questa non può essere eliminata.",
+    "INVALID_VECTOR": "Vettore non valido: scrivilo come [0.1, 0.2, …].",
+    "VECTOR_DIMENSIONS": "Il vettore non ha il numero di dimensioni della colonna.",
+    "NO_SINGLE_KEY": "La ricerca per riga richiede una chiave primaria su una sola colonna.",
+    "INVALID_LIMIT": "k deve essere tra 1 e 1000."
   },
   "tree": {
     "title": "Database",
@@ -161,7 +164,8 @@
     "dropText": "L'oggetto e tutto il suo contenuto vengono eliminati definitivamente. Non si può annullare.",
     "typeName": "Digita {name} per confermare",
     "editInEditor": "Modifica nell'editor SQL",
-    "versioning": "Versionamento"
+    "versioning": "Versionamento",
+    "vector": "Vettori"
   },
   "structure": {
     "name": "Colonna",
@@ -323,8 +327,7 @@
     "try_online": "Esegui online",
     "try_default": "Esegui comunque (può bloccare le scritture)",
     "ignored": "Ignorato",
-    "ignoredHint": "Tenuto aggiornato ma non usato dall'ottimizzatore: un modo sicuro per provare a togliere un indice. Cambiato senza ricostruzione.",
-    "vectorReadOnly": "Indice vettoriale: qui si può ignorare o rimuovere, non modificare (le sue opzioni andrebbero perse)."
+    "ignoredHint": "Tenuto aggiornato ma non usato dall'ottimizzatore: un modo sicuro per provare a togliere un indice. Cambiato senza ricostruzione."
   },
   "plugins": {
     "tab": "Plugin",
@@ -343,6 +346,47 @@
     "none": "Nessun plugin corrisponde.",
     "installHint": "Il plugin resta installato dopo il riavvio del server. Richiede il privilegio INSERT su mysql.plugin.",
     "notStable": "Questo plugin non è stabile (maturità: {maturity}). Il server può rifiutarlo in base a plugin_maturity."
+  },
+  "engines": {
+    "tab": "Motori",
+    "hint": "Motori di archiviazione del server. MyRocks, Spider, CONNECT e ColumnStore compaiono qui una volta installati (scheda Plugin).",
+    "name": "Motore",
+    "support": "Supporto",
+    "transactions": "Transazioni",
+    "xa": "XA",
+    "savepoints": "Savepoint",
+    "comment": "Descrizione",
+    "yes": "Sì",
+    "supports": {
+      "DEFAULT": "Predefinito",
+      "YES": "Disponibile",
+      "NO": "Non disponibile",
+      "DISABLED": "Disattivato"
+    }
+  },
+  "vector": {
+    "loading": "Caricamento delle colonne vettoriali…",
+    "none": "Questa tabella non ha colonne VECTOR.",
+    "columns": "Colonne vettoriali",
+    "dimensions": "Dimensioni",
+    "index": "Indice vettoriale",
+    "distance": "Distanza",
+    "mHint": "M: vicini per nodo nel grafo dell'indice (3–200). Più alto = recall migliore, indice più grande.",
+    "serverDefault": "predefinito del server",
+    "noIndex": "Nessun indice vettoriale: la ricerca legge tutta la tabella. Aggiungine uno in Struttura.",
+    "search": "Vicini più prossimi",
+    "column": "Colonna",
+    "euclidean": "Euclidea",
+    "cosine": "Coseno",
+    "indexUnused": "L'indice usa la distanza {distance}: con questa viene letta tutta la tabella.",
+    "fullScan": "Senza indice vettoriale viene letta tutta la tabella.",
+    "byText": "Vettore",
+    "byRow": "Vettore della riga con {key} =",
+    "needSingleKey": "Richiede una chiave primaria su una sola colonna.",
+    "textPlaceholder": "[0.1, 0.2, …] ({n} valori)",
+    "run": "Cerca",
+    "m": "M",
+    "k": "Risultati (k)"
   },
   "admin": {
     "refresh": "Aggiorna",

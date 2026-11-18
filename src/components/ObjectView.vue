@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { Download, Eraser, KeyRound, Pencil, Trash2, Upload } from "lucide-vue-next";
 import DataGrid from "@/components/DataGrid.vue";
@@ -7,6 +7,7 @@ import ErrorLine from "@/components/ErrorLine.vue";
 import SequenceView from "@/components/SequenceView.vue";
 import TableDesigner from "@/components/TableDesigner.vue";
 import TransferDialog from "@/components/TransferDialog.vue";
+import VectorView from "@/components/VectorView.vue";
 import VersioningView from "@/components/VersioningView.vue";
 import { api, toAppError, type AppError, type DbObject, type TableInfo } from "@/lib/api";
 import { hasRows } from "@/lib/objects";
@@ -17,10 +18,10 @@ const props = defineProps<{ sessionId: string; schema: string; obj: DbObject; ma
 const emit = defineEmits<{ renamed: [name: string]; dropped: []; editSql: [sql: string]; treeChanged: []; versioned: [on: boolean] }>();
 const { t } = useI18n();
 
-type View = "sequence" | "data" | "structure" | "versioning" | "ddl";
+type View = "sequence" | "data" | "structure" | "versioning" | "vector" | "ddl";
 // A sequence's "rows" are its state: shown by the Sequence panel instead of a grid.
 // Temporal features (versioning, periods) are MariaDB-only: no tab on MySQL.
-const views: View[] =
+const baseViews: View[] =
   props.obj.kind === "sequence"
     ? ["sequence", "ddl"]
     : props.obj.kind === "table" && props.mariadb
@@ -28,10 +29,14 @@ const views: View[] =
       : hasRows(props.obj.kind)
         ? ["data", "structure", "ddl"]
         : ["ddl"];
-const view = ref<View>(views[0]);
+const view = ref<View>(baseViews[0]);
 const isTable = props.obj.kind === "table";
 
 const info = ref<TableInfo | null>(null);
+// Vectors tab: MariaDB tables with a VECTOR column, known once the grid has loaded the columns.
+const hasVector = ref(false);
+watch(info, (i) => i && (hasVector.value = i.columns.some((c) => c.dataType === "vector")));
+const views = computed<View[]>(() => (hasVector.value && props.mariadb && isTable ? [...baseViews.slice(0, -1), "vector", "ddl"] : baseViews));
 const transfer = ref<InstanceType<typeof TransferDialog> | null>(null);
 const ddl = ref<string | null>(null);
 const error = ref<AppError | null>(null);
@@ -42,7 +47,7 @@ const version = ref(0);
 async function show(v: View) {
   error.value = null;
   try {
-    if ((v === "data" || (v === "structure" && !isTable)) && !info.value) info.value = await api.tableInfo(props.sessionId, props.schema, props.obj.name);
+    if ((v === "data" || v === "vector" || (v === "structure" && !isTable)) && !info.value) info.value = await api.tableInfo(props.sessionId, props.schema, props.obj.name);
     if (v === "ddl" && ddl.value === null) ddl.value = await api.objectDdl(props.sessionId, props.schema, props.obj.name, props.obj.kind);
   } catch (e) {
     error.value = toAppError(e);
@@ -141,7 +146,9 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
       @edit-sql="(sql) => emit('editSql', sql)"
     />
 
-    <TableDesigner v-else-if="view === 'structure' && isTable" :session-id="sessionId" :schema="schema" :table="obj.name" class="min-h-0 flex-1" @saved="saved" />
+    <VectorView v-else-if="view === 'vector' && info" :key="version" :session-id="sessionId" :schema="schema" :table="obj.name" :info="info" class="min-h-0 flex-1" />
+
+    <TableDesigner v-else-if="view === 'structure' && isTable" :session-id="sessionId" :schema="schema" :table="obj.name" :mariadb="mariadb" class="min-h-0 flex-1" @saved="saved" />
 
     <div v-else-if="view === 'structure' && info" class="min-h-0 flex-1 overflow-auto">
       <table class="w-full border-collapse">

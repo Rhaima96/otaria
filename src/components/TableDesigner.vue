@@ -7,7 +7,7 @@ import { api, toAppError, type Algorithm, type AppError, type ColumnDef, type In
 import { cn } from "@/lib/utils";
 
 /** `table` null = new table. */
-const props = defineProps<{ sessionId: string; schema: string; table: string | null }>();
+const props = defineProps<{ sessionId: string; schema: string; table: string | null; mariadb: boolean }>();
 const emit = defineEmits<{ saved: [name: string] }>();
 const { t } = useI18n();
 
@@ -138,10 +138,11 @@ async function apply() {
 }
 
 const RULES = ["RESTRICT", "CASCADE", "SET NULL", "NO ACTION", "SET DEFAULT"];
-const KINDS: IndexDef["kind"][] = ["PRIMARY", "UNIQUE", "INDEX", "FULLTEXT", "SPATIAL"];
+// VECTOR indexes: MariaDB 11.7+ (an older server refuses them with its own error).
+const KINDS: IndexDef["kind"][] = ["PRIMARY", "UNIQUE", "INDEX", "FULLTEXT", "SPATIAL", ...(props.mariadb ? (["VECTOR"] as const) : [])];
 const fkSchema = (refSchema: string) => refSchema.trim() || props.schema;
 // ponytail: common types only; anything else can be typed.
-const TYPES = ["int", "bigint", "smallint", "tinyint(1)", "decimal(10,2)", "double", "varchar(255)", "char(36)", "text", "longtext", "json", "date", "datetime", "timestamp", "time", "blob", "uuid", "inet6", "enum('a','b')"];
+const TYPES = [...(props.mariadb ? ["vector(384)"] : []), "int", "bigint", "smallint", "tinyint(1)", "decimal(10,2)", "double", "varchar(255)", "char(36)", "text", "longtext", "json", "date", "datetime", "timestamp", "time", "blob", "uuid", "inet6", "enum('a','b')"];
 
 const input = "h-6 w-full min-w-0 rounded-sm border bg-background px-1.5 font-mono text-xs";
 const cell = "border-b px-1 py-0.5 align-middle";
@@ -258,25 +259,42 @@ const subtab = "h-full border-b-2 px-3 font-medium";
             </tr>
           </thead>
           <tbody>
-            <!-- VECTOR indexes are read-only here: they can be ignored or removed, not edited (phase 7). -->
-            <tr v-for="(x, i) in def.indexes" :key="i" :title="x.kind === 'VECTOR' ? t('designer.vectorReadOnly') : undefined">
+            <tr v-for="(x, i) in def.indexes" :key="i">
               <td :class="cell">
-                <select v-model="x.kind" :disabled="x.kind === 'VECTOR'" :aria-label="t('designer.kind')" :class="cn(input, 'w-28 font-sans')" @change="x.kind === 'PRIMARY' && ((x.name = 'PRIMARY'), (x.ignored = false))">
+                <select v-model="x.kind" :aria-label="t('designer.kind')" :class="cn(input, 'w-28 font-sans')" @change="x.kind === 'PRIMARY' && ((x.name = 'PRIMARY'), (x.ignored = false))">
                   <option v-for="k in KINDS" :key="k" :value="k">{{ k }}</option>
-                  <option v-if="x.kind === 'VECTOR'" value="VECTOR">{{ x.kind }}</option>
                 </select>
               </td>
-              <td :class="cell"><input v-model="x.name" :disabled="x.kind === 'PRIMARY' || x.kind === 'VECTOR'" :placeholder="t('designer.autoName')" :aria-label="t('structure.name')" :class="input" /></td>
+              <td :class="cell"><input v-model="x.name" :disabled="x.kind === 'PRIMARY'" :placeholder="t('designer.autoName')" :aria-label="t('structure.name')" :class="input" /></td>
               <td :class="cell">
-                <input :value="indexCols(x)" :disabled="x.kind === 'VECTOR'" placeholder="a, b(10) DESC" :aria-label="t('designer.indexColumns')" :class="input" @change="setIndexCols(x, ($event.target as HTMLInputElement).value)" />
+                <input :value="indexCols(x)" placeholder="a, b(10) DESC" :aria-label="t('designer.indexColumns')" :class="input" @change="setIndexCols(x, ($event.target as HTMLInputElement).value)" />
+                <!-- VECTOR options: empty = server default (mhnsw_default_m / mhnsw_default_distance). -->
+                <div v-if="x.kind === 'VECTOR'" class="mt-1 flex items-center gap-2 font-sans">
+                  <select v-model="x.distance" :aria-label="t('vector.distance')" :class="cn(input, 'w-32')">
+                    <option :value="null">{{ t("vector.distance") }} : {{ t("vector.serverDefault") }}</option>
+                    <option value="euclidean">{{ t("vector.euclidean") }}</option>
+                    <option value="cosine">{{ t("vector.cosine") }}</option>
+                  </select>
+                  <input
+                    :value="x.m ?? ''"
+                    type="number"
+                    min="3"
+                    max="200"
+                    :placeholder="t('vector.m')"
+                    :title="t('vector.mHint')"
+                    :aria-label="t('vector.mHint')"
+                    :class="cn(input, 'w-16')"
+                    @change="x.m = ($event.target as HTMLInputElement).value ? Number(($event.target as HTMLInputElement).value) : null"
+                  />
+                </div>
               </td>
-              <td :class="cell"><input v-model="x.comment" :disabled="x.kind === 'VECTOR'" :aria-label="t('structure.comment')" :class="cn(input, 'font-sans')" /></td>
+              <td :class="cell"><input v-model="x.comment" :aria-label="t('structure.comment')" :class="cn(input, 'font-sans')" /></td>
               <td :class="cn(cell, 'text-center')"><input v-model="x.ignored" type="checkbox" :disabled="x.kind === 'PRIMARY'" :aria-label="t('designer.ignored')" /></td>
               <td :class="cell"><button :class="icon" :title="t('designer.remove')" @click="def.indexes.splice(i, 1)"><Trash2 class="size-3.5" /><span class="sr-only">{{ t("designer.remove") }}</span></button></td>
             </tr>
           </tbody>
         </table>
-        <button :class="cn(btn, 'mt-1')" @click="def.indexes.push({ original: null, name: '', kind: 'INDEX', columns: [], comment: '', ignored: false })">
+        <button :class="cn(btn, 'mt-1')" @click="def.indexes.push({ original: null, name: '', kind: 'INDEX', columns: [], comment: '', ignored: false, m: null, distance: null })">
           <Plus class="size-3.5" />{{ t("designer.addIndex") }}
         </button>
       </template>

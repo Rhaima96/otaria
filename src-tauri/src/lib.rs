@@ -12,6 +12,7 @@ mod sequence;
 mod ssh;
 mod transfer;
 mod users;
+mod vector;
 mod versioning;
 
 use std::collections::HashMap;
@@ -274,6 +275,31 @@ async fn drop_object(state: State<'_, AppState>, session_id: String, schema: Str
 #[tauri::command]
 async fn row_history(state: State<'_, AppState>, session_id: String, schema: String, table: String, key: edit::Pairs) -> AppResult<browse::History> {
     browse::row_history(&pool(&state, &session_id).await?, &schema, &table, &key).await
+}
+
+#[tauri::command]
+async fn vector_columns(state: State<'_, AppState>, session_id: String, schema: String, table: String) -> AppResult<Vec<vector::VectorColumn>> {
+    vector::columns(&pool(&state, &session_id).await?, &schema, &table).await
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn vector_search(
+    state: State<'_, AppState>,
+    session_id: String,
+    schema: String,
+    table: String,
+    column: String,
+    distance: vector::Distance,
+    probe: vector::Probe,
+    k: u32,
+) -> AppResult<browse::Rows> {
+    vector::search(&pool(&state, &session_id).await?, &schema, &table, &column, distance, probe, k).await
+}
+
+#[tauri::command]
+async fn engine_list(state: State<'_, AppState>, session_id: String) -> AppResult<Vec<admin::Engine>> {
+    admin::engines(&pool(&state, &session_id).await?).await
 }
 
 #[tauri::command]
@@ -650,6 +676,9 @@ pub fn run() {
             cancel_sql,
             close_editor,
             row_history,
+            vector_columns,
+            vector_search,
+            engine_list,
             versioning_state,
             versioning_sql,
             versioning_apply,

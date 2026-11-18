@@ -68,13 +68,18 @@ pub struct IndexDef {
     pub original: Option<String>,
     /// "PRIMARY" for the primary key; empty = let the server name it.
     pub name: String,
-    /// PRIMARY | UNIQUE | INDEX | FULLTEXT | SPATIAL | VECTOR (VECTOR: loaded, kept or dropped, never rebuilt here)
+    /// PRIMARY | UNIQUE | INDEX | FULLTEXT | SPATIAL | VECTOR (MariaDB 11.7+)
     pub kind: String,
     pub columns: Vec<IndexColumn>,
     pub comment: String,
     /// Not used by the optimizer: IGNORED (MariaDB 10.6+) / INVISIBLE (MySQL 8).
     #[serde(default)]
     pub ignored: bool,
+    /// VECTOR only: graph neighbours (3–200) and metric (euclidean | cosine); None = server default.
+    #[serde(default)]
+    pub m: Option<u32>,
+    #[serde(default)]
+    pub distance: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -213,6 +218,19 @@ fn index_sql(i: &IndexDef, mariadb: bool) -> AppResult<String> {
         "INDEX" => format!("INDEX {name}({})", cols.join(", ")),
         other => return Err(AppError { detail: Some("index_kind".into()), ..AppError::new("INVALID_NAME", other.to_string()) }),
     };
+    if i.kind == "VECTOR" {
+        if let Some(m) = i.m {
+            if !(3..=200).contains(&m) {
+                return Err(AppError { detail: Some("vector_m".into()), ..AppError::new("INVALID_NAME", m.to_string()) });
+            }
+            s += &format!(" M={m}");
+        }
+        match i.distance.as_deref() {
+            None => {}
+            Some(d @ ("euclidean" | "cosine")) => s += &format!(" DISTANCE={d}"),
+            Some(d) => return Err(AppError { detail: Some("vector_distance".into()), ..AppError::new("INVALID_NAME", d.to_string()) }),
+        }
+    }
     if !i.comment.is_empty() {
         s += &format!(" COMMENT {}", literal(&i.comment));
     }
@@ -300,16 +318,6 @@ pub enum Algorithm {
 pub fn alter_clauses(old: &TableDef, new: &TableDef, mariadb: bool) -> AppResult<Vec<String>> {
     let mut out = Vec::new();
     let kept = |orig: &Option<String>| orig.clone();
-
-    // VECTOR indexes carry options information_schema does not show (M, DISTANCE): rebuilding one from
-    // what we loaded could change it. They can be kept, dropped or ignored, not created or edited here.
-    // ponytail: vector index editing comes with the vector tools (phase 7).
-    for i in new.indexes.iter().filter(|i| i.kind == "VECTOR") {
-        let same = old.indexes.iter().find(|o| i.original.as_deref() == Some(&o.name)).is_some_and(|o| strip_index(o) == strip_index(i));
-        if !same {
-            return Err(AppError { detail: Some(i.name.clone()), ..AppError::new("INDEX_READ_ONLY", i.name.clone()) });
-        }
-    }
 
     // 1. Drops: constraints and indexes first (they may use dropped columns), then columns.
     for f in &old.fks {
@@ -588,7 +596,18 @@ pub async fn load(pool: &Pool, schema: &str, table: &str, mariadb: bool) -> AppR
                 columns: vec![column],
                 comment: icomment,
                 ignored,
+                m: None,
+                distance: None,
             }),
+        }
+    }
+    // M and DISTANCE are only in SHOW CREATE TABLE: without them a rebuilt vector index could change.
+    if indexes.iter().any(|i| i.kind == "VECTOR") {
+        let found = crate::vector::vector_indexes(&crate::browse::ddl_on(&mut conn, schema, table, "table").await?);
+        for i in indexes.iter_mut().filter(|i| i.kind == "VECTOR") {
+            if let Some((_, v)) = found.iter().find(|(_, v)| v.name == i.name) {
+                (i.m, i.distance) = (v.m, v.distance.clone());
+            }
         }
     }
 
@@ -677,6 +696,8 @@ mod tests {
                 columns: vec![IndexColumn { name: "id".into(), length: None, desc: false }],
                 comment: String::new(),
                 ignored: false,
+                m: None,
+                distance: None,
             }],
             fks: vec![],
             checks: vec![],
@@ -761,7 +782,7 @@ mod tests {
         };
         let mut new = old.clone();
         new.indexes[0].columns.push(IndexColumn { name: "a".into(), length: Some(4), desc: false });
-        new.indexes.push(IndexDef { original: None, name: "".into(), kind: "UNIQUE".into(), columns: vec![IndexColumn { name: "b".into(), length: None, desc: true }], comment: String::new(), ignored: false });
+        new.indexes.push(IndexDef { original: None, name: "".into(), kind: "UNIQUE".into(), columns: vec![IndexColumn { name: "b".into(), length: None, desc: true }], comment: String::new(), ignored: false, m: None, distance: None });
         new.fks[0].on_delete = "set null".into();
         new.checks.clear();
         new.comment = "hi".into();
@@ -791,6 +812,8 @@ mod tests {
             columns: vec![IndexColumn { name: "b".into(), length: None, desc: true }],
             comment: String::new(),
             ignored: false,
+            m: None,
+            distance: None,
         });
         old.indexes.push(IndexDef {
             original: Some("ve".into()),
@@ -799,6 +822,8 @@ mod tests {
             columns: vec![IndexColumn { name: "a".into(), length: None, desc: false }],
             comment: String::new(),
             ignored: false,
+            m: None,
+            distance: None,
         });
         assert!(alter_clauses(&old, &old, true).unwrap().is_empty());
 
@@ -814,13 +839,17 @@ mod tests {
         rebuilt.indexes[1].comment = "c".into();
         assert_eq!(alter_clauses(&old, &rebuilt, true).unwrap(), ["DROP INDEX `ib`", "ADD INDEX `ib` (`b` DESC) COMMENT 'c' IGNORED"]);
 
-        // VECTOR: can be dropped, never rebuilt from what we loaded.
+        // VECTOR: rebuilt with its M / DISTANCE options, which are checked.
         let mut dropped = old.clone();
         dropped.indexes.pop();
         assert_eq!(alter_clauses(&old, &dropped, true).unwrap(), ["DROP INDEX `ve`"]);
         let mut edited = old.clone();
-        edited.indexes[2].name = "ve2".into();
-        assert_eq!(alter_clauses(&old, &edited, true).unwrap_err().code, "INDEX_READ_ONLY");
+        (edited.indexes[2].m, edited.indexes[2].distance) = (Some(8), Some("cosine".into()));
+        assert_eq!(alter_clauses(&old, &edited, true).unwrap(), ["DROP INDEX `ve`", "ADD VECTOR INDEX `ve` (`a`) M=8 DISTANCE=cosine"]);
+        edited.indexes[2].m = Some(201);
+        assert_eq!(alter_clauses(&old, &edited, true).unwrap_err().detail.as_deref(), Some("vector_m"));
+        (edited.indexes[2].m, edited.indexes[2].distance) = (None, Some("dot".into()));
+        assert_eq!(alter_clauses(&old, &edited, true).unwrap_err().detail.as_deref(), Some("vector_distance"));
     }
 
     #[test]
@@ -906,7 +935,7 @@ mod tests {
         new.columns.insert(1, created);
         new.columns.insert(1, ColumnDef { original: None, ..col("extra", "int(11)") });
         new.columns.iter_mut().find(|c| c.name == "n").unwrap().default = DefaultValue::Expr("5".into());
-        new.indexes.push(IndexDef { original: None, name: "ipid".into(), kind: "INDEX".into(), columns: vec![IndexColumn { name: "pid".into(), length: None, desc: false }], comment: String::new(), ignored: false });
+        new.indexes.push(IndexDef { original: None, name: "ipid".into(), kind: "INDEX".into(), columns: vec![IndexColumn { name: "pid".into(), length: None, desc: false }], comment: String::new(), ignored: false, m: None, distance: None });
         run(&pool, &alter_sql("otaria_des", &def, &new, Algorithm::Default, true).unwrap()).await.unwrap();
         let after = load(&pool, "otaria_des", "t2", true).await.unwrap();
         let names: Vec<&str> = after.columns.iter().map(|c| c.name.as_str()).collect();
@@ -922,8 +951,8 @@ mod tests {
         let e = run(&pool, &alter_sql("otaria_des", &after, &retype, Algorithm::Instant, true).unwrap()).await.unwrap_err();
         assert_eq!(e.code, "ALTER_ALGORITHM", "{e:?}");
 
-        // Index flags (MariaDB 11.7+ for VECTOR): loaded as they are, so nothing changes and editing
-        // the table elsewhere leaves them alone.
+        // Index flags and VECTOR options (MariaDB 11.7+): loaded as they are, so nothing changes and
+        // editing the table elsewhere leaves them alone.
         run(
             &pool,
             &["CREATE TABLE otaria_des.v (id INT PRIMARY KEY, e VECTOR(3) NOT NULL, a INT, b INT,
@@ -945,8 +974,13 @@ mod tests {
         let v3 = load(&pool, "otaria_des", "v", true).await.unwrap();
         assert!(!v3.indexes[1].ignored && v3.indexes[2].columns[0].desc && v3.indexes[2].comment == "rebuilt");
         assert_eq!(v3.indexes[3].kind, "VECTOR");
+        assert_eq!((v3.indexes[3].m, v3.indexes[3].distance.as_deref()), (Some(8), Some("cosine")));
+        // Rebuilt with new options (and a new index added from the designer).
+        let mut v4 = v3.clone();
+        v4.indexes[3].distance = Some("euclidean".into());
+        run(&pool, &alter_sql("otaria_des", &v3, &v4, Algorithm::Default, true).unwrap()).await.unwrap();
         let ddl = crate::browse::ddl(&pool, "otaria_des", "v", "table").await.unwrap();
-        assert!(ddl.contains("`M`='8'") && ddl.contains("`DISTANCE`='cosine'"), "{ddl}");
+        assert!(ddl.contains("`M`='8'") && ddl.contains("`DISTANCE`='euclidean'"), "{ddl}");
 
         run(&pool, &["DROP DATABASE otaria_des".into()]).await.unwrap();
     }

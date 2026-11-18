@@ -117,7 +117,6 @@
     "INVALID_NAME": "Ungültiger Name oder ungültiges Schlüsselwort.",
     "REQUIRED": "Ein Pflichtfeld ist leer.",
     "NOT_FOUND": "Dieses Objekt existiert nicht mehr.",
-    "INDEX_READ_ONLY": "Vektorindizes werden im Designer weder erstellt noch bearbeitet; den SQL-Editor verwenden.",
     "PLUGIN_UNAVAILABLE": "Dieses Plugin kann nicht installiert werden: Es ist auf diesem Server nicht als verfügbar aufgeführt.",
     "EXPORT_FORMAT": "Dieses Format kann keine ganze Datenbank exportieren.",
     "EXPORT_TOO_MANY_ROWS": "Zu viele Zeilen für ein Excel-Blatt. Verwenden Sie CSV oder JSON.",
@@ -131,7 +130,11 @@
     "ANALYZE_SELECT_ONLY": "Analysieren funktioniert mit einer einzelnen SELECT-Abfrage: Cursor hineinsetzen oder sie auswählen.",
     "NOT_VERSIONED": "Diese Tabelle ist nicht systemversioniert.",
     "INVALID_TIMESTAMP": "Ungültiges Datum und Uhrzeit.",
-    "LAST_HISTORY_PARTITION": "Eine versionierte Tabelle behält mindestens eine Verlaufspartition: Diese kann nicht gelöscht werden."
+    "LAST_HISTORY_PARTITION": "Eine versionierte Tabelle behält mindestens eine Verlaufspartition: Diese kann nicht gelöscht werden.",
+    "INVALID_VECTOR": "Ungültiger Vektor: schreiben Sie ihn als [0.1, 0.2, …].",
+    "VECTOR_DIMENSIONS": "Der Vektor hat nicht die Dimensionszahl der Spalte.",
+    "NO_SINGLE_KEY": "Die Suche nach Zeile braucht einen Primärschlüssel auf einer einzigen Spalte.",
+    "INVALID_LIMIT": "k muss zwischen 1 und 1000 liegen."
   },
   "tree": {
     "title": "Datenbanken",
@@ -161,7 +164,8 @@
     "dropText": "Das Objekt und sein gesamter Inhalt werden endgültig gelöscht. Das kann nicht rückgängig gemacht werden.",
     "typeName": "Zur Bestätigung {name} eingeben",
     "editInEditor": "Im SQL-Editor bearbeiten",
-    "versioning": "Versionierung"
+    "versioning": "Versionierung",
+    "vector": "Vektoren"
   },
   "structure": {
     "name": "Spalte",
@@ -323,8 +327,7 @@
     "try_online": "Online ausführen",
     "try_default": "Trotzdem ausführen (kann Schreibzugriffe blockieren)",
     "ignored": "Ignoriert",
-    "ignoredHint": "Wird gepflegt, aber vom Optimierer nicht verwendet: so lässt sich das Entfernen eines Index gefahrlos testen. Ohne Neuaufbau umgeschaltet.",
-    "vectorReadOnly": "Vektorindex: kann hier ignoriert oder entfernt, aber nicht bearbeitet werden (seine Optionen gingen verloren)."
+    "ignoredHint": "Wird gepflegt, aber vom Optimierer nicht verwendet: so lässt sich das Entfernen eines Index gefahrlos testen. Ohne Neuaufbau umgeschaltet."
   },
   "plugins": {
     "tab": "Plugins",
@@ -343,6 +346,47 @@
     "none": "Kein Plugin passt.",
     "installHint": "Das Plugin bleibt nach einem Serverneustart installiert. Erfordert das INSERT-Recht auf mysql.plugin.",
     "notStable": "Dieses Plugin ist nicht stabil (Reife: {maturity}). Der Server kann es je nach plugin_maturity ablehnen."
+  },
+  "engines": {
+    "tab": "Engines",
+    "hint": "Speicher-Engines des Servers. MyRocks, Spider, CONNECT und ColumnStore erscheinen hier, sobald sie installiert sind (Reiter Plugins).",
+    "name": "Engine",
+    "support": "Unterstützung",
+    "transactions": "Transaktionen",
+    "xa": "XA",
+    "savepoints": "Savepoints",
+    "comment": "Beschreibung",
+    "yes": "Ja",
+    "supports": {
+      "DEFAULT": "Standard",
+      "YES": "Verfügbar",
+      "NO": "Nicht verfügbar",
+      "DISABLED": "Deaktiviert"
+    }
+  },
+  "vector": {
+    "loading": "Vektorspalten werden geladen…",
+    "none": "Diese Tabelle hat keine VECTOR-Spalte.",
+    "columns": "Vektorspalten",
+    "dimensions": "Dimensionen",
+    "index": "Vektorindex",
+    "distance": "Distanz",
+    "mHint": "M: Nachbarn pro Knoten im Indexgraphen (3–200). Höher = besserer Recall, größerer Index.",
+    "serverDefault": "Serverstandard",
+    "noIndex": "Kein Vektorindex: die Suche liest die ganze Tabelle. Fügen Sie einen unter Struktur hinzu.",
+    "search": "Nächste Nachbarn",
+    "column": "Spalte",
+    "euclidean": "Euklidisch",
+    "cosine": "Kosinus",
+    "indexUnused": "Der Index nutzt die Distanz {distance}: mit dieser wird die ganze Tabelle gelesen.",
+    "fullScan": "Ohne Vektorindex wird die ganze Tabelle gelesen.",
+    "byText": "Vektor",
+    "byRow": "Vektor der Zeile mit {key} =",
+    "needSingleKey": "Braucht einen Primärschlüssel auf einer einzigen Spalte.",
+    "textPlaceholder": "[0.1, 0.2, …] ({n} Werte)",
+    "run": "Suchen",
+    "m": "M",
+    "k": "Treffer (k)"
   },
   "admin": {
     "refresh": "Aktualisieren",

@@ -117,7 +117,6 @@
     "INVALID_NAME": "Nombre o palabra clave no válidos.",
     "REQUIRED": "Falta un campo obligatorio.",
     "NOT_FOUND": "Este objeto ya no existe.",
-    "INDEX_READ_ONLY": "Los índices vectoriales no se crean ni se editan en el diseñador; use el editor SQL.",
     "PLUGIN_UNAVAILABLE": "Este plugin no se puede instalar: no figura como disponible en este servidor.",
     "EXPORT_FORMAT": "Este formato no puede exportar una base de datos completa.",
     "EXPORT_TOO_MANY_ROWS": "Demasiadas filas para una hoja de Excel. Use CSV o JSON.",
@@ -131,7 +130,11 @@
     "ANALYZE_SELECT_ONLY": "Analizar funciona con una sola consulta SELECT: ponga el cursor en ella o selecciónela.",
     "NOT_VERSIONED": "Esta tabla no está versionada.",
     "INVALID_TIMESTAMP": "Fecha y hora no válidas.",
-    "LAST_HISTORY_PARTITION": "Una tabla versionada conserva al menos una partición de historial: esta no se puede eliminar."
+    "LAST_HISTORY_PARTITION": "Una tabla versionada conserva al menos una partición de historial: esta no se puede eliminar.",
+    "INVALID_VECTOR": "Vector no válido: escríbalo como [0.1, 0.2, …].",
+    "VECTOR_DIMENSIONS": "El vector no tiene el número de dimensiones de la columna.",
+    "NO_SINGLE_KEY": "Buscar por fila requiere una clave primaria de una sola columna.",
+    "INVALID_LIMIT": "k debe estar entre 1 y 1000."
   },
   "tree": {
     "title": "Bases de datos",
@@ -161,7 +164,8 @@
     "dropText": "El objeto y todo su contenido se borran para siempre. No se puede deshacer.",
     "typeName": "Escriba {name} para confirmar",
     "editInEditor": "Editar en el editor SQL",
-    "versioning": "Versionado"
+    "versioning": "Versionado",
+    "vector": "Vectores"
   },
   "structure": {
     "name": "Columna",
@@ -323,8 +327,7 @@
     "try_online": "Ejecutar en línea",
     "try_default": "Ejecutar de todos modos (puede bloquear escrituras)",
     "ignored": "Ignorado",
-    "ignoredHint": "Se mantiene al día pero el optimizador no lo usa: una forma segura de probar a quitar un índice. Se cambia sin reconstruir.",
-    "vectorReadOnly": "Índice vectorial: aquí se puede ignorar o quitar, no editar (se perderían sus opciones)."
+    "ignoredHint": "Se mantiene al día pero el optimizador no lo usa: una forma segura de probar a quitar un índice. Se cambia sin reconstruir."
   },
   "plugins": {
     "tab": "Plugins",
@@ -343,6 +346,47 @@
     "none": "Ningún plugin coincide.",
     "installHint": "El plugin sigue instalado tras reiniciar el servidor. Requiere el privilegio INSERT en mysql.plugin.",
     "notStable": "Este plugin no es estable (madurez: {maturity}). El servidor puede rechazarlo según plugin_maturity."
+  },
+  "engines": {
+    "tab": "Motores",
+    "hint": "Motores de almacenamiento del servidor. MyRocks, Spider, CONNECT y ColumnStore aparecen aquí una vez instalados (pestaña Plugins).",
+    "name": "Motor",
+    "support": "Soporte",
+    "transactions": "Transacciones",
+    "xa": "XA",
+    "savepoints": "Puntos de guardado",
+    "comment": "Descripción",
+    "yes": "Sí",
+    "supports": {
+      "DEFAULT": "Predeterminado",
+      "YES": "Disponible",
+      "NO": "No disponible",
+      "DISABLED": "Desactivado"
+    }
+  },
+  "vector": {
+    "loading": "Cargando columnas vectoriales…",
+    "none": "Esta tabla no tiene columnas VECTOR.",
+    "columns": "Columnas vectoriales",
+    "dimensions": "Dimensiones",
+    "index": "Índice vectorial",
+    "distance": "Distancia",
+    "mHint": "M: vecinos por nodo en el grafo del índice (3–200). Más alto = mejor recall, índice más grande.",
+    "serverDefault": "valor del servidor",
+    "noIndex": "Sin índice vectorial: la búsqueda lee toda la tabla. Añada uno en Estructura.",
+    "search": "Vecinos más cercanos",
+    "column": "Columna",
+    "euclidean": "Euclídea",
+    "cosine": "Coseno",
+    "indexUnused": "El índice usa la distancia {distance}: con esta se lee toda la tabla.",
+    "fullScan": "Sin índice vectorial se lee toda la tabla.",
+    "byText": "Vector",
+    "byRow": "Vector de la fila con {key} =",
+    "needSingleKey": "Requiere una clave primaria de una sola columna.",
+    "textPlaceholder": "[0.1, 0.2, …] ({n} valores)",
+    "run": "Buscar",
+    "m": "M",
+    "k": "Resultados (k)"
   },
   "admin": {
     "refresh": "Actualizar",

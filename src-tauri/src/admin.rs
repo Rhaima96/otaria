@@ -1,5 +1,5 @@
 //! Server administration: process list (KILL, EXPLAIN FOR CONNECTION), global variables (SET GLOBAL),
-//! global status for the dashboard. Users and roles come in phase 6b.
+//! global status for the dashboard, storage engines. Users and roles: `users.rs`.
 
 use std::collections::HashMap;
 
@@ -162,6 +162,35 @@ pub async fn status(pool: &Pool) -> AppResult<HashMap<String, String>> {
     Ok(m)
 }
 
+/// Engines from `SHOW ENGINES` (also MySQL). Engines shipped as plugins (MyRocks, Spider, CONNECT,
+/// ColumnStore) only appear once installed: the Plugins tab installs them.
+#[derive(Debug, Serialize)]
+pub struct Engine {
+    pub name: String,
+    /// YES | NO | DEFAULT | DISABLED
+    pub support: String,
+    pub comment: String,
+    pub transactions: bool,
+    pub xa: bool,
+    pub savepoints: bool,
+}
+
+pub async fn engines(pool: &Pool) -> AppResult<Vec<Engine>> {
+    let rows: Vec<mysql_async::Row> = pool.get_conn().await?.query("SHOW ENGINES").await?;
+    let yes = |v: Option<String>| v.as_deref() == Some("YES");
+    Ok(rows
+        .into_iter()
+        .map(|mut r| Engine {
+            name: r.take(0).unwrap_or_default(),
+            support: r.take(1).unwrap_or_default(),
+            comment: r.take::<Option<String>, _>(2).flatten().unwrap_or_default(),
+            transactions: yes(r.take(3).flatten()),
+            xa: yes(r.take(4).flatten()),
+            savepoints: yes(r.take(5).flatten()),
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -226,5 +255,8 @@ mod tests {
         let st = status(&pool).await.unwrap();
         assert!(st.contains_key("Questions") && st.contains_key("Innodb_buffer_pool_read_requests"));
         assert!(st["max_connections"].parse::<u64>().unwrap() > 0);
+
+        let e = engines(&pool).await.unwrap();
+        assert!(e.iter().any(|e| e.name == "InnoDB" && e.support == "DEFAULT" && e.transactions && e.savepoints));
     }
 }

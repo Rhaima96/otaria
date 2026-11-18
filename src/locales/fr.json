@@ -117,7 +117,6 @@
     "INVALID_NAME": "Nom ou mot-clé invalide.",
     "REQUIRED": "Un champ obligatoire est vide.",
     "NOT_FOUND": "Cet objet n'existe plus.",
-    "INDEX_READ_ONLY": "Les index vectoriels ne se créent ni ne se modifient dans le concepteur ; passez par l'éditeur SQL.",
     "PLUGIN_UNAVAILABLE": "Ce plugin ne peut pas être installé : il n’est pas listé comme disponible sur ce serveur.",
     "EXPORT_FORMAT": "Ce format ne peut pas exporter une base entière.",
     "EXPORT_TOO_MANY_ROWS": "Trop de lignes pour une feuille Excel. Utilisez CSV ou JSON.",
@@ -131,7 +130,11 @@
     "ANALYZE_SELECT_ONLY": "Analyser fonctionne sur une seule requête SELECT : placez le curseur dedans ou sélectionnez-la.",
     "NOT_VERSIONED": "Cette table n'est pas versionnée.",
     "INVALID_TIMESTAMP": "Date et heure invalides.",
-    "LAST_HISTORY_PARTITION": "Une table versionnée garde au moins une partition d'historique : celle-ci ne peut pas être supprimée."
+    "LAST_HISTORY_PARTITION": "Une table versionnée garde au moins une partition d'historique : celle-ci ne peut pas être supprimée.",
+    "INVALID_VECTOR": "Vecteur invalide : écrivez-le sous la forme [0.1, 0.2, …].",
+    "VECTOR_DIMENSIONS": "Le vecteur n'a pas le nombre de dimensions de la colonne.",
+    "NO_SINGLE_KEY": "La recherche par ligne demande une clé primaire sur une seule colonne.",
+    "INVALID_LIMIT": "k doit être compris entre 1 et 1000."
   },
   "tree": {
     "title": "Bases de données",
@@ -161,7 +164,8 @@
     "dropText": "L'objet et tout son contenu sont supprimés définitivement. Impossible d'annuler.",
     "typeName": "Tapez {name} pour confirmer",
     "editInEditor": "Modifier dans l'éditeur SQL",
-    "versioning": "Versionnement"
+    "versioning": "Versionnement",
+    "vector": "Vecteurs"
   },
   "structure": {
     "name": "Colonne",
@@ -323,8 +327,7 @@
     "try_online": "Exécuter en ligne",
     "try_default": "Exécuter quand même (peut bloquer les écritures)",
     "ignored": "Ignoré",
-    "ignoredHint": "Tenu à jour mais pas utilisé par l'optimiseur : pour tester sans risque la suppression d'un index. Changé sans reconstruction.",
-    "vectorReadOnly": "Index vectoriel : il peut être ignoré ou retiré ici, pas modifié (ses options seraient perdues)."
+    "ignoredHint": "Tenu à jour mais pas utilisé par l'optimiseur : pour tester sans risque la suppression d'un index. Changé sans reconstruction."
   },
   "plugins": {
     "tab": "Plugins",
@@ -343,6 +346,47 @@
     "none": "Aucun plugin ne correspond.",
     "installHint": "Le plugin reste installé après un redémarrage du serveur. Nécessite le privilège INSERT sur mysql.plugin.",
     "notStable": "Ce plugin n’est pas stable (maturité : {maturity}). Le serveur peut le refuser selon plugin_maturity."
+  },
+  "engines": {
+    "tab": "Moteurs",
+    "hint": "Moteurs de stockage du serveur. MyRocks, Spider, CONNECT et ColumnStore apparaissent ici une fois installés (onglet Plugins).",
+    "name": "Moteur",
+    "support": "Prise en charge",
+    "transactions": "Transactions",
+    "xa": "XA",
+    "savepoints": "Points de sauvegarde",
+    "comment": "Description",
+    "yes": "Oui",
+    "supports": {
+      "DEFAULT": "Par défaut",
+      "YES": "Disponible",
+      "NO": "Indisponible",
+      "DISABLED": "Désactivé"
+    }
+  },
+  "vector": {
+    "loading": "Chargement des colonnes vecteur…",
+    "none": "Cette table n'a pas de colonne VECTOR.",
+    "columns": "Colonnes vecteur",
+    "dimensions": "Dimensions",
+    "index": "Index vectoriel",
+    "distance": "Distance",
+    "mHint": "M : voisins par nœud dans le graphe de l'index (3–200). Plus haut = meilleur rappel, index plus gros.",
+    "serverDefault": "défaut du serveur",
+    "noIndex": "Pas d'index vectoriel : la recherche lit toute la table. Ajoutez-en un dans Structure.",
+    "search": "Plus proches voisins",
+    "column": "Colonne",
+    "euclidean": "Euclidienne",
+    "cosine": "Cosinus",
+    "indexUnused": "L'index utilise la distance {distance} : avec celle-ci, toute la table est lue.",
+    "fullScan": "Sans index vectoriel, toute la table est lue.",
+    "byText": "Vecteur",
+    "byRow": "Vecteur de la ligne où {key} =",
+    "needSingleKey": "Demande une clé primaire sur une seule colonne.",
+    "textPlaceholder": "[0.1, 0.2, …] ({n} valeurs)",
+    "run": "Rechercher",
+    "m": "M",
+    "k": "Résultats (k)"
   },
   "admin": {
     "refresh": "Actualiser",
