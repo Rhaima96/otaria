@@ -1,4 +1,4 @@
-# Builds Otaria for macOS (Apple Silicon and Intel), Windows and Linux, and attaches the installers
+# Builds Otaria for macOS (one universal app: Apple Silicon + Intel), Windows and Linux, and attaches the installers
 # to a draft GitHub release. Runs on a version tag (git tag v0.1.0 && git push origin v0.1.0) or by hand.
 # Not signed yet: macOS signing and notarization plug in through the commented env block below.
 name: Release
@@ -17,17 +17,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # One universal build: a single macOS runner to get (they are the scarcest), one .dmg for both CPUs.
           - platform: macos-latest
-            args: --target aarch64-apple-darwin
-          - platform: macos-latest
-            args: --target x86_64-apple-darwin
+            args: --target universal-apple-darwin
           - platform: windows-latest
             args: ""
           - platform: ubuntu-22.04
             args: ""
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # WebKitGTK for the webview, libdbus for the keychain (keyring → Secret Service).
       - name: Linux system packages
@@ -36,14 +35,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libdbus-1-dev pkg-config
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          # Both macOS targets on the macOS runners (one per job, see matrix args).
+          # The universal macOS build compiles both targets.
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - uses: swatinem/rust-cache@v2
