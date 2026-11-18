@@ -636,15 +636,15 @@
   },
   "compare": {
     "open": "Vergleichen mit…",
-    "title": "Tabellen nach {schema} vergleichen",
+    "title": "Nach {schema} vergleichen",
     "source": "Quellverbindung",
     "sourceSchema": "Quelldatenbank",
     "run": "Vergleichen",
-    "hint": "Nur Tabellen. Das Skript gleicht diese Datenbank an die Quelle an; nichts läuft, bevor du es im Editor ausführst. DROP TABLE-Zeilen sind auskommentiert.",
+    "hint": "Tabellen, Views, Routinen, Trigger und Events (keine Sequenzen). Das Skript gleicht diese Datenbank an die Quelle an; nichts läuft, bevor du es im Editor ausführst. DROP-Zeilen sind auskommentiert. Ohne die Rechte TRIGGER und EVENT blendet der Server Trigger und Events aus.",
     "create": "anlegen",
     "alter": "ändern",
     "drop": "überzählig",
-    "same": "Gleiche Tabellen wie {source}.",
+    "same": "Gleiche Objekte wie {source}.",
     "script": "Migrationsskript",
     "openScript": "Im Editor öffnen"
   },

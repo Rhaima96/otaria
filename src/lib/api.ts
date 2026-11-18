@@ -58,13 +58,14 @@ export function toAppError(e: unknown): AppError {
 
 export type ObjectKind = "table" | "view" | "sequence" | "procedure" | "function" | "trigger" | "event";
 
-/** Schema comparison: one line per table that differs; `sql` turns the target into the source. */
-export interface TableDiff {
+/** Schema comparison: one line per object that differs; `sql` turns the target into the source. */
+export interface ObjectDiff {
   name: string;
+  kind: ObjectKind;
   status: "create" | "alter" | "drop";
 }
 export interface Comparison {
-  diffs: TableDiff[];
+  diffs: ObjectDiff[];
   sql: string;
 }
 

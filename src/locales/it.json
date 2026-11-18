@@ -636,15 +636,15 @@
   },
   "compare": {
     "open": "Confronta con…",
-    "title": "Confronta le tabelle verso {schema}",
+    "title": "Confronta verso {schema}",
     "source": "Connessione di origine",
     "sourceSchema": "Database di origine",
     "run": "Confronta",
-    "hint": "Solo tabelle. Lo script allinea questo database all'origine; nulla viene eseguito finché non lo lanci nell'editor. I DROP TABLE sono commentati.",
+    "hint": "Tabelle, viste, routine, trigger ed eventi (non le sequenze). Lo script allinea questo database all'origine; nulla viene eseguito finché non lo lanci nell'editor. I DROP sono commentati. Senza i privilegi TRIGGER ed EVENT il server nasconde trigger ed eventi.",
     "create": "da creare",
     "alter": "da modificare",
     "drop": "in più",
-    "same": "Stesse tabelle di {source}.",
+    "same": "Stessi oggetti di {source}.",
     "script": "Script di migrazione",
     "openScript": "Apri nell'editor"
   },

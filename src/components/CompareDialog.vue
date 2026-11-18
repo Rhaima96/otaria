@@ -5,9 +5,10 @@ import { FileCode, GitCompareArrows, LoaderCircle } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
 import { api, toAppError, type AppError, type Comparison } from "@/lib/api";
 import { useSessions } from "@/composables/useSessions";
+import { objectIcon } from "@/lib/objects";
 import { cn } from "@/lib/utils";
 
-/** Compare the tables of a source schema (any open connection) with `schema` here; the script opens in the editor. */
+/** Compare the tables, views, routines, triggers and events of a source schema (any open connection) with `schema` here; the script opens in the editor. */
 const props = defineProps<{ sessionId: string }>();
 const emit = defineEmits<{ script: [schema: string, sql: string] }>();
 const { t } = useI18n();
@@ -96,8 +97,9 @@ const field = "h-7 min-w-0 rounded-sm border bg-background px-1.5";
 
     <div class="grid h-[55vh] grid-cols-[16rem_1fr] gap-3 p-4">
       <ul class="min-h-0 overflow-auto rounded-sm border p-1">
-        <li v-for="d in result?.diffs" :key="d.name" class="flex items-center gap-2 px-1 py-0.5">
+        <li v-for="d in result?.diffs" :key="`${d.kind}.${d.name}`" class="flex items-center gap-2 px-1 py-0.5">
           <span :class="cn('w-20 shrink-0 text-xs font-medium', badge[d.status])">{{ t(`compare.${d.status}`) }}</span>
+          <component :is="objectIcon({ name: d.name, kind: d.kind, versioned: false })" :title="t(`kinds.${d.kind}`)" class="size-3.5 shrink-0 text-muted-foreground" />
           <span class="truncate font-mono">{{ d.name }}</span>
         </li>
         <li v-if="result && !result.diffs.length" class="px-1 text-success">{{ t("compare.same", { source: `${sourceName}.${sourceSchema}` }) }}</li>

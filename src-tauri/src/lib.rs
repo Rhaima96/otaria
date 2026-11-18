@@ -461,7 +461,7 @@ async fn account_drop(state: State<'_, AppState>, session_id: String, user: Stri
     users::run(&pool(&state, &session_id).await?, &sql, &sql).await
 }
 
-/// Tables of `source_schema` (any open session) against `target_schema`: differences and the migration script.
+/// Tables, views, routines, triggers and events of `source_schema` (any open session) against `target_schema`: differences and the migration script.
 #[tauri::command]
 async fn compare_schemas(
     state: State<'_, AppState>,
@@ -470,9 +470,9 @@ async fn compare_schemas(
     target_session: String,
     target_schema: String,
 ) -> AppResult<compare::Comparison> {
-    let src = compare::load_tables(&pool(&state, &source_session).await?, &source_schema, is_mariadb(&state, &source_session).await?).await?;
+    let src = compare::load(&pool(&state, &source_session).await?, &source_schema, is_mariadb(&state, &source_session).await?).await?;
     let mariadb = is_mariadb(&state, &target_session).await?;
-    let tgt = compare::load_tables(&pool(&state, &target_session).await?, &target_schema, mariadb).await?;
+    let tgt = compare::load(&pool(&state, &target_session).await?, &target_schema, mariadb).await?;
     compare::compare(&target_schema, &src, &tgt, mariadb)
 }
 

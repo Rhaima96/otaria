@@ -636,15 +636,15 @@
   },
   "compare": {
     "open": "Compare with…",
-    "title": "Compare tables into {schema}",
+    "title": "Compare into {schema}",
     "source": "Source connection",
     "sourceSchema": "Source database",
     "run": "Compare",
-    "hint": "Tables only. The script turns this database into the source; nothing runs until you run it in the editor. DROP TABLE lines are commented out.",
+    "hint": "Tables, views, routines, triggers and events (not sequences). The script turns this database into the source; nothing runs until you run it in the editor. DROP lines are commented out. Without the TRIGGER and EVENT privileges the server hides triggers and events.",
     "create": "to create",
     "alter": "to change",
     "drop": "extra",
-    "same": "Same tables as {source}.",
+    "same": "Same objects as {source}.",
     "script": "Migration script",
     "openScript": "Open in the editor"
   },
