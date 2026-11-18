@@ -2,7 +2,7 @@
 import { onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui";
-import { ChevronRight, Database, Download, LoaderCircle, Network, Plus, RefreshCw, Upload } from "lucide-vue-next";
+import { ChevronRight, Database, Download, LoaderCircle, Network, Plus, RefreshCw, Search, Upload } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
 import { api, toAppError, type AppError, type DbObject, type ObjectKind } from "@/lib/api";
 import { KIND_ORDER, objectIcon } from "@/lib/objects";
@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 
 /** `mariadb`: offer MariaDB-only actions (new sequence); hidden on MySQL. */
 const props = defineProps<{ sessionId: string; selected: string | null; mariadb: boolean }>();
-const emit = defineEmits<{ open: [schema: string, obj: DbObject]; create: [schema: string, kind: ObjectKind]; transfer: [schema: string, mode: "export" | "import"]; diagram: [schema: string] }>();
+const emit = defineEmits<{ open: [schema: string, obj: DbObject]; create: [schema: string, kind: ObjectKind]; transfer: [schema: string, mode: "export" | "import"]; diagram: [schema: string]; search: [] }>();
 const creatable = (): ObjectKind[] => KIND_ORDER.filter((k) => k !== "sequence" || props.mariadb);
 const { t } = useI18n();
 
@@ -60,9 +60,14 @@ const item = "cursor-default rounded-sm px-2 py-1 outline-none data-highlighted:
   <div class="flex h-full flex-col">
     <div class="flex h-8 shrink-0 items-center justify-between border-b px-2">
       <span class="font-medium text-muted-foreground">{{ t("tree.title") }}</span>
-      <button :title="t('tree.refresh')" class="flex size-6 items-center justify-center rounded-sm hover:bg-secondary" @click="load">
-        <RefreshCw class="size-3.5" /><span class="sr-only">{{ t("tree.refresh") }}</span>
-      </button>
+      <span class="flex items-center">
+        <button :title="t('palette.button')" class="flex size-6 items-center justify-center rounded-sm hover:bg-secondary" @click="emit('search')">
+          <Search class="size-3.5" /><span class="sr-only">{{ t("palette.button") }}</span>
+        </button>
+        <button :title="t('tree.refresh')" class="flex size-6 items-center justify-center rounded-sm hover:bg-secondary" @click="load">
+          <RefreshCw class="size-3.5" /><span class="sr-only">{{ t("tree.refresh") }}</span>
+        </button>
+      </span>
     </div>
     <ErrorLine v-if="error" :error="error" class="m-2" />
     <ul class="min-h-0 flex-1 overflow-auto py-1 select-none" role="tree">

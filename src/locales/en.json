@@ -142,6 +142,13 @@
     "refresh": "Refresh",
     "empty": "Empty"
   },
+  "palette": {
+    "title": "Find an object",
+    "placeholder": "Find a table, view, routine… (schema.name works too)",
+    "button": "Find an object (⌘P / Ctrl+P)",
+    "none": "No object matches.",
+    "hint": "{n} objects in all databases. Type part of a name; ↑ ↓ to move, Enter to open."
+  },
   "kinds": {
     "table": "Table",
     "view": "View",

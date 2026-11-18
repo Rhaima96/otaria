@@ -142,6 +142,13 @@
     "refresh": "Aktualisieren",
     "empty": "Leer"
   },
+  "palette": {
+    "title": "Objekt finden",
+    "placeholder": "Tabelle, Sicht, Routine… finden (auch db.name)",
+    "button": "Objekt finden (⌘P / Strg+P)",
+    "none": "Kein Objekt passt.",
+    "hint": "{n} Objekte in allen Datenbanken. Teil des Namens eingeben; ↑ ↓ zum Wählen, Eingabe zum Öffnen."
+  },
   "kinds": {
     "table": "Tabelle",
     "view": "View",

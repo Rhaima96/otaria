@@ -163,6 +163,11 @@ async fn list_schemas(state: State<'_, AppState>, session_id: String) -> AppResu
 }
 
 #[tauri::command]
+async fn all_objects(state: State<'_, AppState>, session_id: String) -> AppResult<Vec<browse::SchemaObject>> {
+    browse::all_objects(&pool(&state, &session_id).await?).await
+}
+
+#[tauri::command]
 async fn list_objects(state: State<'_, AppState>, session_id: String, schema: String) -> AppResult<Vec<browse::DbObject>> {
     browse::objects(&pool(&state, &session_id).await?, &schema).await
 }
@@ -684,6 +689,7 @@ pub fn run() {
             disconnect,
             list_schemas,
             list_objects,
+            all_objects,
             table_info,
             object_ddl,
             table_data,

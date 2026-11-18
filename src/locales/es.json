@@ -142,6 +142,13 @@
     "refresh": "Actualizar",
     "empty": "Vacío"
   },
+  "palette": {
+    "title": "Buscar un objeto",
+    "placeholder": "Buscar una tabla, vista, rutina… (también base.nombre)",
+    "button": "Buscar un objeto (⌘P / Ctrl+P)",
+    "none": "Ningún objeto coincide.",
+    "hint": "{n} objetos en todas las bases. Escriba parte del nombre; ↑ ↓ para moverse, Intro para abrir."
+  },
   "kinds": {
     "table": "Tabla",
     "view": "Vista",

@@ -142,6 +142,13 @@
     "refresh": "Aggiorna",
     "empty": "Vuoto"
   },
+  "palette": {
+    "title": "Trova un oggetto",
+    "placeholder": "Trova una tabella, vista, routine… (anche db.nome)",
+    "button": "Trova un oggetto (⌘P / Ctrl+P)",
+    "none": "Nessun oggetto corrisponde.",
+    "hint": "{n} oggetti in tutti i database. Digita parte del nome; ↑ ↓ per spostarti, Invio per aprire."
+  },
   "kinds": {
     "table": "Tabella",
     "view": "Vista",

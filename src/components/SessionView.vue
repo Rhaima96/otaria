@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { defineAsyncComponent, ref } from "vue";
+import { defineAsyncComponent, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { Activity, Cog, FileCode, Gauge, Info, ListPlus, Lock, LockOpen, Plus, Puzzle, ScrollText, Share2, SlidersHorizontal, TableProperties, TriangleAlert, Users, X } from "lucide-vue-next";
 import DiagramDialog from "@/components/DiagramDialog.vue";
+import ObjectPalette from "@/components/ObjectPalette.vue";
 import ObjectTree from "@/components/ObjectTree.vue";
 import ObjectView from "@/components/ObjectView.vue";
 // Monaco is heavy: load the editor on first use.
@@ -20,6 +21,7 @@ import TransferDialog from "@/components/TransferDialog.vue";
 import UsersView from "@/components/UsersView.vue";
 import type { DbObject, ObjectKind, OpenedSession } from "@/lib/api";
 import { newScript } from "@/lib/templates";
+import { useSessions } from "@/composables/useSessions";
 import { objectIcon } from "@/lib/objects";
 import { cn } from "@/lib/utils";
 
@@ -48,6 +50,20 @@ function open(schema: string, obj: DbObject) {
 }
 
 const tree = ref<InstanceType<typeof ObjectTree> | null>(null);
+
+// Cmd+P (macOS) / Ctrl+P: global object search, in the session shown only (sessions stay mounted).
+const palette = ref<InstanceType<typeof ObjectPalette> | null>(null);
+const { activeTab } = useSessions();
+function onKey(e: KeyboardEvent) {
+  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "p" && activeTab.value === props.session.sessionId) {
+    e.preventDefault();
+    e.stopPropagation();
+    palette.value?.open();
+  }
+}
+// Capture phase: runs before Monaco or a grid can take the keystroke.
+onMounted(() => window.addEventListener("keydown", onKey, true));
+onUnmounted(() => window.removeEventListener("keydown", onKey, true));
 const transfer = ref<InstanceType<typeof TransferDialog> | null>(null);
 const diagram = ref<InstanceType<typeof DiagramDialog> | null>(null);
 
@@ -123,6 +139,7 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
           @create="create"
           @transfer="(schema, mode) => transfer?.open({ mode, schema, table: null })"
           @diagram="(schema) => diagram?.open(schema)"
+          @search="palette?.open()"
         />
       </aside>
       <main class="flex min-w-0 flex-1 flex-col">
@@ -202,6 +219,7 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
       </main>
     </div>
     <DiagramDialog ref="diagram" :session-id="session.sessionId" />
+    <ObjectPalette ref="palette" :session-id="session.sessionId" @open="open" />
     <TransferDialog ref="transfer" :session-id="session.sessionId" @imported="tree?.load()" />
   </div>
 </template>

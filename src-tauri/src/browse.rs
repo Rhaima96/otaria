@@ -25,20 +25,53 @@ pub struct DbObject {
     pub versioned: bool,
 }
 
+/// Objects of one schema, or of every schema but the server's own virtual ones (`schema` None:
+/// global search, Cmd+P), in one round trip. Rows: (schema, name, kind, versioned).
+fn objects_sql(all: bool) -> String {
+    let filter = |col: &str| {
+        if all {
+            format!("{col} NOT IN ('information_schema', 'performance_schema', 'sys')")
+        } else {
+            format!("{col} = ?")
+        }
+    };
+    format!(
+        "
+        SELECT TABLE_SCHEMA, TABLE_NAME, CASE TABLE_TYPE WHEN 'VIEW' THEN 'view' WHEN 'SYSTEM VIEW' THEN 'view'
+               WHEN 'SEQUENCE' THEN 'sequence' ELSE 'table' END, TABLE_TYPE = 'SYSTEM VERSIONED'
+          FROM information_schema.TABLES WHERE {}
+        UNION ALL SELECT ROUTINE_SCHEMA, ROUTINE_NAME, LOWER(ROUTINE_TYPE), 0
+          FROM information_schema.ROUTINES WHERE {} AND ROUTINE_TYPE IN ('PROCEDURE', 'FUNCTION')
+        UNION ALL SELECT TRIGGER_SCHEMA, TRIGGER_NAME, 'trigger', 0 FROM information_schema.TRIGGERS WHERE {}
+        UNION ALL SELECT EVENT_SCHEMA, EVENT_NAME, 'event', 0 FROM information_schema.EVENTS WHERE {}
+        ORDER BY 1, 2",
+        filter("TABLE_SCHEMA"),
+        filter("ROUTINE_SCHEMA"),
+        filter("TRIGGER_SCHEMA"),
+        filter("EVENT_SCHEMA")
+    )
+}
+
 /// Every object of a schema, in one round trip.
 pub async fn objects(pool: &Pool, schema: &str) -> AppResult<Vec<DbObject>> {
-    let sql = "
-        SELECT TABLE_NAME, CASE TABLE_TYPE WHEN 'VIEW' THEN 'view' WHEN 'SYSTEM VIEW' THEN 'view'
-               WHEN 'SEQUENCE' THEN 'sequence' ELSE 'table' END, TABLE_TYPE = 'SYSTEM VERSIONED'
-          FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?
-        UNION ALL SELECT ROUTINE_NAME, LOWER(ROUTINE_TYPE), 0
-          FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE IN ('PROCEDURE', 'FUNCTION')
-        UNION ALL SELECT TRIGGER_NAME, 'trigger', 0 FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = ?
-        UNION ALL SELECT EVENT_NAME, 'event', 0 FROM information_schema.EVENTS WHERE EVENT_SCHEMA = ?
-        ORDER BY 1";
     let mut conn = pool.get_conn().await?;
-    let rows: Vec<(String, String, bool)> = conn.exec(sql, (schema, schema, schema, schema)).await?;
-    Ok(rows.into_iter().map(|(name, kind, versioned)| DbObject { name, kind, versioned }).collect())
+    let rows: Vec<(String, String, String, bool)> = conn.exec(objects_sql(false), (schema, schema, schema, schema)).await?;
+    Ok(rows.into_iter().map(|(_, name, kind, versioned)| DbObject { name, kind, versioned }).collect())
+}
+
+#[derive(Debug, Serialize)]
+pub struct SchemaObject {
+    pub schema: String,
+    #[serde(flatten)]
+    pub object: DbObject,
+}
+
+/// Every object of every schema (but information_schema, performance_schema, sys), for Cmd+P.
+// ponytail: loaded each time the palette opens, no cache; fine up to tens of thousands of objects.
+pub async fn all_objects(pool: &Pool) -> AppResult<Vec<SchemaObject>> {
+    let mut conn = pool.get_conn().await?;
+    let rows: Vec<(String, String, String, bool)> = conn.query(objects_sql(true)).await?;
+    Ok(rows.into_iter().map(|(schema, name, kind, versioned)| SchemaObject { schema, object: DbObject { name, kind, versioned } }).collect())
 }
 
 #[derive(Debug, Serialize)]
@@ -224,6 +257,14 @@ pub async fn row_history(pool: &Pool, schema: &str, table: &str, key: &[(String,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn object_queries_filter_schemas() {
+        let one = objects_sql(false);
+        assert_eq!(one.matches("= ?").count(), 4);
+        let all = objects_sql(true);
+        assert!(!all.contains('?') && all.matches("NOT IN ('information_schema', 'performance_schema', 'sys')").count() == 4);
+    }
 
     #[test]
     fn quotes_identifiers() {

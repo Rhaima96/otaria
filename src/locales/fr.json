@@ -142,6 +142,13 @@
     "refresh": "Actualiser",
     "empty": "Vide"
   },
+  "palette": {
+    "title": "Trouver un objet",
+    "placeholder": "Trouver une table, une vue, une routine… (base.nom accepté)",
+    "button": "Trouver un objet (⌘P / Ctrl+P)",
+    "none": "Aucun objet ne correspond.",
+    "hint": "{n} objets dans toutes les bases. Tapez une partie du nom ; ↑ ↓ pour se déplacer, Entrée pour ouvrir."
+  },
   "kinds": {
     "table": "Table",
     "view": "Vue",

@@ -152,6 +152,10 @@ mod tests {
         let objs = browse::objects(&pool, "otaria_t").await.unwrap();
         let kinds: Vec<(&str, &str, bool)> = objs.iter().map(|o| (o.name.as_str(), o.kind.as_str(), o.versioned)).collect();
         assert_eq!(kinds, [("p", "table", true), ("s", "sequence", false), ("v", "view", false)]);
+        // Global search: the same objects, with their schema; no information_schema.
+        let all = browse::all_objects(&pool).await.unwrap();
+        assert_eq!(all.iter().filter(|o| o.schema == "otaria_t").count(), 3);
+        assert!(all.iter().all(|o| o.schema != "information_schema"));
         assert_eq!(browse::table_info(&pool, "otaria_t", "p").await.unwrap().primary_key, ["id"]);
         assert!(browse::ddl(&pool, "otaria_t", "s", "sequence").await.unwrap().contains("CREATE SEQUENCE"));
 

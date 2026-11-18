@@ -64,6 +64,11 @@ export interface DbObject {
   versioned: boolean;
 }
 
+/** An object with its schema (global search). */
+export interface SchemaObject extends DbObject {
+  schema: string;
+}
+
 export interface Column {
   name: string;
   dataType: string;
@@ -472,6 +477,7 @@ export const api = {
   connect: (profileId: string, s: Secrets = {}) => invoke<OpenedSession>("connect", { profileId, ...s }),
   disconnect: (sessionId: string) => invoke<void>("disconnect", { sessionId }),
   listSchemas: (sessionId: string) => invoke<string[]>("list_schemas", { sessionId }),
+  allObjects: (sessionId: string) => invoke<SchemaObject[]>("all_objects", { sessionId }),
   listObjects: (sessionId: string, schema: string) => invoke<DbObject[]>("list_objects", { sessionId, schema }),
   tableInfo: (sessionId: string, schema: string, table: string) => invoke<TableInfo>("table_info", { sessionId, schema, table }),
   objectDdl: (sessionId: string, schema: string, name: string, kind: ObjectKind) =>
