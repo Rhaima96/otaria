@@ -2,6 +2,7 @@
 import { defineAsyncComponent, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { Activity, Cog, FileCode, Gauge, Info, ListPlus, Lock, LockOpen, Plus, Puzzle, ScrollText, Share2, SlidersHorizontal, TableProperties, TriangleAlert, Users, X } from "lucide-vue-next";
+import CompareDialog from "@/components/CompareDialog.vue";
 import DiagramDialog from "@/components/DiagramDialog.vue";
 import ObjectPalette from "@/components/ObjectPalette.vue";
 import ObjectTree from "@/components/ObjectTree.vue";
@@ -80,6 +81,7 @@ onMounted(() => window.addEventListener("keydown", onKey, true));
 onUnmounted(() => window.removeEventListener("keydown", onKey, true));
 const transfer = ref<InstanceType<typeof TransferDialog> | null>(null);
 const diagram = ref<InstanceType<typeof DiagramDialog> | null>(null);
+const compare = ref<InstanceType<typeof CompareDialog> | null>(null);
 
 /** "New…" from the tree: table and sequence have a form, the other kinds start from a template in the editor. */
 function create(schema: string, kind: ObjectKind) {
@@ -165,6 +167,7 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
           @create="create"
           @transfer="(schema, mode) => transfer?.open({ mode, schema, table: null })"
           @diagram="(schema) => diagram?.open(schema)"
+          @compare="(schema) => compare?.open(schema)"
           @search="palette?.open()"
         />
       </aside>
@@ -246,6 +249,7 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
       </main>
     </div>
     <DiagramDialog ref="diagram" :session-id="session.sessionId" />
+    <CompareDialog ref="compare" :session-id="session.sessionId" @script="(schema, sql) => newQuery(schema, sql)" />
     <ObjectPalette ref="palette" :session-id="session.sessionId" @open="open" />
     <TransferDialog ref="transfer" :session-id="session.sessionId" @imported="tree?.load()" />
   </div>

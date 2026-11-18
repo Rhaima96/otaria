@@ -634,6 +634,20 @@
     "close": "Close",
     "noTables": "No tables in this database."
   },
+  "compare": {
+    "open": "Compare with…",
+    "title": "Compare tables into {schema}",
+    "source": "Source connection",
+    "sourceSchema": "Source database",
+    "run": "Compare",
+    "hint": "Tables only. The script turns this database into the source; nothing runs until you run it in the editor. DROP TABLE lines are commented out.",
+    "create": "to create",
+    "alter": "to change",
+    "drop": "extra",
+    "same": "Same tables as {source}.",
+    "script": "Migration script",
+    "openScript": "Open in the editor"
+  },
   "json": {
     "open": "JSON",
     "openHint": "View or edit the focused cell as JSON",

@@ -58,6 +58,16 @@ export function toAppError(e: unknown): AppError {
 
 export type ObjectKind = "table" | "view" | "sequence" | "procedure" | "function" | "trigger" | "event";
 
+/** Schema comparison: one line per table that differs; `sql` turns the target into the source. */
+export interface TableDiff {
+  name: string;
+  status: "create" | "alter" | "drop";
+}
+export interface Comparison {
+  diffs: TableDiff[];
+  sql: string;
+}
+
 export interface DbObject {
   name: string;
   kind: ObjectKind;
@@ -511,6 +521,8 @@ export const api = {
   dropObject: (sessionId: string, schema: string, name: string, kind: ObjectKind, truncate: boolean) =>
     invoke<void>("drop_object", { sessionId, schema, name, kind, truncate }),
   erDiagram: (sessionId: string, schema: string, tables: string[], neighbors: boolean) => invoke<string>("er_diagram", { sessionId, schema, tables, neighbors }),
+  compareSchemas: (sourceSession: string, sourceSchema: string, targetSession: string, targetSchema: string) =>
+    invoke<Comparison>("compare_schemas", { sourceSession, sourceSchema, targetSession, targetSchema }),
   saveDiagram: (path: string, text: string) => invoke<void>("save_diagram", { path, text }),
   vectorColumns: (sessionId: string, schema: string, table: string) => invoke<VectorColumn[]>("vector_columns", { sessionId, schema, table }),
   vectorSearch: (sessionId: string, schema: string, table: string, column: string, distance: VectorDistance, probe: VectorProbe, k: number) =>

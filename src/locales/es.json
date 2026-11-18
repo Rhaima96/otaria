@@ -634,6 +634,20 @@
     "close": "Cerrar",
     "noTables": "No hay tablas en esta base de datos."
   },
+  "compare": {
+    "open": "Comparar con…",
+    "title": "Comparar tablas hacia {schema}",
+    "source": "Conexión de origen",
+    "sourceSchema": "Base de origen",
+    "run": "Comparar",
+    "hint": "Solo tablas. El script iguala esta base con el origen; nada se ejecuta hasta que lo lances en el editor. Los DROP TABLE van comentados.",
+    "create": "a crear",
+    "alter": "a cambiar",
+    "drop": "sobrante",
+    "same": "Mismas tablas que {source}.",
+    "script": "Script de migración",
+    "openScript": "Abrir en el editor"
+  },
   "json": {
     "open": "JSON",
     "openHint": "Ver o editar la celda activa como JSON",

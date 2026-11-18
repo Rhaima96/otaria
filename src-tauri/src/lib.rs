@@ -2,6 +2,7 @@ mod admin;
 mod binlog;
 mod browse;
 mod db;
+mod compare;
 mod designer;
 mod diagram;
 mod edit;
@@ -460,6 +461,21 @@ async fn account_drop(state: State<'_, AppState>, session_id: String, user: Stri
     users::run(&pool(&state, &session_id).await?, &sql, &sql).await
 }
 
+/// Tables of `source_schema` (any open session) against `target_schema`: differences and the migration script.
+#[tauri::command]
+async fn compare_schemas(
+    state: State<'_, AppState>,
+    source_session: String,
+    source_schema: String,
+    target_session: String,
+    target_schema: String,
+) -> AppResult<compare::Comparison> {
+    let src = compare::load_tables(&pool(&state, &source_session).await?, &source_schema, is_mariadb(&state, &source_session).await?).await?;
+    let mariadb = is_mariadb(&state, &target_session).await?;
+    let tgt = compare::load_tables(&pool(&state, &target_session).await?, &target_schema, mariadb).await?;
+    compare::compare(&target_schema, &src, &tgt, mariadb)
+}
+
 #[tauri::command]
 async fn er_diagram(state: State<'_, AppState>, session_id: String, schema: String, tables: Vec<String>, neighbors: bool) -> AppResult<String> {
     let (columns, fks) = diagram::load(&pool(&state, &session_id).await?, &schema).await?;
@@ -739,6 +755,7 @@ pub fn run() {
             drop_object,
             json_table_sql,
             er_diagram,
+            compare_schemas,
             save_diagram,
             list_plugins,
             plugin_install_sql,

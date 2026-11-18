@@ -120,13 +120,40 @@ pub fn split_from(src: &str, delim: &str) -> (Vec<Stmt>, usize, String) {
 /// Destructive statements that need an explicit confirmation (PLAN §4).
 // ponytail: keyword check, a WHERE inside a subquery or string fools it; use a real parser if it matters.
 pub fn risky(sql: &str) -> bool {
-    let up = sql.to_ascii_uppercase();
+    let up = strip_comments(sql).to_ascii_uppercase();
     let words: Vec<&str> = up.split(|c: char| !c.is_ascii_alphanumeric() && c != '_').filter(|w| !w.is_empty()).collect();
     match words.first().copied() {
         Some("DROP" | "TRUNCATE") => true,
         Some("DELETE" | "UPDATE") => !words.contains(&"WHERE"),
         _ => false,
     }
+}
+
+/// Statement without `-- `, `#` and `/* */` comments, so a comment can neither hide nor fake a DROP.
+// ponytail: ignores quotes; a comment marker inside a string cuts too much, which only makes `risky` flag more.
+fn strip_comments(sql: &str) -> String {
+    let mut out = String::new();
+    let mut rest = sql;
+    while !rest.is_empty() {
+        let line = rest.find("-- ").into_iter().chain(rest.find('#')).min();
+        let block = rest.find("/*");
+        match (line, block) {
+            (Some(l), b) if b.is_none_or(|b| l < b) => {
+                out.push_str(&rest[..l]);
+                rest = rest[l..].find('\n').map_or("", |e| &rest[l + e..]);
+            }
+            (_, Some(b)) => {
+                out.push_str(&rest[..b]);
+                out.push(' ');
+                rest = rest[b..].find("*/").map_or("", |e| &rest[b + e + 2..]);
+            }
+            _ => {
+                out.push_str(rest);
+                rest = "";
+            }
+        }
+    }
+    out
 }
 
 #[derive(Debug, Serialize)]
@@ -387,6 +414,12 @@ LIMIT 100;"
         assert!(risky("update t set a=1"));
         assert!(!risky("UPDATE t SET a=1 WHERE id=2"));
         assert!(!risky("SELECT * FROM t"));
+        // Comments neither hide nor fake a destructive statement.
+        assert!(risky("/* note */ DROP TABLE t"));
+        assert!(risky("-- cleanup\nDROP TABLE t"));
+        assert!(risky("DELETE FROM t -- WHERE id = 1"));
+        assert!(!risky("-- DROP TABLE t;\nSET FOREIGN_KEY_CHECKS = 1"));
+        assert!(!risky("# DROP TABLE t\nSELECT 1"));
     }
 
     /// OTARIA_TEST_DB="host:port:user:password" cargo test -- --ignored

@@ -634,6 +634,20 @@
     "close": "Schließen",
     "noTables": "Keine Tabellen in dieser Datenbank."
   },
+  "compare": {
+    "open": "Vergleichen mit…",
+    "title": "Tabellen nach {schema} vergleichen",
+    "source": "Quellverbindung",
+    "sourceSchema": "Quelldatenbank",
+    "run": "Vergleichen",
+    "hint": "Nur Tabellen. Das Skript gleicht diese Datenbank an die Quelle an; nichts läuft, bevor du es im Editor ausführst. DROP TABLE-Zeilen sind auskommentiert.",
+    "create": "anlegen",
+    "alter": "ändern",
+    "drop": "überzählig",
+    "same": "Gleiche Tabellen wie {source}.",
+    "script": "Migrationsskript",
+    "openScript": "Im Editor öffnen"
+  },
   "json": {
     "open": "JSON",
     "openHint": "Aktive Zelle als JSON anzeigen oder bearbeiten",

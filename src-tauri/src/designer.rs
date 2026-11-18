@@ -611,21 +611,31 @@ pub async fn load(pool: &Pool, schema: &str, table: &str, mariadb: bool) -> AppR
         }
     }
 
-    type FkRow = (String, String, String, String, String, String, String);
+    // LEFT JOIN: with SELECT only, MariaDB lists the FK in KEY_COLUMN_USAGE but hides its
+    // REFERENTIAL_CONSTRAINTS row; the rules then come from SHOW CREATE TABLE (visible with SELECT).
+    type FkRow = (String, String, String, String, String, Option<String>, Option<String>);
     let rows: Vec<FkRow> = conn
         .exec(
             "SELECT k.CONSTRAINT_NAME, k.COLUMN_NAME, k.REFERENCED_TABLE_SCHEMA, k.REFERENCED_TABLE_NAME,
                     k.REFERENCED_COLUMN_NAME, r.UPDATE_RULE, r.DELETE_RULE
                FROM information_schema.KEY_COLUMN_USAGE k
-               JOIN information_schema.REFERENTIAL_CONSTRAINTS r
+               LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS r
                  ON r.CONSTRAINT_SCHEMA = k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME = k.CONSTRAINT_NAME AND r.TABLE_NAME = k.TABLE_NAME
               WHERE k.TABLE_SCHEMA = ? AND k.TABLE_NAME = ? AND k.REFERENCED_TABLE_NAME IS NOT NULL
               ORDER BY k.CONSTRAINT_NAME, k.ORDINAL_POSITION",
             (schema, table),
         )
         .await?;
+    let ddl = match rows.iter().any(|r| r.5.is_none()) {
+        true => crate::browse::ddl_on(&mut conn, schema, table, "table").await?,
+        false => String::new(),
+    };
     let mut fks: Vec<FkDef> = Vec::new();
     for (name, col, rs, rt, rc, upd, del) in rows {
+        let (upd, del) = match (upd, del) {
+            (Some(u), Some(d)) => (u, d),
+            _ => fk_rules_from_ddl(&ddl, &name),
+        };
         match fks.last_mut().filter(|f| f.name == name) {
             Some(f) => {
                 f.columns.push(col);
@@ -646,6 +656,17 @@ pub async fn load(pool: &Pool, schema: &str, table: &str, mariadb: bool) -> AppR
     }
 
     Ok(TableDef { name: table.to_string(), engine, collation, comment, columns, indexes, fks, checks })
+}
+
+/// ON UPDATE / ON DELETE of constraint `name` in SHOW CREATE TABLE; a missing clause is RESTRICT.
+fn fk_rules_from_ddl(ddl: &str, name: &str) -> (String, String) {
+    let line = ddl.lines().find(|l| l.contains(&format!("CONSTRAINT {} FOREIGN KEY", ident(name)))).unwrap_or("");
+    let rule = |kw: &str| {
+        line.split_once(kw).map_or("RESTRICT", |(_, rest)| {
+            ["SET NULL", "SET DEFAULT", "NO ACTION", "CASCADE", "RESTRICT"].into_iter().find(|r| rest.trim_start().starts_with(r)).unwrap_or("RESTRICT")
+        })
+    };
+    (rule("ON UPDATE").to_string(), rule("ON DELETE").to_string())
 }
 
 /// Engines the server can use, default first (for the designer's dropdown).
@@ -867,6 +888,13 @@ mod tests {
         assert_eq!(drop_sql("s", "v", "view", false).unwrap(), "DROP VIEW `s`.`v`");
         assert_eq!(drop_sql("s", "t", "table", true).unwrap(), "TRUNCATE TABLE `s`.`t`");
         assert!(drop_sql("s", "v", "view", true).is_err());
+    }
+
+    #[test]
+    fn reads_fk_rules_from_ddl() {
+        let ddl = "CREATE TABLE `c` (\n  `p` int(11),\n  CONSTRAINT `1` FOREIGN KEY (`p`) REFERENCES `p` (`id`),\n  CONSTRAINT `fk``x` FOREIGN KEY (`p`) REFERENCES `p` (`id`) ON DELETE SET NULL ON UPDATE CASCADE\n)";
+        assert_eq!(fk_rules_from_ddl(ddl, "1"), ("RESTRICT".into(), "RESTRICT".into()));
+        assert_eq!(fk_rules_from_ddl(ddl, "fk`x"), ("CASCADE".into(), "SET NULL".into()));
     }
 
     #[test]
