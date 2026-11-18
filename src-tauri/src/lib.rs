@@ -9,6 +9,7 @@ mod error;
 mod plugins;
 mod profiles;
 mod query;
+mod replication;
 mod sequence;
 mod ssh;
 mod transfer;
@@ -306,6 +307,11 @@ async fn binlog_state(state: State<'_, AppState>, session_id: String) -> AppResu
 #[tauri::command]
 async fn binlog_events(state: State<'_, AppState>, session_id: String, file: String, offset: u64, limit: u64) -> AppResult<Vec<binlog::Event>> {
     binlog::events(&pool(&state, &session_id).await?, &file, offset, limit).await
+}
+
+#[tauri::command]
+async fn replication_state(state: State<'_, AppState>, session_id: String) -> AppResult<replication::State> {
+    replication::state(&pool(&state, &session_id).await?).await
 }
 
 #[tauri::command]
@@ -690,6 +696,7 @@ pub fn run() {
             vector_columns,
             vector_search,
             engine_list,
+            replication_state,
             binlog_state,
             binlog_events,
             versioning_state,

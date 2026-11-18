@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { defineAsyncComponent, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { Activity, Cog, FileCode, Gauge, Info, ListPlus, Lock, LockOpen, Plus, Puzzle, ScrollText, SlidersHorizontal, TableProperties, TriangleAlert, Users, X } from "lucide-vue-next";
+import { Activity, Cog, FileCode, Gauge, Info, ListPlus, Lock, LockOpen, Plus, Puzzle, ScrollText, Share2, SlidersHorizontal, TableProperties, TriangleAlert, Users, X } from "lucide-vue-next";
 import DiagramDialog from "@/components/DiagramDialog.vue";
 import ObjectTree from "@/components/ObjectTree.vue";
 import ObjectView from "@/components/ObjectView.vue";
@@ -10,6 +10,7 @@ const SqlEditor = defineAsyncComponent(() => import("@/components/SqlEditor.vue"
 import PluginsView from "@/components/PluginsView.vue";
 import EnginesView from "@/components/EnginesView.vue";
 import BinlogView from "@/components/BinlogView.vue";
+import ReplicationView from "@/components/ReplicationView.vue";
 import ProcessesView from "@/components/ProcessesView.vue";
 import StatusView from "@/components/StatusView.vue";
 import VariablesView from "@/components/VariablesView.vue";
@@ -78,10 +79,10 @@ function dropped(id: string) {
   tree.value?.load();
 }
 
-/** Server screens, one tab each; plugins (ALL_PLUGINS) and binlog are MariaDB-only. */
-type Admin = "processes" | "variables" | "status" | "users" | "engines" | "plugins" | "binlog";
-const adminViews = { processes: { icon: Activity, view: ProcessesView }, variables: { icon: SlidersHorizontal, view: VariablesView }, status: { icon: Gauge, view: StatusView }, users: { icon: Users, view: UsersView }, engines: { icon: Cog, view: EnginesView }, plugins: { icon: Puzzle, view: PluginsView }, binlog: { icon: ScrollText, view: BinlogView } };
-const adminList = (Object.keys(adminViews) as Admin[]).filter((a) => !["plugins", "binlog"].includes(a) || props.session.info.isMariadb);
+/** Server screens, one tab each; plugins (ALL_PLUGINS), replication / Galera and binlog are MariaDB-only. */
+type Admin = "processes" | "variables" | "status" | "users" | "engines" | "plugins" | "replication" | "binlog";
+const adminViews = { processes: { icon: Activity, view: ProcessesView }, variables: { icon: SlidersHorizontal, view: VariablesView }, status: { icon: Gauge, view: StatusView }, users: { icon: Users, view: UsersView }, engines: { icon: Cog, view: EnginesView }, plugins: { icon: Puzzle, view: PluginsView }, replication: { icon: Share2, view: ReplicationView }, binlog: { icon: ScrollText, view: BinlogView } };
+const adminList = (Object.keys(adminViews) as Admin[]).filter((a) => !["plugins", "replication", "binlog"].includes(a) || props.session.info.isMariadb);
 
 function openAdmin(a: Admin) {
   if (!tabs.value.some((x) => x.id === a)) tabs.value.push({ id: a, schema: null, obj: null, admin: a });

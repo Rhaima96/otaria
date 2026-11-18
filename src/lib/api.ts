@@ -268,6 +268,39 @@ export type VectorDistance = "euclidean" | "cosine";
 /** Compare with a typed vector, or with the vector of the row whose (single-column) primary key is `value`. */
 export type VectorProbe = { kind: "text"; value: string } | { kind: "row"; value: string };
 
+export interface ReplicationChannel {
+  /** Empty for the default connection. */
+  name: string;
+  masterHost: string;
+  masterPort: number;
+  /** Yes | No | Connecting | Preparing */
+  ioRunning: string;
+  sqlRunning: string;
+  secondsBehind: number | null;
+  /** No | Slave_Pos | Current_Pos */
+  usingGtid: string;
+  gtidIoPos: string;
+  masterLogFile: string;
+  readPos: number;
+  execPos: number;
+  ioState: string;
+  sqlState: string;
+  lastIoError: string;
+  lastSqlError: string;
+}
+
+export interface ReplicationState {
+  channels: ReplicationChannel[];
+  /** null when the server is not a Galera node. */
+  galera: {
+    clusterName: string;
+    nodeName: string;
+    /** wsrep_* status, prefix removed. */
+    status: Record<string, string>;
+    nodes: { index: number; name: string; address: string }[];
+  } | null;
+}
+
 export interface BinlogState {
   /** ROW | STATEMENT | MIXED */
   format: string;
@@ -476,6 +509,7 @@ export const api = {
   vectorColumns: (sessionId: string, schema: string, table: string) => invoke<VectorColumn[]>("vector_columns", { sessionId, schema, table }),
   vectorSearch: (sessionId: string, schema: string, table: string, column: string, distance: VectorDistance, probe: VectorProbe, k: number) =>
     invoke<Rows>("vector_search", { sessionId, schema, table, column, distance, probe, k }),
+  replicationState: (sessionId: string) => invoke<ReplicationState>("replication_state", { sessionId }),
   binlogState: (sessionId: string) => invoke<BinlogState>("binlog_state", { sessionId }),
   binlogEvents: (sessionId: string, file: string, offset: number, limit: number) => invoke<BinlogEvent[]>("binlog_events", { sessionId, file, offset, limit }),
   engineList: (sessionId: string) => invoke<Engine[]>("engine_list", { sessionId }),
