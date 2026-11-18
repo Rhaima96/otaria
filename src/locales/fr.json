@@ -164,6 +164,7 @@
     "ddl": "DDL",
     "close": "Fermer",
     "closeHint": "Fermer l'onglet (⌘W / Ctrl+W)",
+    "closeDirty": "Fermer cet onglet ? Les modifications non enregistrées seront perdues.",
     "sequence": "Séquence",
     "truncate": "Vider",
     "drop": "Supprimer",

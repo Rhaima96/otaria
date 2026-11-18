@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { defineAsyncComponent, onMounted, onUnmounted, ref } from "vue";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { useI18n } from "vue-i18n";
 import { Activity, Cog, FileCode, Gauge, Info, ListPlus, Lock, LockOpen, Plus, Puzzle, ScrollText, Share2, SlidersHorizontal, TableProperties, TriangleAlert, Users, X } from "lucide-vue-next";
 import DiagramDialog from "@/components/DiagramDialog.vue";
@@ -66,7 +67,7 @@ function onKey(e: KeyboardEvent) {
   const digit = /^Digit[1-9]$/.test(e.code) ? Number(e.code[5]) : 0;
   if (mod && !e.shiftKey && e.key.toLowerCase() === "p") palette.value?.open();
   else if (mod && !e.shiftKey && e.key.toLowerCase() === "t") newQuery();
-  else if (mod && !e.shiftKey && e.key.toLowerCase() === "w") active.value !== null && close(active.value);
+  else if (mod && !e.shiftKey && e.key.toLowerCase() === "w") active.value !== null && closeTab(active.value);
   else if (mod && digit && (digit === 9 || digit <= ids.length)) go(digit === 9 ? -1 : digit - 1);
   else if (e.ctrlKey && !e.metaKey && e.key === "Tab") go(ids.indexOf(active.value) + (e.shiftKey ? -1 : 1));
   else return;
@@ -125,6 +126,18 @@ function newQuery(schema = tabs.value.find((x) => x.id === active.value)?.schema
   active.value = id;
 }
 
+// Tab panels that can hold unsaved work (grid rows, designer changes), by tab id.
+const panels = new Map<string, { dirty: boolean }>();
+function setPanel(id: string, el: unknown) {
+  if (el) panels.set(id, el as { dirty: boolean });
+  else panels.delete(id);
+}
+/** Close from the UI (cross, middle click, Mod+W): asks first if the tab has unsaved changes. */
+async function closeTab(id: string) {
+  if (panels.get(id)?.dirty && !(await ask(t("object.closeDirty"), { kind: "warning", okLabel: t("object.close"), cancelLabel: t("grid.cancel") }))) return;
+  close(id);
+}
+
 function close(id: string) {
   const i = tabs.value.findIndex((x) => x.id === id);
   tabs.value.splice(i, 1);
@@ -167,11 +180,11 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
             :title="x.obj ? `${x.schema}.${x.obj.name}` : undefined"
             :class="cn(tab, 'cursor-default pr-1', active === x.id && 'bg-background')"
             @click="active = x.id"
-            @auxclick.middle="close(x.id)"
+            @auxclick.middle="closeTab(x.id)"
           >
             <component :is="x.obj ? objectIcon(x.obj) : x.create === 'table' ? TableProperties : x.create ? ListPlus : x.admin ? adminViews[x.admin].icon : FileCode" class="size-3.5 text-muted-foreground" />
             <span class="max-w-48 truncate">{{ x.obj ? x.obj.name : x.create ? t(`newObject.${x.create}`) : x.admin ? t(`${x.admin}.tab`) : t("editor.tab", { n: x.n }) }}</span>
-            <button :title="t('object.closeHint')" class="flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-secondary hover:text-foreground" @click.stop="close(x.id)">
+            <button :title="t('object.closeHint')" class="flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-secondary hover:text-foreground" @click.stop="closeTab(x.id)">
               <X class="size-3" /><span class="sr-only">{{ t("object.close") }}</span>
             </button>
           </div>
@@ -184,6 +197,7 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
         <template v-for="x in tabs" :key="x.id">
           <ObjectView
             v-if="x.obj"
+            :ref="(el) => setPanel(x.id, el)"
             v-show="active === x.id"
             :session-id="session.sessionId"
             :schema="x.schema!"
@@ -197,7 +211,7 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
             @versioned="(on) => ((x.obj = { ...x.obj!, versioned: on }), tree?.load())"
           />
           <SequenceView v-else-if="x.create === 'sequence'" v-show="active === x.id" :session-id="session.sessionId" :schema="x.schema!" name="" create class="min-h-0 flex-1" @created="(n) => created(x.id, x.schema!, 'sequence', n)" />
-          <TableDesigner v-else-if="x.create === 'table'" v-show="active === x.id" :session-id="session.sessionId" :schema="x.schema!" :table="null" :mariadb="session.info.isMariadb" class="min-h-0 flex-1" @saved="(n) => created(x.id, x.schema!, 'table', n)" />
+          <TableDesigner v-else-if="x.create === 'table'" :ref="(el) => setPanel(x.id, el)" v-show="active === x.id" :session-id="session.sessionId" :schema="x.schema!" :table="null" :mariadb="session.info.isMariadb" class="min-h-0 flex-1" @saved="(n) => created(x.id, x.schema!, 'table', n)" />
           <component :is="adminViews[x.admin].view" v-else-if="x.admin" v-show="active === x.id" :session-id="session.sessionId" :active="active === x.id" v-bind="x.admin === 'users' ? { mariadb: session.info.isMariadb } : {}" class="min-h-0 flex-1" />
           <SqlEditor v-else v-show="active === x.id" :session-id="session.sessionId" :profile-id="session.profile.id" :editor-id="x.id" :schema="x.schema" :initial-sql="x.sql" :mariadb="session.info.isMariadb" class="min-h-0 flex-1" />
         </template>

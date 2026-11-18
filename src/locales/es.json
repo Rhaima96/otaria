@@ -164,6 +164,7 @@
     "ddl": "DDL",
     "close": "Cerrar",
     "closeHint": "Cerrar pestaña (⌘W / Ctrl+W)",
+    "closeDirty": "¿Cerrar esta pestaña? Se perderán los cambios no guardados.",
     "sequence": "Secuencia",
     "truncate": "Vaciar",
     "drop": "Eliminar",

@@ -27,6 +27,8 @@ const selected = ref(0);
 
 const clone = <T,>(v: T): T => structuredClone(toRaw(v));
 const dirty = computed(() => JSON.stringify(def.value) !== JSON.stringify(old.value ?? EMPTY));
+// Read by SessionView before closing the tab.
+defineExpose({ dirty });
 
 async function load(name = props.table) {
   error.value = null;

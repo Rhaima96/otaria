@@ -164,6 +164,7 @@
     "ddl": "DDL",
     "close": "Chiudi",
     "closeHint": "Chiudi scheda (⌘W / Ctrl+W)",
+    "closeDirty": "Chiudere questa scheda? Le modifiche non salvate andranno perse.",
     "sequence": "Sequenza",
     "truncate": "Svuota",
     "drop": "Elimina",

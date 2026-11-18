@@ -40,6 +40,10 @@ const views = computed<View[]>(() => (hasVector.value && props.mariadb && isTabl
 const transfer = ref<InstanceType<typeof TransferDialog> | null>(null);
 const ddl = ref<string | null>(null);
 const error = ref<AppError | null>(null);
+// Unsaved grid rows or designer changes: SessionView asks before closing the tab.
+const grid = ref<InstanceType<typeof DataGrid> | null>(null);
+const designer = ref<InstanceType<typeof TableDesigner> | null>(null);
+defineExpose({ dirty: computed(() => !!(grid.value?.dirty || designer.value?.dirty)) });
 /** Bumped after a structure change: remounts the grid on the new columns. */
 const version = ref(0);
 
@@ -134,7 +138,7 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
 
     <SequenceView v-else-if="view === 'sequence'" :session-id="sessionId" :schema="schema" :name="obj.name" class="min-h-0 flex-1" />
 
-    <DataGrid v-else-if="view === 'data' && info" :key="version" :session-id="sessionId" :schema="schema" :table="obj.name" :info="info" :versioned="obj.versioned" class="min-h-0 flex-1" @edit-sql="(sql) => emit('editSql', sql)" />
+    <DataGrid v-else-if="view === 'data' && info" ref="grid" :key="version" :session-id="sessionId" :schema="schema" :table="obj.name" :info="info" :versioned="obj.versioned" class="min-h-0 flex-1" @edit-sql="(sql) => emit('editSql', sql)" />
 
     <VersioningView
       v-else-if="view === 'versioning'"
@@ -148,7 +152,7 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
 
     <VectorView v-else-if="view === 'vector' && info" :key="version" :session-id="sessionId" :schema="schema" :table="obj.name" :info="info" class="min-h-0 flex-1" />
 
-    <TableDesigner v-else-if="view === 'structure' && isTable" :session-id="sessionId" :schema="schema" :table="obj.name" :mariadb="mariadb" class="min-h-0 flex-1" @saved="saved" />
+    <TableDesigner v-else-if="view === 'structure' && isTable" ref="designer" :session-id="sessionId" :schema="schema" :table="obj.name" :mariadb="mariadb" class="min-h-0 flex-1" @saved="saved" />
 
     <div v-else-if="view === 'structure' && info" class="min-h-0 flex-1 overflow-auto">
       <table class="w-full border-collapse">

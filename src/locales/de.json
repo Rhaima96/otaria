@@ -164,6 +164,7 @@
     "ddl": "DDL",
     "close": "Schließen",
     "closeHint": "Tab schließen (⌘W / Strg+W)",
+    "closeDirty": "Diesen Tab schließen? Nicht gespeicherte Änderungen gehen verloren.",
     "sequence": "Sequenz",
     "truncate": "Leeren",
     "drop": "Löschen",

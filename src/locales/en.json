@@ -164,6 +164,7 @@
     "ddl": "DDL",
     "close": "Close",
     "closeHint": "Close tab (⌘W / Ctrl+W)",
+    "closeDirty": "Close this tab? Unsaved changes will be lost.",
     "sequence": "Sequence",
     "truncate": "Empty",
     "drop": "Delete",

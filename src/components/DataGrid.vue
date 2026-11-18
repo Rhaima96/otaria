@@ -93,6 +93,8 @@ const changes = computed<Change[]>(() => {
   });
 });
 const dirty = computed(() => changes.value.length > 0);
+// Read by SessionView before closing the tab.
+defineExpose({ dirty });
 
 const colDefs = computed<ColDef<GridRow>[]>(() =>
   columns.value.map((name, i) => ({
