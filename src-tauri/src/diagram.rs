@@ -132,12 +132,13 @@ fn word(s: &str) -> String {
     if plain(&w) { w } else { format!("_{w}") }
 }
 
-/// The save dialog picks the path; only `.mmd` files are written.
-pub fn save(path: &str, text: &str) -> AppResult<()> {
-    if Path::new(path).extension().is_none_or(|e| !e.eq_ignore_ascii_case("mmd")) {
+/// The save dialog picks the path; only `.mmd`, `.svg` and `.png` files are written.
+pub fn save(path: &str, data: &[u8]) -> AppResult<()> {
+    let ok = Path::new(path).extension().and_then(|e| e.to_str()).is_some_and(|e| ["mmd", "svg", "png"].iter().any(|x| e.eq_ignore_ascii_case(x)));
+    if !ok {
         return Err(AppError::new("IO", path.to_string()));
     }
-    Ok(std::fs::write(path, text)?)
+    Ok(std::fs::write(path, data)?)
 }
 
 #[cfg(test)]
@@ -213,7 +214,7 @@ mod tests {
         assert_eq!(word("1st"), "_1st");
         assert_eq!(word("prix (€)"), "prix____");
         assert_eq!(entity("a\"b"), "\"a'b\"");
-        assert_eq!(save("/tmp/x.sql", "").unwrap_err().code, "IO");
+        assert_eq!(save("/tmp/x.sql", b"").unwrap_err().code, "IO");
     }
 
     /// OTARIA_TEST_DB="host:port:user:password" cargo test -- --ignored

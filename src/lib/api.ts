@@ -528,7 +528,8 @@ export const api = {
   erDiagram: (sessionId: string, schema: string, tables: string[], neighbors: boolean) => invoke<string>("er_diagram", { sessionId, schema, tables, neighbors }),
   compareSchemas: (sourceSession: string, sourceSchema: string, targetSession: string, targetSchema: string) =>
     invoke<Comparison>("compare_schemas", { sourceSession, sourceSchema, targetSession, targetSchema }),
-  saveDiagram: (path: string, text: string) => invoke<void>("save_diagram", { path, text }),
+  saveDiagram: (path: string, data: string | Uint8Array) =>
+    invoke<void>("save_diagram", { path, data: Array.from(typeof data === "string" ? new TextEncoder().encode(data) : data) }),
   vectorColumns: (sessionId: string, schema: string, table: string) => invoke<VectorColumn[]>("vector_columns", { sessionId, schema, table }),
   vectorSearch: (sessionId: string, schema: string, table: string, column: string, distance: VectorDistance, probe: VectorProbe, k: number) =>
     invoke<Rows>("vector_search", { sessionId, schema, table, column, distance, probe, k }),

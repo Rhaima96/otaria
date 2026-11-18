@@ -633,7 +633,15 @@
     "saved": "Gespeichert in {path}",
     "hint": "Mermaid-Text: GitHub, GitLab, Notion und Obsidian stellen ihn direkt dar.",
     "close": "Schließen",
-    "noTables": "Keine Tabellen in dieser Datenbank."
+    "noTables": "Keine Tabellen in dieser Datenbank.",
+    "viewDiagram": "Diagramm",
+    "viewText": "Mermaid-Text",
+    "zoomIn": "Vergrößern",
+    "zoomOut": "Verkleinern",
+    "fit": "An Breite anpassen",
+    "rendering": "Wird gerendert…",
+    "saveSvg": "SVG…",
+    "savePng": "PNG…"
   },
   "compare": {
     "open": "Vergleichen mit…",

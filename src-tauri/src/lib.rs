@@ -483,8 +483,8 @@ async fn er_diagram(state: State<'_, AppState>, session_id: String, schema: Stri
 }
 
 #[tauri::command]
-fn save_diagram(path: String, text: String) -> AppResult<()> {
-    diagram::save(&path, &text)
+fn save_diagram(path: String, data: Vec<u8>) -> AppResult<()> {
+    diagram::save(&path, &data)
 }
 
 #[tauri::command]
