@@ -12,6 +12,7 @@ mod sequence;
 mod ssh;
 mod transfer;
 mod users;
+mod versioning;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -273,6 +274,32 @@ async fn drop_object(state: State<'_, AppState>, session_id: String, schema: Str
 #[tauri::command]
 async fn row_history(state: State<'_, AppState>, session_id: String, schema: String, table: String, key: edit::Pairs) -> AppResult<browse::History> {
     browse::row_history(&pool(&state, &session_id).await?, &schema, &table, &key).await
+}
+
+#[tauri::command]
+async fn versioning_state(state: State<'_, AppState>, session_id: String, schema: String, table: String) -> AppResult<versioning::State> {
+    versioning::state(&pool(&state, &session_id).await?, &schema, &table).await
+}
+
+#[tauri::command]
+async fn versioning_sql(state: State<'_, AppState>, session_id: String, schema: String, table: String, action: versioning::Action) -> AppResult<Vec<String>> {
+    versioning::preview(&pool(&state, &session_id).await?, &schema, &table, &action).await
+}
+
+#[tauri::command]
+async fn versioning_apply(state: State<'_, AppState>, session_id: String, schema: String, table: String, action: versioning::Action) -> AppResult<()> {
+    versioning::apply(&pool(&state, &session_id).await?, &schema, &table, &action).await
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn versioning_compare(state: State<'_, AppState>, session_id: String, schema: String, table: String, key: Vec<String>, a: String, b: String) -> AppResult<versioning::Diff> {
+    versioning::compare(&pool(&state, &session_id).await?, &schema, &table, &key, &a, &b).await
+}
+
+#[tauri::command]
+fn portion_sql(schema: String, table: String, period: String) -> String {
+    versioning::portion_sql(&schema, &table, &period)
 }
 
 #[tauri::command]
@@ -623,6 +650,11 @@ pub fn run() {
             cancel_sql,
             close_editor,
             row_history,
+            versioning_state,
+            versioning_sql,
+            versioning_apply,
+            versioning_compare,
+            portion_sql,
             sequence_state,
             sequence_ddl,
             sequence_apply,

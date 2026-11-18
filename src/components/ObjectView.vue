@@ -7,18 +7,27 @@ import ErrorLine from "@/components/ErrorLine.vue";
 import SequenceView from "@/components/SequenceView.vue";
 import TableDesigner from "@/components/TableDesigner.vue";
 import TransferDialog from "@/components/TransferDialog.vue";
+import VersioningView from "@/components/VersioningView.vue";
 import { api, toAppError, type AppError, type DbObject, type TableInfo } from "@/lib/api";
 import { hasRows } from "@/lib/objects";
 import { editScript } from "@/lib/templates";
 import { cn } from "@/lib/utils";
 
 const props = defineProps<{ sessionId: string; schema: string; obj: DbObject; mariadb: boolean }>();
-const emit = defineEmits<{ renamed: [name: string]; dropped: []; editSql: [sql: string]; treeChanged: [] }>();
+const emit = defineEmits<{ renamed: [name: string]; dropped: []; editSql: [sql: string]; treeChanged: []; versioned: [on: boolean] }>();
 const { t } = useI18n();
 
-type View = "sequence" | "data" | "structure" | "ddl";
+type View = "sequence" | "data" | "structure" | "versioning" | "ddl";
 // A sequence's "rows" are its state: shown by the Sequence panel instead of a grid.
-const views: View[] = props.obj.kind === "sequence" ? ["sequence", "ddl"] : hasRows(props.obj.kind) ? ["data", "structure", "ddl"] : ["ddl"];
+// Temporal features (versioning, periods) are MariaDB-only: no tab on MySQL.
+const views: View[] =
+  props.obj.kind === "sequence"
+    ? ["sequence", "ddl"]
+    : props.obj.kind === "table" && props.mariadb
+      ? ["data", "structure", "versioning", "ddl"]
+      : hasRows(props.obj.kind)
+        ? ["data", "structure", "ddl"]
+        : ["ddl"];
 const view = ref<View>(views[0]);
 const isTable = props.obj.kind === "table";
 
@@ -47,6 +56,14 @@ function saved(name: string) {
   version.value++;
   if (name !== props.obj.name) emit("renamed", name);
   else show(view.value);
+}
+
+/** Versioning switched on or off: new columns for the grid and DDL, new icon in the tree. */
+function versionedChanged(on: boolean) {
+  info.value = null;
+  ddl.value = null;
+  version.value++;
+  emit("versioned", on);
 }
 
 // Drop / truncate: strong confirmation, the object's name must be typed.
@@ -113,6 +130,16 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
     <SequenceView v-else-if="view === 'sequence'" :session-id="sessionId" :schema="schema" :name="obj.name" class="min-h-0 flex-1" />
 
     <DataGrid v-else-if="view === 'data' && info" :key="version" :session-id="sessionId" :schema="schema" :table="obj.name" :info="info" :versioned="obj.versioned" class="min-h-0 flex-1" @edit-sql="(sql) => emit('editSql', sql)" />
+
+    <VersioningView
+      v-else-if="view === 'versioning'"
+      :session-id="sessionId"
+      :schema="schema"
+      :table="obj.name"
+      class="min-h-0 flex-1"
+      @changed="versionedChanged"
+      @edit-sql="(sql) => emit('editSql', sql)"
+    />
 
     <TableDesigner v-else-if="view === 'structure' && isTable" :session-id="sessionId" :schema="schema" :table="obj.name" class="min-h-0 flex-1" @saved="saved" />
 

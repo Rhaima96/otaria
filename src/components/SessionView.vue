@@ -162,6 +162,7 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
             @dropped="dropped(x.id)"
             @edit-sql="(sql) => newQuery(x.schema, sql)"
             @tree-changed="tree?.load()"
+            @versioned="(on) => ((x.obj = { ...x.obj!, versioned: on }), tree?.load())"
           />
           <SequenceView v-else-if="x.create === 'sequence'" v-show="active === x.id" :session-id="session.sessionId" :schema="x.schema!" name="" create class="min-h-0 flex-1" @created="(n) => created(x.id, x.schema!, 'sequence', n)" />
           <TableDesigner v-else-if="x.create === 'table'" v-show="active === x.id" :session-id="session.sessionId" :schema="x.schema!" :table="null" class="min-h-0 flex-1" @saved="(n) => created(x.id, x.schema!, 'table', n)" />

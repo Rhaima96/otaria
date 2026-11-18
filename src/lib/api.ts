@@ -80,6 +80,41 @@ export interface TableInfo {
   primaryKey: string[];
 }
 
+export interface Period {
+  name: string;
+  start: string;
+  end: string;
+}
+
+export interface VersioningState {
+  versioned: boolean;
+  system: Period | null;
+  implicit: boolean;
+  periods: Period[];
+  /** SYSTEM_TIME partitions, current one (description "CURRENT") last. */
+  partitions: { name: string; description: string | null; rows: number }[];
+  otherPartitioning: boolean;
+  historyRows: number;
+  /** UTC. */
+  oldest: string | null;
+}
+
+export type VersioningAction =
+  | { kind: "enable" }
+  | { kind: "disable" }
+  | { kind: "purge"; before: string }
+  | { kind: "partition"; interval: boolean; n: number; unit: string; auto: boolean; partitions: number | null }
+  | { kind: "unpartition" }
+  | { kind: "dropPartition"; name: string }
+  | { kind: "addPeriod"; name: string; start: string; end: string }
+  | { kind: "dropPeriod"; name: string };
+
+export interface VersionDiff {
+  columns: string[];
+  rows: { kind: "added" | "removed" | "changed"; before: (string | null)[] | null; after: (string | null)[] | null }[];
+  truncated: boolean;
+}
+
 export interface Sort {
   column: string;
   desc: boolean;
@@ -373,6 +408,12 @@ export const api = {
   previewChanges: (schema: string, table: string, changes: Change[]) => invoke<string[]>("preview_changes", { schema, table, changes }),
   applyChanges: (sessionId: string, schema: string, table: string, changes: Change[]) =>
     invoke<number>("apply_changes", { sessionId, schema, table, changes }),
+  versioningState: (sessionId: string, schema: string, table: string) => invoke<VersioningState>("versioning_state", { sessionId, schema, table }),
+  versioningSql: (sessionId: string, schema: string, table: string, action: VersioningAction) => invoke<string[]>("versioning_sql", { sessionId, schema, table, action }),
+  versioningApply: (sessionId: string, schema: string, table: string, action: VersioningAction) => invoke<void>("versioning_apply", { sessionId, schema, table, action }),
+  versioningCompare: (sessionId: string, schema: string, table: string, key: string[], a: string, b: string) =>
+    invoke<VersionDiff>("versioning_compare", { sessionId, schema, table, key, a, b }),
+  portionSql: (schema: string, table: string, period: string) => invoke<string>("portion_sql", { schema, table, period }),
   rowHistory: (sessionId: string, schema: string, table: string, key: Pairs) => invoke<History>("row_history", { sessionId, schema, table, key }),
   sequenceState: (sessionId: string, schema: string, name: string) => invoke<SeqState>("sequence_state", { sessionId, schema, name }),
   sequenceDdl: (schema: string, name: string, opts: SeqOpts, create: boolean) => invoke<string>("sequence_ddl", { schema, name, opts, create }),

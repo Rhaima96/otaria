@@ -246,13 +246,14 @@ const historyCols = computed<ColDef<(string | null)[]>[]>(() => {
 });
 
 onMounted(load);
-const btn = "flex h-6 items-center gap-1 rounded-sm px-2 hover:bg-secondary disabled:opacity-40 disabled:hover:bg-transparent";
+const btn = "flex h-6 shrink-0 items-center gap-1 rounded-sm px-2 whitespace-nowrap hover:bg-secondary disabled:opacity-40 disabled:hover:bg-transparent";
 </script>
 
 <template>
   <div class="flex flex-col">
-    <div class="flex h-9 shrink-0 items-center gap-1 border-b px-2">
-      <form class="flex min-w-0 flex-1 items-center gap-1" @submit.prevent="load()">
+    <!-- ponytail: narrow windows scroll the toolbar sideways; group actions in a menu if it gets crowded. -->
+    <div class="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b px-2">
+      <form class="flex min-w-40 flex-1 items-center gap-1" @submit.prevent="load()">
         <Filter class="size-3.5 shrink-0 text-muted-foreground" />
         <input
           v-model="filter"
@@ -267,7 +268,7 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 hover:bg-secondary disa
       </form>
       <template v-if="versioned">
         <span class="mx-1 h-4 border-l" />
-        <label class="flex items-center gap-1 text-muted-foreground" :title="t('versioned.asOfHint')">
+        <label class="flex shrink-0 items-center gap-1 whitespace-nowrap text-muted-foreground" :title="t('versioned.asOfHint')">
           <History class="size-3.5" />{{ t("versioned.asOf") }}
           <input
             v-model="asOfLocal"
@@ -296,13 +297,13 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 hover:bg-secondary disa
         <button :class="btn" :disabled="!dirty || busy" @click="discard"><Undo2 class="size-3.5" />{{ t("grid.discard") }}</button>
         <button
           :disabled="!dirty || busy"
-          class="flex h-6 items-center gap-1 rounded-sm bg-primary px-2 font-semibold text-primary-foreground disabled:opacity-40"
+          class="flex h-6 shrink-0 items-center gap-1 rounded-sm bg-primary px-2 font-semibold whitespace-nowrap text-primary-foreground disabled:opacity-40"
           @click="openPreview"
         >
           <Save class="size-3.5" />{{ t("grid.save", { n: changes.length }) }}
         </button>
       </template>
-      <span v-else class="ml-1 text-muted-foreground">{{ asOf ? t("versioned.pastReadOnly") : t("grid.readOnly") }}</span>
+      <span v-else class="ml-1 shrink-0 whitespace-nowrap text-muted-foreground">{{ asOf ? t("versioned.pastReadOnly") : t("grid.readOnly") }}</span>
     </div>
 
     <ErrorLine v-if="error" :error="error" class="m-2" />
