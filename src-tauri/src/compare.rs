@@ -4,7 +4,8 @@
 //! Tables reuse the designer's loader and diff: both sides load with `original = name`, so columns,
 //! indexes and constraints match by name (a renamed column shows as drop + add). Views, routines,
 //! triggers and events compare their `SHOW CREATE` text, read after `USE schema` (no schema name
-//! in it) and without DEFINER (accounts differ between servers).
+//! in it) and without DEFINER (accounts differ between servers). Sequences (MariaDB) compare their
+//! `SHOW CREATE SEQUENCE` text too, and change through ALTER SEQUENCE, which keeps the current value.
 
 use mysql_async::prelude::Queryable;
 use mysql_async::Pool;
@@ -18,7 +19,7 @@ use crate::error::AppResult;
 #[serde(rename_all = "camelCase")]
 pub struct ObjectDiff {
     pub name: String,
-    /// table | function | procedure | view | trigger | event
+    /// sequence | table | function | procedure | view | trigger | event
     pub kind: String,
     /// create (only in source) | alter (differs) | drop (only in target)
     pub status: &'static str,
@@ -32,7 +33,7 @@ pub struct Comparison {
     pub sql: String,
 }
 
-/// A view, routine, trigger or event: its `SHOW CREATE` text, normalized by `load`.
+/// A sequence, view, routine, trigger or event: its `SHOW CREATE` text, normalized by `load`.
 #[derive(Debug, Clone)]
 pub struct Code {
     pub kind: String,
@@ -54,6 +55,26 @@ pub fn compare(target_schema: &str, src: &Schema, tgt: &Schema, mariadb: bool) -
     let mut diffs = Vec::new();
     let mut stmts = Vec::new();
     let diff = |name: &str, kind: &str, status| ObjectDiff { name: name.into(), kind: kind.into(), status };
+    // Sequences first: tables may take their DEFAULT from NEXTVAL(seq).
+    let seqs = |v: &Schema| v.code.iter().filter(|c| c.kind == "sequence").cloned().collect::<Vec<_>>();
+    let (src_q, tgt_q) = (seqs(src), seqs(tgt));
+    for s in &src_q {
+        match tgt_q.iter().find(|t| t.name == s.name) {
+            None => {
+                diffs.push(diff(&s.name, "sequence", "create"));
+                stmts.push(format!("{};", s.ddl));
+            }
+            Some(t) if t.ddl != s.ddl => {
+                diffs.push(diff(&s.name, "sequence", "alter"));
+                stmts.extend(alter_sequence(&s.name, &s.ddl, &t.ddl));
+            }
+            Some(_) => {}
+        }
+    }
+    for t in tgt_q.iter().filter(|t| !src_q.iter().any(|s| s.name == t.name)) {
+        diffs.push(diff(&t.name, "sequence", "drop"));
+        stmts.push(format!("-- {};", designer::drop_sql(target_schema, &t.name, "sequence", false)?));
+    }
     let (src_t, tgt_t) = (&src.tables, &tgt.tables);
     for s in src_t {
         match tgt_t.iter().find(|t| t.name == s.name) {
@@ -104,6 +125,31 @@ pub fn compare(target_schema: &str, src: &Schema, tgt: &Schema, mariadb: bool) -
         format!("USE {};\nSET FOREIGN_KEY_CHECKS = 0;\n\n{}\n\nSET FOREIGN_KEY_CHECKS = 1;\n", ident(target_schema), stmts.join("\n\n"))
     };
     Ok(Comparison { diffs, sql })
+}
+
+/// `CREATE SEQUENCE `s` [as int] start with … nocycle ENGINE=…` → ("as int", "start with … nocycle").
+fn sequence_parts<'a>(name: &str, ddl: &'a str) -> Option<(&'a str, &'a str)> {
+    let rest = ddl.strip_prefix(&format!("CREATE SEQUENCE {} ", ident(name)))?;
+    let rest = rest.split(" ENGINE=").next()?.trim();
+    let i = rest.find("start with")?;
+    Some((rest[..i].trim(), &rest[i..]))
+}
+
+/// ALTER SEQUENCE keeps the current value (CREATE OR REPLACE would restart it). MariaDB refuses AS <type>
+/// together with other options, so the type change is its own statement: first when maxvalue grows
+/// (wider type), after the options when it shrinks (the new maxvalue must fit the narrower type).
+// ponytail: engine changes are not carried over.
+fn alter_sequence(name: &str, src: &str, tgt: &str) -> Vec<String> {
+    let (Some((src_as, src_opts)), Some((tgt_as, tgt_opts))) = (sequence_parts(name, src), sequence_parts(name, tgt)) else {
+        // Unknown shape: offer the replacement, commented, since it restarts the sequence.
+        return vec![format!("-- CREATE OR REPLACE restarts the sequence:\n-- {};", src.replacen("CREATE ", "CREATE OR REPLACE ", 1))];
+    };
+    let ty = (src_as != tgt_as).then(|| format!("ALTER SEQUENCE {} {};", ident(name), if src_as.is_empty() { "as bigint" } else { src_as }));
+    let opts = (src_opts != tgt_opts).then(|| format!("ALTER SEQUENCE {} {src_opts};", ident(name)));
+    let max = |o: &str| o.split_once("maxvalue ").and_then(|(_, r)| r.split(' ').next()?.parse::<i128>().ok());
+    let shrinks = matches!((max(src_opts), max(tgt_opts)), (Some(s), Some(t)) if s < t);
+    let order = if shrinks { [opts, ty] } else { [ty, opts] };
+    order.into_iter().flatten().collect()
 }
 
 /// Views: CREATE OR REPLACE. Routines, triggers, events: DROP IF EXISTS then CREATE, in a DELIMITER
@@ -174,7 +220,7 @@ fn strip_schema(ddl: &str, schema: &str) -> String {
     out
 }
 
-/// Every table (fully loaded), view, routine, trigger and event of a schema. Sequences are not compared.
+/// Every table (fully loaded), sequence, view, routine, trigger and event of a schema.
 // ponytail: one designer::load per table (a handful of queries each); batch per schema if hundreds of tables get slow.
 pub async fn load(pool: &Pool, schema: &str, mariadb: bool) -> AppResult<Schema> {
     let objects = browse::objects(pool, schema).await?;
@@ -186,7 +232,7 @@ pub async fn load(pool: &Pool, schema: &str, mariadb: bool) -> AppResult<Schema>
     // After USE, SHOW CREATE leaves the schema name out of view bodies.
     conn.query_drop(format!("USE {}", ident(schema))).await?;
     let mut code = Vec::new();
-    for o in objects.iter().filter(|o| CODE_ORDER.contains(&o.kind.as_str())) {
+    for o in objects.iter().filter(|o| o.kind == "sequence" || CODE_ORDER.contains(&o.kind.as_str())) {
         let ddl = browse::ddl_on(&mut conn, schema, &o.name, &o.kind).await?;
         code.push(Code { kind: o.kind.clone(), name: o.name.clone(), ddl: strip_schema(&strip_definer(&ddl), schema) });
     }
@@ -276,6 +322,39 @@ mod tests {
     }
 
     #[test]
+    fn sequences_alter_without_restart() {
+        fn seq(name: &str, opts: &str) -> Code {
+            Code { kind: "sequence".into(), name: name.into(), ddl: format!("CREATE SEQUENCE `{name}` {opts} ENGINE=InnoDB") }
+        }
+        let opts = "start with 1 minvalue 1 maxvalue 9 increment by 1 cache 1000 nocycle";
+        let new = seq("n", opts);
+        let src = Schema {
+            tables: vec![],
+            code: vec![seq("a", "start with 1 minvalue 1 maxvalue 99 increment by 2 cache 1000 nocycle"), seq("b", &format!("as int {opts}")), new.clone()],
+        };
+        let tgt = Schema {
+            tables: vec![],
+            code: vec![seq("a", "start with 1 minvalue 1 maxvalue 99 increment by 1 cache 1000 nocycle"), seq("b", opts), seq("o", opts)],
+        };
+        let c = compare("prod", &src, &tgt, true).unwrap();
+        let st: Vec<_> = c.diffs.iter().map(|d| (d.name.as_str(), d.status)).collect();
+        assert_eq!(st, [("a", "alter"), ("b", "alter"), ("n", "create"), ("o", "drop")]);
+        assert!(c.sql.contains("ALTER SEQUENCE `a` start with 1 minvalue 1 maxvalue 99 increment by 2 cache 1000 nocycle;"), "{}", c.sql);
+        assert!(c.sql.contains("ALTER SEQUENCE `b` as int;") && !c.sql.contains("ALTER SEQUENCE `b` start"), "{}", c.sql);
+        // Narrower type: the smaller maxvalue goes first, then the type; wider: the type first.
+        let big = "CREATE SEQUENCE `s` start with 1 minvalue 1 maxvalue 9223372036854775806 increment by 1 cache 1000 nocycle ENGINE=InnoDB";
+        let int = "CREATE SEQUENCE `s` as int start with 1 minvalue 1 maxvalue 2147483646 increment by 1 cache 1000 nocycle ENGINE=InnoDB";
+        let narrow = alter_sequence("s", int, big);
+        assert!(narrow[0].contains("maxvalue 2147483646") && narrow[1] == "ALTER SEQUENCE `s` as int;", "{narrow:?}");
+        let wide = alter_sequence("s", big, int);
+        assert!(wide[0] == "ALTER SEQUENCE `s` as bigint;" && wide[1].contains("maxvalue 9223372036854775806"), "{wide:?}");
+        assert!(c.sql.contains(&format!("{};", new.ddl)) && c.sql.contains("-- DROP SEQUENCE `prod`.`o`;"), "{}", c.sql);
+        // Before any table: a table DEFAULT may call NEXTVAL on it.
+        assert!(c.sql.find("SEQUENCE `a`").unwrap() < c.sql.find("SET FOREIGN_KEY_CHECKS = 1").unwrap());
+        assert_eq!(alter_sequence("x", "weird", "other")[0].lines().count(), 2);
+    }
+
+    #[test]
     fn strips_definer() {
         assert_eq!(strip_definer("CREATE DEFINER=`root`@`%` PROCEDURE `p`() SELECT 1"), "CREATE PROCEDURE `p`() SELECT 1");
         assert_eq!(
@@ -315,7 +394,11 @@ mod tests {
              CREATE PROCEDURE cmp_src.hello() BEGIN SELECT 'hi'; SELECT 'there'; END;
              CREATE PROCEDURE cmp_tgt.hello() BEGIN SELECT 'old'; END;
              CREATE TRIGGER cmp_src.child_bi BEFORE INSERT ON cmp_src.child FOR EACH ROW SET NEW.id = NEW.id;
-             CREATE FUNCTION cmp_tgt.extra() RETURNS INT RETURN 1;",
+             CREATE FUNCTION cmp_tgt.extra() RETURNS INT RETURN 1;
+             CREATE SEQUENCE cmp_src.seq_a INCREMENT BY 5; CREATE SEQUENCE cmp_tgt.seq_a;
+             SELECT NEXTVAL(cmp_tgt.seq_a), NEXTVAL(cmp_tgt.seq_a), NEXTVAL(cmp_tgt.seq_a);
+             CREATE SEQUENCE cmp_src.seq_b AS INT; CREATE SEQUENCE cmp_tgt.seq_b;
+             CREATE SEQUENCE cmp_src.seq_new; CREATE SEQUENCE cmp_tgt.seq_old;",
         )
         .await
         .unwrap();
@@ -332,7 +415,10 @@ mod tests {
         let after = load(&pool, "cmp_tgt", true).await.unwrap();
         let again = compare("cmp_tgt", &src, &after, true).unwrap();
         let st: Vec<_> = again.diffs.iter().map(|d| (d.name.as_str(), d.status)).collect();
-        assert_eq!(st, [("gone", "drop"), ("extra", "drop")], "{}", again.sql);
+        assert_eq!(st, [("seq_old", "drop"), ("gone", "drop"), ("extra", "drop")], "{}", again.sql);
+        // ALTER SEQUENCE kept the target's position (3 used), with the source's increment.
+        let next: Option<i64> = conn.query_first("SELECT NEXTVAL(cmp_tgt.seq_a)").await.unwrap();
+        assert!(next.unwrap() > 3, "{next:?}");
         conn.query_drop("DROP DATABASE cmp_src; DROP DATABASE cmp_tgt").await.unwrap();
     }
 }

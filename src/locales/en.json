@@ -656,7 +656,7 @@
     "source": "Source connection",
     "sourceSchema": "Source database",
     "run": "Compare",
-    "hint": "Tables, views, routines, triggers and events (not sequences). The script turns this database into the source; nothing runs until you run it in the editor. DROP lines are commented out. Without the TRIGGER and EVENT privileges the server hides triggers and events.",
+    "hint": "Tables, sequences, views, routines, triggers and events. Sequences change through ALTER SEQUENCE and keep their current value. The script turns this database into the source; nothing runs until you run it in the editor. DROP lines are commented out. Without the TRIGGER and EVENT privileges the server hides triggers and events.",
     "create": "to create",
     "alter": "to change",
     "drop": "extra",

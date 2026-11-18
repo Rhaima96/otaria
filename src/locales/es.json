@@ -656,7 +656,7 @@
     "source": "Conexión de origen",
     "sourceSchema": "Base de origen",
     "run": "Comparar",
-    "hint": "Tablas, vistas, rutinas, triggers y eventos (no las secuencias). El script iguala esta base con el origen; nada se ejecuta hasta que lo lances en el editor. Los DROP van comentados. Sin los privilegios TRIGGER y EVENT, el servidor oculta los triggers y los eventos.",
+    "hint": "Tablas, secuencias, vistas, rutinas, triggers y eventos. Las secuencias cambian con ALTER SEQUENCE y conservan su valor actual. El script iguala esta base con el origen; nada se ejecuta hasta que lo lances en el editor. Los DROP van comentados. Sin los privilegios TRIGGER y EVENT, el servidor oculta los triggers y los eventos.",
     "create": "a crear",
     "alter": "a cambiar",
     "drop": "sobrante",

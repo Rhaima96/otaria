@@ -656,7 +656,7 @@
     "source": "Connexion source",
     "sourceSchema": "Base source",
     "run": "Comparer",
-    "hint": "Tables, vues, routines, triggers et événements (pas les séquences). Le script aligne cette base sur la source ; rien ne s'exécute avant que vous le lanciez dans l'éditeur. Les DROP sont en commentaire. Sans les privilèges TRIGGER et EVENT, le serveur cache les triggers et les événements.",
+    "hint": "Tables, séquences, vues, routines, triggers et événements. Les séquences passent par ALTER SEQUENCE et gardent leur valeur courante. Le script aligne cette base sur la source ; rien ne s'exécute avant que vous le lanciez dans l'éditeur. Les DROP sont en commentaire. Sans les privilèges TRIGGER et EVENT, le serveur cache les triggers et les événements.",
     "create": "à créer",
     "alter": "à modifier",
     "drop": "en trop",

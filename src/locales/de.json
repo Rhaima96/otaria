@@ -656,7 +656,7 @@
     "source": "Quellverbindung",
     "sourceSchema": "Quelldatenbank",
     "run": "Vergleichen",
-    "hint": "Tabellen, Views, Routinen, Trigger und Events (keine Sequenzen). Das Skript gleicht diese Datenbank an die Quelle an; nichts läuft, bevor du es im Editor ausführst. DROP-Zeilen sind auskommentiert. Ohne die Rechte TRIGGER und EVENT blendet der Server Trigger und Events aus.",
+    "hint": "Tabellen, Sequenzen, Views, Routinen, Trigger und Events. Sequenzen ändern sich per ALTER SEQUENCE und behalten ihren aktuellen Wert. Das Skript gleicht diese Datenbank an die Quelle an; nichts läuft, bevor du es im Editor ausführst. DROP-Zeilen sind auskommentiert. Ohne die Rechte TRIGGER und EVENT blendet der Server Trigger und Events aus.",
     "create": "anlegen",
     "alter": "ändern",
     "drop": "überzählig",

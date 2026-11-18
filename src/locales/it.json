@@ -656,7 +656,7 @@
     "source": "Connessione di origine",
     "sourceSchema": "Database di origine",
     "run": "Confronta",
-    "hint": "Tabelle, viste, routine, trigger ed eventi (non le sequenze). Lo script allinea questo database all'origine; nulla viene eseguito finché non lo lanci nell'editor. I DROP sono commentati. Senza i privilegi TRIGGER ed EVENT il server nasconde trigger ed eventi.",
+    "hint": "Tabelle, sequenze, viste, routine, trigger ed eventi. Le sequenze cambiano con ALTER SEQUENCE e mantengono il valore corrente. Lo script allinea questo database all'origine; nulla viene eseguito finché non lo lanci nell'editor. I DROP sono commentati. Senza i privilegi TRIGGER ed EVENT il server nasconde trigger ed eventi.",
     "create": "da creare",
     "alter": "da modificare",
     "drop": "in più",
