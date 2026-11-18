@@ -672,7 +672,23 @@ async fn close_editor(state: State<'_, AppState>, session_id: String, editor_id:
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // macOS default menu minus "Close Window": its Cmd+W would close the app before the
+    // frontend sees the key (Cmd+W closes the active tab). Other platforms have no default menu.
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(|app| {
+        use tauri::menu::{AboutMetadata, Menu, PredefinedMenuItem as P, Submenu};
+        let name = app.package_info().name.clone();
+        let about = AboutMetadata { name: Some(name.clone()), version: Some(app.package_info().version.to_string()), ..Default::default() };
+        Menu::with_items(app, &[
+            &Submenu::with_items(app, name, true, &[&P::about(app, None, Some(about))?, &P::separator(app)?, &P::services(app, None)?, &P::separator(app)?, &P::hide(app, None)?, &P::hide_others(app, None)?, &P::separator(app)?, &P::quit(app, None)?])?,
+            // Edit keeps Cmd+C / V / X / A / Z working in the webview.
+            &Submenu::with_items(app, "Edit", true, &[&P::undo(app, None)?, &P::redo(app, None)?, &P::separator(app)?, &P::cut(app, None)?, &P::copy(app, None)?, &P::paste(app, None)?, &P::select_all(app, None)?])?,
+            &Submenu::with_items(app, "View", true, &[&P::fullscreen(app, None)?])?,
+            &Submenu::with_items(app, "Window", true, &[&P::minimize(app, None)?, &P::maximize(app, None)?])?,
+        ])
+    });
+    builder
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let dir = app.path().app_config_dir()?;

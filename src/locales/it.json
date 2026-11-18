@@ -163,6 +163,7 @@
     "structure": "Struttura",
     "ddl": "DDL",
     "close": "Chiudi",
+    "closeHint": "Chiudi scheda (⌘W / Ctrl+W)",
     "sequence": "Sequenza",
     "truncate": "Svuota",
     "drop": "Elimina",
@@ -209,6 +210,7 @@
   "editor": {
     "tab": "Query {n}",
     "new": "Nuova query",
+    "newHint": "Nuova query (⌘T / Ctrl+T)",
     "run": "Esegui",
     "runHint": "Esegui tutto, o la selezione (⌘/Ctrl+Invio, F9)",
     "runCurrent": "Corrente",

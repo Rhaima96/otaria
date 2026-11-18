@@ -163,6 +163,7 @@
     "structure": "Estructura",
     "ddl": "DDL",
     "close": "Cerrar",
+    "closeHint": "Cerrar pestaña (⌘W / Ctrl+W)",
     "sequence": "Secuencia",
     "truncate": "Vaciar",
     "drop": "Eliminar",
@@ -209,6 +210,7 @@
   "editor": {
     "tab": "Consulta {n}",
     "new": "Nueva consulta",
+    "newHint": "Nueva consulta (⌘T / Ctrl+T)",
     "run": "Ejecutar",
     "runHint": "Ejecutar todo, o la selección (⌘/Ctrl+Intro, F9)",
     "runCurrent": "Actual",

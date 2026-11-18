@@ -163,6 +163,7 @@
     "structure": "Struktur",
     "ddl": "DDL",
     "close": "Schließen",
+    "closeHint": "Tab schließen (⌘W / Strg+W)",
     "sequence": "Sequenz",
     "truncate": "Leeren",
     "drop": "Löschen",
@@ -209,6 +210,7 @@
   "editor": {
     "tab": "Abfrage {n}",
     "new": "Neue Abfrage",
+    "newHint": "Neue Abfrage (⌘T / Strg+T)",
     "run": "Ausführen",
     "runHint": "Alles ausführen, oder die Auswahl (⌘/Strg+Eingabe, F9)",
     "runCurrent": "Aktuelle",

@@ -163,6 +163,7 @@
     "structure": "Structure",
     "ddl": "DDL",
     "close": "Fermer",
+    "closeHint": "Fermer l'onglet (⌘W / Ctrl+W)",
     "sequence": "Séquence",
     "truncate": "Vider",
     "drop": "Supprimer",
@@ -209,6 +210,7 @@
   "editor": {
     "tab": "Requête {n}",
     "new": "Nouvelle requête",
+    "newHint": "Nouvelle requête (⌘T / Ctrl+T)",
     "run": "Exécuter",
     "runHint": "Tout exécuter, ou la sélection (⌘/Ctrl+Entrée, F9)",
     "runCurrent": "Courante",

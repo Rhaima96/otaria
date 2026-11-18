@@ -51,15 +51,27 @@ function open(schema: string, obj: DbObject) {
 
 const tree = ref<InstanceType<typeof ObjectTree> | null>(null);
 
-// Cmd+P (macOS) / Ctrl+P: global object search, in the session shown only (sessions stay mounted).
+// Session shortcuts, in the session shown only (sessions stay mounted). Mod = Cmd on macOS, Ctrl elsewhere.
+// Mod+P object search, Mod+T new query, Mod+W close tab, Mod+1…9 go to tab (9 = last), Ctrl+(Shift+)Tab next / previous.
 const palette = ref<InstanceType<typeof ObjectPalette> | null>(null);
 const { activeTab } = useSessions();
+const mac = navigator.userAgent.includes("Mac");
 function onKey(e: KeyboardEvent) {
-  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "p" && activeTab.value === props.session.sessionId) {
-    e.preventDefault();
-    e.stopPropagation();
-    palette.value?.open();
-  }
+  if (activeTab.value !== props.session.sessionId || e.altKey) return;
+  const mod = mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+  // Server info tab (null) first, like the tab strip.
+  const ids = [null, ...tabs.value.map((x) => x.id)];
+  const go = (i: number) => (active.value = ids[(i + ids.length) % ids.length]);
+  // e.code, not e.key: digits need Shift on AZERTY.
+  const digit = /^Digit[1-9]$/.test(e.code) ? Number(e.code[5]) : 0;
+  if (mod && !e.shiftKey && e.key.toLowerCase() === "p") palette.value?.open();
+  else if (mod && !e.shiftKey && e.key.toLowerCase() === "t") newQuery();
+  else if (mod && !e.shiftKey && e.key.toLowerCase() === "w") active.value !== null && close(active.value);
+  else if (mod && digit && (digit === 9 || digit <= ids.length)) go(digit === 9 ? -1 : digit - 1);
+  else if (e.ctrlKey && !e.metaKey && e.key === "Tab") go(ids.indexOf(active.value) + (e.shiftKey ? -1 : 1));
+  else return;
+  e.preventDefault();
+  e.stopPropagation();
 }
 // Capture phase: runs before Monaco or a grid can take the keystroke.
 onMounted(() => window.addEventListener("keydown", onKey, true));
@@ -159,11 +171,11 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
           >
             <component :is="x.obj ? objectIcon(x.obj) : x.create === 'table' ? TableProperties : x.create ? ListPlus : x.admin ? adminViews[x.admin].icon : FileCode" class="size-3.5 text-muted-foreground" />
             <span class="max-w-48 truncate">{{ x.obj ? x.obj.name : x.create ? t(`newObject.${x.create}`) : x.admin ? t(`${x.admin}.tab`) : t("editor.tab", { n: x.n }) }}</span>
-            <button :title="t('object.close')" class="flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-secondary hover:text-foreground" @click.stop="close(x.id)">
+            <button :title="t('object.closeHint')" class="flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-secondary hover:text-foreground" @click.stop="close(x.id)">
               <X class="size-3" /><span class="sr-only">{{ t("object.close") }}</span>
             </button>
           </div>
-          <button :title="t('editor.new')" :class="cn(tab, 'border-r-0 text-muted-foreground')" @click="newQuery()">
+          <button :title="t('editor.newHint')" :class="cn(tab, 'border-r-0 text-muted-foreground')" @click="newQuery()">
             <Plus class="size-3.5" /><span class="sr-only">{{ t("editor.new") }}</span>
           </button>
         </nav>

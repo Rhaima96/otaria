@@ -163,6 +163,7 @@
     "structure": "Structure",
     "ddl": "DDL",
     "close": "Close",
+    "closeHint": "Close tab (⌘W / Ctrl+W)",
     "sequence": "Sequence",
     "truncate": "Empty",
     "drop": "Delete",
@@ -209,6 +210,7 @@
   "editor": {
     "tab": "Query {n}",
     "new": "New query",
+    "newHint": "New query (⌘T / Ctrl+T)",
     "run": "Run",
     "runHint": "Run everything, or the selection (⌘/Ctrl+Enter, F9)",
     "runCurrent": "Current",
