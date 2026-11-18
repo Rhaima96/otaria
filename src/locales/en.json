@@ -505,5 +505,21 @@
     "csvRun": "Import",
     "csvImported": "{n} rows inserted.",
     "fileLines": "File lines: {lines}"
+  },
+  "diagram": {
+    "open": "ER diagram…",
+    "title": "ER diagram of {schema}",
+    "filter": "Filter tables",
+    "all": "All",
+    "none": "None",
+    "neighbors": "Add tables linked by a foreign key",
+    "count": "{n} of {total} tables",
+    "copy": "Copy",
+    "copied": "Copied",
+    "save": "Save .mmd…",
+    "saved": "Saved to {path}",
+    "hint": "Mermaid text: GitHub, GitLab, Notion and Obsidian render it as is.",
+    "close": "Close",
+    "noTables": "No tables in this database."
   }
 }

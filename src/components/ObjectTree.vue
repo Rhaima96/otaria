@@ -2,7 +2,7 @@
 import { onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui";
-import { ChevronRight, Database, Download, LoaderCircle, Plus, RefreshCw, Upload } from "lucide-vue-next";
+import { ChevronRight, Database, Download, LoaderCircle, Network, Plus, RefreshCw, Upload } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
 import { api, toAppError, type AppError, type DbObject, type ObjectKind } from "@/lib/api";
 import { KIND_ORDER, objectIcon } from "@/lib/objects";
@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 
 /** `mariadb`: offer MariaDB-only actions (new sequence); hidden on MySQL. */
 const props = defineProps<{ sessionId: string; selected: string | null; mariadb: boolean }>();
-const emit = defineEmits<{ open: [schema: string, obj: DbObject]; create: [schema: string, kind: ObjectKind]; transfer: [schema: string, mode: "export" | "import"] }>();
+const emit = defineEmits<{ open: [schema: string, obj: DbObject]; create: [schema: string, kind: ObjectKind]; transfer: [schema: string, mode: "export" | "import"]; diagram: [schema: string] }>();
 const creatable = (): ObjectKind[] => KIND_ORDER.filter((k) => k !== "sequence" || props.mariadb);
 const { t } = useI18n();
 
@@ -91,6 +91,9 @@ const item = "cursor-default rounded-sm px-2 py-1 outline-none data-highlighted:
           </button>
           <button :title="t('transfer.exportSchema')" :class="cn(trigger, 'right-13')" @click="emit('transfer', s, 'export')">
             <Download class="size-3.5" /><span class="sr-only">{{ t("transfer.exportSchema") }}</span>
+          </button>
+          <button :title="t('diagram.open')" :class="cn(trigger, 'right-19')" @click="emit('diagram', s)">
+            <Network class="size-3.5" /><span class="sr-only">{{ t("diagram.open") }}</span>
           </button>
         </div>
         <ul v-if="Array.isArray(expanded[s])" role="group">

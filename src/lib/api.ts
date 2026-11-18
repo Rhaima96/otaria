@@ -388,6 +388,8 @@ export const api = {
   dropSql: (schema: string, name: string, kind: ObjectKind, truncate: boolean) => invoke<string>("drop_sql", { schema, name, kind, truncate }),
   dropObject: (sessionId: string, schema: string, name: string, kind: ObjectKind, truncate: boolean) =>
     invoke<void>("drop_object", { sessionId, schema, name, kind, truncate }),
+  erDiagram: (sessionId: string, schema: string, tables: string[], neighbors: boolean) => invoke<string>("er_diagram", { sessionId, schema, tables, neighbors }),
+  saveDiagram: (path: string, text: string) => invoke<void>("save_diagram", { path, text }),
   listPlugins: (sessionId: string) => invoke<Plugin[]>("list_plugins", { sessionId }),
   pluginInstallSql: (name: string, library: string) => invoke<string>("plugin_install_sql", { name, library }),
   pluginInstall: (sessionId: string, name: string, library: string) => invoke<void>("plugin_install", { sessionId, name, library }),

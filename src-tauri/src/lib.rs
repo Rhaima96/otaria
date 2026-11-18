@@ -2,6 +2,7 @@ mod admin;
 mod browse;
 mod db;
 mod designer;
+mod diagram;
 mod edit;
 mod error;
 mod plugins;
@@ -385,6 +386,17 @@ async fn account_drop(state: State<'_, AppState>, session_id: String, user: Stri
 }
 
 #[tauri::command]
+async fn er_diagram(state: State<'_, AppState>, session_id: String, schema: String, tables: Vec<String>, neighbors: bool) -> AppResult<String> {
+    let (columns, fks) = diagram::load(&pool(&state, &session_id).await?, &schema).await?;
+    Ok(diagram::render(&columns, &fks, &tables, neighbors))
+}
+
+#[tauri::command]
+fn save_diagram(path: String, text: String) -> AppResult<()> {
+    diagram::save(&path, &text)
+}
+
+#[tauri::command]
 async fn list_plugins(state: State<'_, AppState>, session_id: String) -> AppResult<Vec<plugins::Plugin>> {
     plugins::list(&pool(&state, &session_id).await?).await
 }
@@ -613,6 +625,8 @@ pub fn run() {
             designer_apply,
             drop_sql,
             drop_object,
+            er_diagram,
+            save_diagram,
             list_plugins,
             plugin_install_sql,
             plugin_install,

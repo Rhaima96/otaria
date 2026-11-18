@@ -2,6 +2,7 @@
 import { defineAsyncComponent, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { Activity, FileCode, Gauge, Info, ListPlus, Lock, LockOpen, Plus, Puzzle, SlidersHorizontal, TableProperties, TriangleAlert, Users, X } from "lucide-vue-next";
+import DiagramDialog from "@/components/DiagramDialog.vue";
 import ObjectTree from "@/components/ObjectTree.vue";
 import ObjectView from "@/components/ObjectView.vue";
 // Monaco is heavy: load the editor on first use.
@@ -45,6 +46,7 @@ function open(schema: string, obj: DbObject) {
 
 const tree = ref<InstanceType<typeof ObjectTree> | null>(null);
 const transfer = ref<InstanceType<typeof TransferDialog> | null>(null);
+const diagram = ref<InstanceType<typeof DiagramDialog> | null>(null);
 
 /** "New…" from the tree: table and sequence have a form, the other kinds start from a template in the editor. */
 function create(schema: string, kind: ObjectKind) {
@@ -117,6 +119,7 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
           @open="open"
           @create="create"
           @transfer="(schema, mode) => transfer?.open({ mode, schema, table: null })"
+          @diagram="(schema) => diagram?.open(schema)"
         />
       </aside>
       <main class="flex min-w-0 flex-1 flex-col">
@@ -194,6 +197,7 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
         </div>
       </main>
     </div>
+    <DiagramDialog ref="diagram" :session-id="session.sessionId" />
     <TransferDialog ref="transfer" :session-id="session.sessionId" @imported="tree?.load()" />
   </div>
 </template>

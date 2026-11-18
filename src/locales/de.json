@@ -505,5 +505,21 @@
     "csvRun": "Importieren",
     "csvImported": "{n} Zeilen eingefügt.",
     "fileLines": "Zeilen der Datei: {lines}"
+  },
+  "diagram": {
+    "open": "ER-Diagramm…",
+    "title": "ER-Diagramm von {schema}",
+    "filter": "Tabellen filtern",
+    "all": "Alle",
+    "none": "Keine",
+    "neighbors": "Per Fremdschlüssel verknüpfte Tabellen hinzufügen",
+    "count": "{n} von {total} Tabellen",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "save": ".mmd speichern…",
+    "saved": "Gespeichert in {path}",
+    "hint": "Mermaid-Text: GitHub, GitLab, Notion und Obsidian stellen ihn direkt dar.",
+    "close": "Schließen",
+    "noTables": "Keine Tabellen in dieser Datenbank."
   }
 }
