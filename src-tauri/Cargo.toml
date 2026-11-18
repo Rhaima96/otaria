@@ -1,6 +1,6 @@
 [package]
 name = "otaria"
-version = "0.1.0"
+version = "0.1.1"
 description = "Otaria for MariaDB: desktop client"
 authors = ["Otaria contributors"]
 license = "MIT"
