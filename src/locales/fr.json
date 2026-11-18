@@ -135,7 +135,10 @@
     "VECTOR_DIMENSIONS": "Le vecteur n'a pas le nombre de dimensions de la colonne.",
     "NO_SINGLE_KEY": "La recherche par ligne demande une clé primaire sur une seule colonne.",
     "INVALID_LIMIT": "k doit être compris entre 1 et 1000.",
-    "BINLOG_OFF": "Le journal binaire est désactivé sur ce serveur (log_bin)."
+    "BINLOG_OFF": "Le journal binaire est désactivé sur ce serveur (log_bin).",
+    "BINLOG_TOOL_MISSING": "mariadb-binlog est introuvable. Installez le client MariaDB (Homebrew : brew install mariadb ; Linux : paquet mariadb-client ; Windows : installeur MariaDB).",
+    "BINLOG_TOOL": "mariadb-binlog a échoué.",
+    "INVALID_RANGE": "Plage invalide."
   },
   "tree": {
     "title": "Bases de données",
@@ -422,7 +425,11 @@
     "loaded": "{n} événements chargés",
     "matching": "{n} sur {total} événements chargés correspondent",
     "more": "Charger la suite",
-    "hint": "Les événements Annotate_rows montrent la requête à l'origine des modifications de lignes."
+    "hint": "Les événements Annotate_rows montrent la requête à l'origine des modifications de lignes.",
+    "undo": "Annuler la sélection ({n})",
+    "undoHint": "Génère avec mariadb-binlog --flashback le SQL d'annulation des transactions qui contiennent les événements sélectionnés (du Gtid au Xid), et l'ouvre dans l'éditeur SQL sans l'exécuter. Seules les modifications de lignes (INSERT, UPDATE, DELETE) sont annulées, et seulement avec binlog_row_image = FULL.",
+    "undoNeedsRow": "L'annulation demande binlog_format = ROW.",
+    "undoHeader": "Annulation des événements {start} à {stop} de {file} (mariadb-binlog --flashback). Relisez-la avant de l'exécuter : les instructions BINLOG demandent le privilège BINLOG REPLAY."
   },
   "vector": {
     "loading": "Chargement des colonnes vecteur…",

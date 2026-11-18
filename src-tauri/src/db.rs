@@ -104,6 +104,8 @@ pub struct Session {
     pub info: ServerInfo,
     /// SQL editor tabs, each holding its own connection (see query.rs).
     pub editors: crate::query::Editors,
+    /// For external clients (mariadb-binlog --flashback).
+    pub cli: crate::binlog::Cli,
     _tunnel: Option<Tunnel>,
 }
 
@@ -131,13 +133,29 @@ pub async fn open(profile: &Profile, password: Option<&str>, ssh_secret: Option<
             Ok::<_, AppError>((pool, info))
         }
     };
-    let (pool, info) = match try_open(profile.tls.mode).await {
+    let (pool, info, mode) = match try_open(profile.tls.mode).await {
         Err(e) if profile.tls.mode == TlsMode::Preferred && e.code == "TLS_NOT_SUPPORTED" => {
-            try_open(TlsMode::Disabled).await?
+            let (pool, info) = try_open(TlsMode::Disabled).await?;
+            (pool, info, TlsMode::Disabled)
         }
-        r => r?,
+        r => {
+            let (pool, info) = r?;
+            (pool, info, profile.tls.mode)
+        }
     };
-    Ok(Session { pool, info, editors: Default::default(), _tunnel: tunnel })
+    let socket = profile.socket.clone().filter(|s| !s.is_empty() && tunnel.is_none());
+    let cli = crate::binlog::Cli {
+        host: if tunnel.is_some() { "127.0.0.1".into() } else { profile.host.clone() },
+        port: tunnel.as_ref().map_or(profile.port, |t| t.port),
+        tls: if socket.is_some() { TlsMode::Disabled } else { mode },
+        socket,
+        user: profile.user.clone(),
+        password: password.map(str::to_string),
+        ca: profile.tls.ca.clone(),
+        cert: profile.tls.cert.clone(),
+        key: profile.tls.key.clone(),
+    };
+    Ok(Session { pool, info, editors: Default::default(), cli, _tunnel: tunnel })
 }
 
 #[cfg(test)]

@@ -2,8 +2,8 @@
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { AgGridVue } from "ag-grid-vue3";
-import type { ColDef } from "ag-grid-community";
-import { Loader2, RefreshCw } from "lucide-vue-next";
+import type { ColDef, SelectionChangedEvent } from "ag-grid-community";
+import { Loader2, RefreshCw, Undo2 } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
 import { api, toAppError, type AppError, type BinlogEvent, type BinlogState } from "@/lib/api";
 import { theme } from "@/lib/grid";
@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 /** Binary log reader (MariaDB only): files on the left, events of the chosen file, one page at a time. */
 // active: unused here, passed to every server screen (the polling ones pause when hidden).
 const props = defineProps<{ sessionId: string; active?: boolean }>();
+const emit = defineEmits<{ editSql: [sql: string] }>();
 const { t, locale } = useI18n();
 
 const PAGE = 1000;
@@ -22,6 +23,8 @@ const more = ref(false);
 const busy = ref(false);
 const filter = ref("");
 const error = ref<AppError | null>(null);
+const selected = ref<BinlogEvent[]>([]);
+const undoing = ref(false);
 
 async function load() {
   error.value = null;
@@ -52,6 +55,38 @@ async function open(name: string, append = false) {
   }
 }
 
+/**
+ * Range to undo: the whole transactions of the selected events, from the Gtid that opens the first one to the
+ * end of the Xid (or COMMIT) that closes the last one. Row events report end_log_pos 0 on MariaDB 12, so an
+ * event's end is taken from the next event's start.
+ */
+function range(): [number, number] {
+  const ev = events.value;
+  const at = (pos: number) => ev.findIndex((e) => e.pos === pos);
+  let i = at(Math.min(...selected.value.map((e) => e.pos)));
+  while (i > 0 && ev[i].kind !== "Gtid") i--;
+  let j = at(Math.max(...selected.value.map((e) => e.pos)));
+  const closes = (e: BinlogEvent) => e.kind === "Xid" || (e.kind === "Query" && /^\s*COMMIT/i.test(e.info));
+  while (j < ev.length - 1 && !closes(ev[j])) j++;
+  const end = ev[j].endPos > ev[j].pos ? ev[j].endPos : (ev[j + 1]?.pos ?? ev[j].endPos);
+  return [ev[i].pos, end];
+}
+
+/** Undo SQL of the selected transactions, opened in the SQL editor (never run from here). */
+async function flashback() {
+  const [start, stop] = range();
+  undoing.value = true;
+  error.value = null;
+  try {
+    const sql = await api.binlogFlashback(props.sessionId, file.value, start, stop);
+    emit("editSql", `-- ${t("binlog.undoHeader", { file: file.value, start, stop })}\n\n${sql}`);
+  } catch (e) {
+    error.value = toAppError(e);
+  } finally {
+    undoing.value = false;
+  }
+}
+
 const shown = computed(() => {
   const f = filter.value.trim().toLowerCase();
   return f ? events.value.filter((e) => `${e.kind} ${e.info}`.toLowerCase().includes(f)) : events.value;
@@ -78,7 +113,15 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
       <input v-model="filter" :placeholder="t('binlog.filter')" :aria-label="t('binlog.filter')" class="h-6 w-64 rounded-sm border bg-background px-2" />
       <span v-if="st" class="text-muted-foreground">{{ t("binlog.format") }} <span class="font-mono text-foreground">{{ st.format }}</span></span>
       <span v-if="st?.gtid" class="text-muted-foreground">{{ t("binlog.gtid") }} <span class="font-mono text-foreground">{{ st.gtid }}</span></span>
-      <button :class="cn(btn, 'ml-auto')" @click="load"><RefreshCw class="size-3.5" />{{ t("admin.refresh") }}</button>
+      <button
+        :class="cn(btn, 'ml-auto')"
+        :disabled="!selected.length || st?.format !== 'ROW' || undoing"
+        :title="st && st.format !== 'ROW' ? t('binlog.undoNeedsRow') : t('binlog.undoHint')"
+        @click="flashback"
+      >
+        <Loader2 v-if="undoing" class="size-3.5 animate-spin" /><Undo2 v-else class="size-3.5" />{{ t("binlog.undo", { n: selected.length }) }}
+      </button>
+      <button :class="btn" @click="load"><RefreshCw class="size-3.5" />{{ t("admin.refresh") }}</button>
     </div>
 
     <ErrorLine v-if="error" :error="error" class="m-3" />
@@ -107,6 +150,8 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
           :locale-text="{ noRowsToShow: t('grid.noRows') }"
           :enable-cell-text-selection="true"
           :tooltip-show-delay="300"
+          :row-selection="{ mode: 'multiRow', checkboxes: false, headerCheckbox: false, enableClickSelection: true }"
+          @selection-changed="(e: SelectionChangedEvent<BinlogEvent>) => (selected = e.api.getSelectedRows())"
         />
         <div class="flex h-7 shrink-0 items-center gap-2 border-t px-2 text-muted-foreground">
           <Loader2 v-if="busy" class="size-3.5 animate-spin" />

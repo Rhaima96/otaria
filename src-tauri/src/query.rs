@@ -77,6 +77,13 @@ pub fn split_from(src: &str, delim: &str) -> (Vec<Stmt>, usize, String) {
             continue;
         }
         match b[i] {
+            // Before comments: mariadb-binlog scripts use `DELIMITER /*!*/;`, which starts like a comment.
+            _ if src[i..].starts_with(delim.as_str()) => {
+                push_stmt(src, &mut out, start, i);
+                i += delim.len();
+                start = i;
+                blank = true;
+            }
             q @ (b'\'' | b'"' | b'`') => {
                 blank = false;
                 i += 1;
@@ -102,12 +109,6 @@ pub fn split_from(src: &str, delim: &str) -> (Vec<Stmt>, usize, String) {
                 i = src[i..].find('\n').map_or(b.len(), |n| i + n)
             }
             b'/' if src[i..].starts_with("/*") => i = src[i + 2..].find("*/").map_or(b.len(), |n| i + n + 4),
-            _ if src[i..].starts_with(delim.as_str()) => {
-                push_stmt(src, &mut out, start, i);
-                i += delim.len();
-                start = i;
-                blank = true;
-            }
             c => {
                 blank &= c.is_ascii_whitespace();
                 i += 1;
@@ -415,6 +416,14 @@ mod tests {
         assert_eq!(sqls("SELECT 1"), ["SELECT 1"]);
         // "--" without a following space is an operator, not a comment.
         assert_eq!(sqls("SELECT 5--1; SELECT 2"), ["SELECT 5--1", "SELECT 2"]);
+    }
+
+    #[test]
+    fn handles_the_mariadb_binlog_delimiter() {
+        // `DELIMITER /*!*/;` starts like a comment: it must still end statements (flashback scripts).
+        let src = "SET @a=1;\nDELIMITER /*!*/;\n# at 4\nBINLOG '\nAAAA\n'/*!*/;\n/* note */ COMMIT\n/*!*/;\nDELIMITER ;\nROLLBACK;";
+        let sql: Vec<String> = split(src).into_iter().map(|s| s.sql).collect();
+        assert_eq!(sql, ["SET @a=1", "# at 4\nBINLOG '\nAAAA\n'", "/* note */ COMMIT", "ROLLBACK"]);
     }
 
     #[test]

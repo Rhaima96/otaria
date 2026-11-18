@@ -337,6 +337,15 @@ async fn binlog_events(state: State<'_, AppState>, session_id: String, file: Str
 }
 
 #[tauri::command]
+async fn binlog_flashback(state: State<'_, AppState>, session_id: String, file: String, start: u64, stop: u64) -> AppResult<String> {
+    let (pool, cli) = match state.sessions.lock().await.get(&session_id) {
+        Some(s) => (s.pool.clone(), s.cli.clone()),
+        None => return Err(AppError::new("SESSION_NOT_FOUND", session_id)),
+    };
+    binlog::flashback(&pool, &cli, &file, start, stop).await
+}
+
+#[tauri::command]
 async fn replication_state(state: State<'_, AppState>, session_id: String) -> AppResult<replication::State> {
     replication::state(&pool(&state, &session_id).await?).await
 }
@@ -769,6 +778,7 @@ pub fn run() {
             replication_state,
             binlog_state,
             binlog_events,
+            binlog_flashback,
             versioning_state,
             versioning_sql,
             versioning_apply,

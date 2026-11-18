@@ -216,7 +216,7 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
           />
           <SequenceView v-else-if="x.create === 'sequence'" v-show="active === x.id" :session-id="session.sessionId" :schema="x.schema!" name="" create class="min-h-0 flex-1" @created="(n) => created(x.id, x.schema!, 'sequence', n)" />
           <TableDesigner v-else-if="x.create === 'table'" :ref="(el) => setPanel(x.id, el)" v-show="active === x.id" :session-id="session.sessionId" :schema="x.schema!" :table="null" :mariadb="session.info.isMariadb" class="min-h-0 flex-1" @saved="(n) => created(x.id, x.schema!, 'table', n)" />
-          <component :is="adminViews[x.admin].view" v-else-if="x.admin" v-show="active === x.id" :session-id="session.sessionId" :active="active === x.id" v-bind="x.admin === 'users' ? { mariadb: session.info.isMariadb } : {}" class="min-h-0 flex-1" />
+          <component :is="adminViews[x.admin].view" v-else-if="x.admin" v-show="active === x.id" :session-id="session.sessionId" :active="active === x.id" v-bind="x.admin === 'users' ? { mariadb: session.info.isMariadb } : {}" class="min-h-0 flex-1" @edit-sql="(sql: string) => newQuery(null, sql)" />
           <SqlEditor v-else :ref="(el) => setPanel(x.id, el)" v-show="active === x.id" :session-id="session.sessionId" :profile-id="session.profile.id" :editor-id="x.id" :schema="x.schema" :initial-sql="x.sql" :mariadb="session.info.isMariadb" class="min-h-0 flex-1" />
         </template>
 

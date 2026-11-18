@@ -548,6 +548,7 @@ export const api = {
   replicationState: (sessionId: string) => invoke<ReplicationState>("replication_state", { sessionId }),
   binlogState: (sessionId: string) => invoke<BinlogState>("binlog_state", { sessionId }),
   binlogEvents: (sessionId: string, file: string, offset: number, limit: number) => invoke<BinlogEvent[]>("binlog_events", { sessionId, file, offset, limit }),
+  binlogFlashback: (sessionId: string, file: string, start: number, stop: number) => invoke<string>("binlog_flashback", { sessionId, file, start, stop }),
   engineList: (sessionId: string) => invoke<Engine[]>("engine_list", { sessionId }),
   listPlugins: (sessionId: string) => invoke<Plugin[]>("list_plugins", { sessionId }),
   pluginInstallSql: (name: string, library: string) => invoke<string>("plugin_install_sql", { name, library }),

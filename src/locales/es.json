@@ -135,7 +135,10 @@
     "VECTOR_DIMENSIONS": "El vector no tiene el número de dimensiones de la columna.",
     "NO_SINGLE_KEY": "Buscar por fila requiere una clave primaria de una sola columna.",
     "INVALID_LIMIT": "k debe estar entre 1 y 1000.",
-    "BINLOG_OFF": "El registro binario está desactivado en este servidor (log_bin)."
+    "BINLOG_OFF": "El registro binario está desactivado en este servidor (log_bin).",
+    "BINLOG_TOOL_MISSING": "No se encontró mariadb-binlog. Instale el cliente MariaDB (Homebrew: brew install mariadb; Linux: paquete mariadb-client; Windows: instalador de MariaDB).",
+    "BINLOG_TOOL": "mariadb-binlog falló.",
+    "INVALID_RANGE": "Rango no válido."
   },
   "tree": {
     "title": "Bases de datos",
@@ -422,7 +425,11 @@
     "loaded": "{n} eventos cargados",
     "matching": "{n} de {total} eventos cargados coinciden",
     "more": "Cargar más",
-    "hint": "Los eventos Annotate_rows muestran la sentencia que originó los cambios de filas."
+    "hint": "Los eventos Annotate_rows muestran la sentencia que originó los cambios de filas.",
+    "undo": "Deshacer selección ({n})",
+    "undoHint": "Genera con mariadb-binlog --flashback el SQL de deshacer de las transacciones que contienen los eventos seleccionados (de Gtid a Xid) y lo abre en el editor SQL sin ejecutarlo. Solo se revierten cambios de filas (INSERT, UPDATE, DELETE), y solo con binlog_row_image = FULL.",
+    "undoNeedsRow": "Deshacer requiere binlog_format = ROW.",
+    "undoHeader": "Deshacer los eventos {start} a {stop} de {file} (mariadb-binlog --flashback). Revíselo antes de ejecutarlo: las instrucciones BINLOG requieren el privilegio BINLOG REPLAY."
   },
   "vector": {
     "loading": "Cargando columnas vectoriales…",

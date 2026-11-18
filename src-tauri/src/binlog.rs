@@ -1,7 +1,7 @@
 //! Binary log reader (MariaDB only): files from `SHOW BINARY LOGS`, events from `SHOW BINLOG EVENTS`,
-//! read one page at a time. Read-only.
-// ponytail: no flashback (undo SQL) here: it needs the mariadb-binlog binary with the password,
-// tunnel port and TLS files; a separate lot if asked. No PURGE either: the SQL editor does it.
+//! read one page at a time; flashback (undo SQL for a range of row events) through the external
+//! `mariadb-binlog` client. Nothing is run here: the undo script opens in the SQL editor.
+// ponytail: no PURGE here: the SQL editor does it.
 
 use mysql_async::Pool;
 use mysql_async::prelude::Queryable;
@@ -9,6 +9,106 @@ use serde::Serialize;
 
 use crate::designer::literal;
 use crate::error::{AppError, AppResult};
+use crate::profiles::TlsMode;
+
+/// How an external client reaches the session's server: the same host and port (the SSH tunnel's local
+/// port when there is one), user, password and TLS mode as the session's own connections.
+#[derive(Clone)]
+pub struct Cli {
+    pub host: String,
+    pub port: u16,
+    pub socket: Option<String>,
+    pub user: String,
+    /// Passed to the child process through MYSQL_PWD, never on the command line (visible in `ps`).
+    pub password: Option<String>,
+    /// The mode the session ended up with (Preferred may have fallen back to Disabled).
+    pub tls: TlsMode,
+    pub ca: Option<String>,
+    pub cert: Option<String>,
+    pub key: Option<String>,
+}
+
+/// `mariadb-binlog` arguments that print the undo of the events in [start, stop) of `file`.
+pub fn flashback_args(cli: &Cli, file: &str, start: u64, stop: u64) -> Vec<String> {
+    let mut a = vec!["--no-defaults".to_string()];
+    match &cli.socket {
+        Some(s) => a.push(format!("--socket={s}")),
+        None => a.extend([format!("--host={}", cli.host), format!("--port={}", cli.port), "--protocol=TCP".into()]),
+    }
+    a.push(format!("--user={}", cli.user));
+    let some = |v: &Option<String>| v.as_deref().filter(|s| !s.is_empty()).map(str::to_string);
+    match cli.tls {
+        TlsMode::Disabled => a.push("--skip-ssl".into()),
+        mode => {
+            a.push("--ssl".into());
+            // ponytail: VerifyCa also skips the name check here (the client has no CA-only mode), and through a
+            // tunnel VerifyIdentity would check 127.0.0.1: both use the CA without the name check in that case.
+            let verify_name = mode == TlsMode::VerifyIdentity && cli.host != "127.0.0.1";
+            a.push(if verify_name { "--ssl-verify-server-cert" } else { "--skip-ssl-verify-server-cert" }.into());
+            if let Some(ca) = some(&cli.ca) {
+                a.push(format!("--ssl-ca={ca}"));
+            }
+            if let (Some(cert), Some(key)) = (some(&cli.cert), some(&cli.key)) {
+                a.extend([format!("--ssl-cert={cert}"), format!("--ssl-key={key}")]);
+            }
+        }
+    }
+    a.extend([
+        "--read-from-remote-server".into(),
+        "--flashback".into(),
+        // Decoded rows as comments next to each BINLOG statement, so the script can be read before running it.
+        "--verbose".into(),
+        format!("--start-position={start}"),
+        format!("--stop-position={stop}"),
+        file.to_string(),
+    ]);
+    a
+}
+
+/// `mariadb-binlog` is not bundled: look in PATH, then where installers put it (a GUI app on macOS
+/// does not get the shell's PATH).
+fn find_tool() -> Option<std::path::PathBuf> {
+    let exe = if cfg!(windows) { "mariadb-binlog.exe" } else { "mariadb-binlog" };
+    let mut dirs: Vec<std::path::PathBuf> = std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect()).unwrap_or_default();
+    dirs.extend(["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/usr/local/mariadb/bin", "/opt/local/bin"].map(Into::into));
+    if cfg!(windows) {
+        // C:\Program Files\MariaDB 11.4\bin and the like.
+        for root in ["C:\\Program Files", "C:\\Program Files (x86)"] {
+            if let Ok(entries) = std::fs::read_dir(root) {
+                dirs.extend(entries.flatten().filter(|e| e.file_name().to_string_lossy().starts_with("MariaDB")).map(|e| e.path().join("bin")));
+            }
+        }
+    }
+    dirs.into_iter().map(|d| d.join(exe)).find(|p| p.is_file())
+}
+
+/// Undo SQL for the events in [start, stop) of `file`, from `mariadb-binlog --flashback`.
+/// Only row events can be reversed (binlog_format ROW, binlog_row_image FULL); DDL is skipped by the tool.
+pub async fn flashback(pool: &Pool, cli: &Cli, file: &str, start: u64, stop: u64) -> AppResult<String> {
+    let names: Vec<String> = pool.get_conn().await?.query_map("SHOW BINARY LOGS", |r: mysql_async::Row| r.get::<String, _>(0).unwrap_or_default()).await?;
+    if !names.iter().any(|n| n == file) {
+        return Err(AppError::new("NOT_FOUND", file.to_string()));
+    }
+    if start >= stop {
+        return Err(AppError::new("INVALID_RANGE", format!("{start}..{stop}")));
+    }
+    let tool = find_tool().ok_or_else(|| AppError::new("BINLOG_TOOL_MISSING", "mariadb-binlog".to_string()))?;
+    let mut cmd = std::process::Command::new(&tool);
+    cmd.args(flashback_args(cli, file, start, stop));
+    match &cli.password {
+        Some(p) => cmd.env("MYSQL_PWD", p),
+        None => cmd.env_remove("MYSQL_PWD"),
+    };
+    let out = tokio::task::spawn_blocking(move || cmd.output())
+        .await
+        .map_err(|e| AppError::new("BINLOG_TOOL", e.to_string()))?
+        .map_err(|e| AppError::new("BINLOG_TOOL", format!("{}: {e}", tool.display())))?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        return Err(AppError { detail: Some(err.clone()), ..AppError::new("BINLOG_TOOL", err) });
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -81,6 +181,30 @@ pub async fn events(pool: &Pool, file: &str, offset: u64, limit: u64) -> AppResu
 mod tests {
     use super::*;
 
+    fn cli(tls: TlsMode) -> Cli {
+        Cli { host: "db.example".into(), port: 3307, socket: None, user: "ann".into(), password: Some("pw".into()), tls, ca: Some("/ca.pem".into()), cert: None, key: None }
+    }
+
+    #[test]
+    fn flashback_command_line() {
+        let a = flashback_args(&cli(TlsMode::VerifyIdentity), "bin.000004", 330, 900);
+        assert_eq!(
+            a,
+            [
+                "--no-defaults", "--host=db.example", "--port=3307", "--protocol=TCP", "--user=ann", "--ssl", "--ssl-verify-server-cert",
+                "--ssl-ca=/ca.pem", "--read-from-remote-server", "--flashback", "--verbose", "--start-position=330", "--stop-position=900",
+                "bin.000004"
+            ]
+        );
+        assert!(!a.iter().any(|x| x.contains("pw")), "the password never goes on the command line");
+        let plain = flashback_args(&Cli { socket: Some("/tmp/m.sock".into()), ..cli(TlsMode::Disabled) }, "b.1", 4, 5);
+        assert!(plain.contains(&"--socket=/tmp/m.sock".to_string()) && plain.contains(&"--skip-ssl".to_string()));
+        assert!(!plain.iter().any(|x| x.starts_with("--host")));
+        // Through a tunnel (127.0.0.1) the server name cannot match: CA only.
+        let tunnel = flashback_args(&Cli { host: "127.0.0.1".into(), ..cli(TlsMode::VerifyIdentity) }, "b.1", 4, 5);
+        assert!(tunnel.contains(&"--skip-ssl-verify-server-cert".to_string()));
+    }
+
     #[test]
     fn quotes_file_name() {
         assert_eq!(events_sql("mysql-bin.000002", 1000, 500), "SHOW BINLOG EVENTS IN 'mysql-bin.000002' LIMIT 1000, 500");
@@ -115,6 +239,29 @@ mod tests {
         let page = events(&pool, last, 2, 2).await.unwrap();
         assert_eq!((page.len(), page[0].pos), (2, all[2].pos));
         assert_eq!(events(&pool, "nope.000001", 0, 10).await.unwrap_err().code, "NOT_FOUND");
+
+        // Flashback: undo one UPDATE transaction, then replay the script the way the SQL editor splits it.
+        async fn at(conn: &mut mysql_async::Conn) -> u64 {
+            let mut r: mysql_async::Row = conn.query_first("SHOW MASTER STATUS").await.unwrap().unwrap();
+            r.take(1).unwrap()
+        }
+        let start = at(&mut conn).await;
+        conn.query_drop("UPDATE otaria_bl.t SET v = 'b' WHERE id = 1").await.unwrap();
+        let stop = at(&mut conn).await;
+        let cli = Cli {
+            host: p[0].into(), port: p[1].parse().unwrap(), socket: None, user: p[2].into(), password: Some(p[3].into()),
+            tls: TlsMode::Required, ca: None, cert: None, key: None,
+        };
+        let undo = flashback(&pool, &cli, last, start, stop).await.unwrap();
+        assert!(undo.contains("BINLOG '") && undo.contains("### UPDATE `otaria_bl`.`t`"), "{undo}");
+        for stmt in crate::query::split(&undo) {
+            conn.query_drop(&stmt.sql).await.unwrap_or_else(|e| panic!("{e}: {}", stmt.sql));
+        }
+        let v: Option<String> = conn.query_first("SELECT v FROM otaria_bl.t WHERE id = 1").await.unwrap();
+        assert_eq!(v.as_deref(), Some("a"));
+        assert_eq!(flashback(&pool, &cli, last, stop, start).await.unwrap_err().code, "INVALID_RANGE");
+        let bad = Cli { password: Some("wrong".into()), ..cli };
+        assert_eq!(flashback(&pool, &bad, last, start, stop).await.unwrap_err().code, "BINLOG_TOOL");
         conn.query_drop("DROP DATABASE otaria_bl").await.unwrap();
 
         // A server without binary log says so instead of failing on SHOW BINARY LOGS.

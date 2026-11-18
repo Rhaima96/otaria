@@ -135,7 +135,10 @@
     "VECTOR_DIMENSIONS": "Der Vektor hat nicht die Dimensionszahl der Spalte.",
     "NO_SINGLE_KEY": "Die Suche nach Zeile braucht einen Primärschlüssel auf einer einzigen Spalte.",
     "INVALID_LIMIT": "k muss zwischen 1 und 1000 liegen.",
-    "BINLOG_OFF": "Das Binärlog ist auf diesem Server deaktiviert (log_bin)."
+    "BINLOG_OFF": "Das Binärlog ist auf diesem Server deaktiviert (log_bin).",
+    "BINLOG_TOOL_MISSING": "mariadb-binlog wurde nicht gefunden. MariaDB-Client installieren (Homebrew: brew install mariadb; Linux: Paket mariadb-client; Windows: MariaDB-Installer).",
+    "BINLOG_TOOL": "mariadb-binlog ist fehlgeschlagen.",
+    "INVALID_RANGE": "Ungültiger Bereich."
   },
   "tree": {
     "title": "Datenbanken",
@@ -422,7 +425,11 @@
     "loaded": "{n} Ereignisse geladen",
     "matching": "{n} von {total} geladenen Ereignissen passen",
     "more": "Mehr laden",
-    "hint": "Annotate_rows-Ereignisse zeigen die Anweisung hinter den Zeilenänderungen."
+    "hint": "Annotate_rows-Ereignisse zeigen die Anweisung hinter den Zeilenänderungen.",
+    "undo": "Auswahl rückgängig ({n})",
+    "undoHint": "Erzeugt mit mariadb-binlog --flashback das Rückgängig-SQL der Transaktionen mit den ausgewählten Ereignissen (von Gtid bis Xid) und öffnet es im SQL-Editor, ohne es auszuführen. Nur Zeilenänderungen (INSERT, UPDATE, DELETE) werden umgekehrt, und nur mit binlog_row_image = FULL.",
+    "undoNeedsRow": "Rückgängig erfordert binlog_format = ROW.",
+    "undoHeader": "Rückgängig der Ereignisse {start} bis {stop} in {file} (mariadb-binlog --flashback). Vor dem Ausführen prüfen: BINLOG-Anweisungen erfordern das Recht BINLOG REPLAY."
   },
   "vector": {
     "loading": "Vektorspalten werden geladen…",

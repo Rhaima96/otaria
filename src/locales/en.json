@@ -135,7 +135,10 @@
     "VECTOR_DIMENSIONS": "The vector does not have the column's number of dimensions.",
     "NO_SINGLE_KEY": "Searching by row needs a primary key on a single column.",
     "INVALID_LIMIT": "k must be between 1 and 1000.",
-    "BINLOG_OFF": "Binary logging is off on this server (log_bin)."
+    "BINLOG_OFF": "Binary logging is off on this server (log_bin).",
+    "BINLOG_TOOL_MISSING": "mariadb-binlog was not found. Install the MariaDB client (Homebrew: brew install mariadb; Linux: mariadb-client package; Windows: MariaDB installer).",
+    "BINLOG_TOOL": "mariadb-binlog failed.",
+    "INVALID_RANGE": "Invalid range."
   },
   "tree": {
     "title": "Databases",
@@ -422,7 +425,11 @@
     "loaded": "{n} events loaded",
     "matching": "{n} of {total} loaded events match",
     "more": "Load more",
-    "hint": "Annotate_rows events show the statement behind the row changes."
+    "hint": "Annotate_rows events show the statement behind the row changes.",
+    "undo": "Undo selection ({n})",
+    "undoHint": "Generates the undo SQL of the transactions holding the selected events (from Gtid to Xid) with mariadb-binlog --flashback, and opens it in the SQL editor without running it. Only row changes (INSERT, UPDATE, DELETE) are reversed, and only with binlog_row_image = FULL.",
+    "undoNeedsRow": "Undo needs binlog_format = ROW.",
+    "undoHeader": "Undo of events {start} to {stop} in {file} (mariadb-binlog --flashback). Read it before running it: the BINLOG statements need the BINLOG REPLAY privilege."
   },
   "vector": {
     "loading": "Loading vector columns…",
