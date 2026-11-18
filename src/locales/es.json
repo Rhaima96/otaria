@@ -772,7 +772,7 @@
     "install": "Instalar y reiniciar",
     "close": "Cerrar"
   },
-  "newDatabase": {
+  "database": {
     "open": "Nueva base de datos…",
     "title": "Nueva base de datos",
     "name": "Nombre",
@@ -780,6 +780,13 @@
     "collation": "Intercalación",
     "preview": "Escriba un nombre para ver el SQL.",
     "cancel": "Cancelar",
-    "create": "Crear"
+    "create": "Crear",
+    "editTitle": "Base de datos {name}",
+    "menu": "Acciones de la base de datos",
+    "edit": "Juego de caracteres e intercalación…",
+    "drop": "Eliminar base de datos",
+    "dropConfirm": "¿Eliminar la base de datos {name} con todas sus tablas, vistas, rutinas y datos? No se puede deshacer.",
+    "alterHint": "Solo cambian los valores por defecto de las tablas nuevas; las tablas y columnas existentes conservan su juego de caracteres.",
+    "apply": "Aplicar"
   }
 }

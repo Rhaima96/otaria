@@ -772,7 +772,7 @@
     "install": "Install and restart",
     "close": "Close"
   },
-  "newDatabase": {
+  "database": {
     "open": "New database…",
     "title": "New database",
     "name": "Name",
@@ -780,6 +780,13 @@
     "collation": "Collation",
     "preview": "Type a name to see the SQL.",
     "cancel": "Cancel",
-    "create": "Create"
+    "create": "Create",
+    "editTitle": "Database {name}",
+    "menu": "Database actions",
+    "edit": "Character set and collation…",
+    "drop": "Drop database",
+    "dropConfirm": "Drop the database {name} with all its tables, views, routines and data? This cannot be undone.",
+    "alterHint": "Only the defaults for new tables change; existing tables and columns keep their character set.",
+    "apply": "Apply"
   }
 }

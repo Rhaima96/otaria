@@ -494,9 +494,11 @@ export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
   restartApp: () => invoke<void>("restart_app"),
   listCharsets: (sessionId: string) => invoke<Charsets>("list_charsets", { sessionId }),
-  createDatabaseSql: (name: string, charset: string, collation: string) => invoke<string>("create_database_sql", { name, charset, collation }),
-  createDatabase: (sessionId: string, name: string, charset: string, collation: string) =>
-    invoke<void>("create_database", { sessionId, name, charset, collation }),
+  databaseOptions: (sessionId: string, name: string) => invoke<[string, string]>("database_options", { sessionId, name }),
+  databaseSql: (action: "create" | "alter" | "drop", name: string, charset: string, collation: string) =>
+    invoke<string>("database_sql", { action, name, charset, collation }),
+  databaseDdl: (sessionId: string, action: "create" | "alter" | "drop", name: string, charset: string, collation: string) =>
+    invoke<void>("database_ddl", { sessionId, action, name, charset, collation }),
   listProfiles: () => invoke<Profile[]>("list_profiles"),
   saveProfile: (profile: Profile, s: Secrets = {}) => invoke<Profile>("save_profile", { profile, ...s }),
   deleteProfile: (id: string) => invoke<void>("delete_profile", { id }),

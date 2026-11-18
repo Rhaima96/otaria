@@ -169,6 +169,7 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
           @diagram="(schema) => diagram?.open(schema)"
           @compare="(schema) => compare?.open(schema)"
           @search="palette?.open()"
+          @dropped="(schema) => tabs.filter((x) => x.obj && x.schema === schema).forEach((x) => close(x.id))"
         />
       </aside>
       <main class="flex min-w-0 flex-1 flex-col">

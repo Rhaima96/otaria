@@ -2,16 +2,17 @@
 import { nextTick, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui";
-import { ChevronRight, Database, Download, GitCompareArrows, LoaderCircle, Network, Plus, RefreshCw, Search, Upload } from "lucide-vue-next";
+import { ChevronRight, Database, Download, Ellipsis, GitCompareArrows, LoaderCircle, Network, Plus, RefreshCw, Search, Upload } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
-import NewDatabaseDialog from "@/components/NewDatabaseDialog.vue";
+import DatabaseDialog from "@/components/DatabaseDialog.vue";
+import { useConfirm } from "@/composables/useConfirm";
 import { api, toAppError, type AppError, type DbObject, type ObjectKind } from "@/lib/api";
 import { KIND_ORDER, objectIcon } from "@/lib/objects";
 import { cn } from "@/lib/utils";
 
 /** `mariadb`: offer MariaDB-only actions (new sequence); hidden on MySQL. */
 const props = defineProps<{ sessionId: string; selected: string | null; mariadb: boolean }>();
-const emit = defineEmits<{ open: [schema: string, obj: DbObject]; create: [schema: string, kind: ObjectKind]; transfer: [schema: string, mode: "export" | "import"]; diagram: [schema: string]; compare: [schema: string]; search: [] }>();
+const emit = defineEmits<{ open: [schema: string, obj: DbObject]; create: [schema: string, kind: ObjectKind]; transfer: [schema: string, mode: "export" | "import"]; diagram: [schema: string]; compare: [schema: string]; search: []; dropped: [schema: string] }>();
 const creatable = (): ObjectKind[] => KIND_ORDER.filter((k) => k !== "sequence" || props.mariadb);
 const { t } = useI18n();
 
@@ -19,7 +20,22 @@ const schemas = ref<string[]>([]);
 /** Loaded objects per expanded schema; "loading" while the request runs. */
 const expanded = ref<Record<string, DbObject[] | "loading">>({});
 const error = ref<AppError | null>(null);
-const newDb = ref<InstanceType<typeof NewDatabaseDialog> | null>(null);
+const dbDialog = ref<InstanceType<typeof DatabaseDialog> | null>(null);
+const { confirm } = useConfirm();
+// The server's own databases: no edit or drop offered.
+const SYSTEM = ["information_schema", "performance_schema", "mysql", "sys"];
+
+async function dropSchema(s: string) {
+  if (!(await confirm(t("database.dropConfirm", { name: s }), t("database.drop")))) return;
+  try {
+    await api.databaseDdl(props.sessionId, "drop", s, "", "");
+    delete expanded.value[s];
+    emit("dropped", s);
+    await load();
+  } catch (e) {
+    error.value = toAppError(e);
+  }
+}
 
 async function load() {
   error.value = null;
@@ -71,8 +87,8 @@ const item = "cursor-default rounded-sm px-2 py-1 outline-none data-highlighted:
     <div class="flex h-8 shrink-0 items-center justify-between border-b px-2">
       <span class="font-medium text-muted-foreground">{{ t("tree.title") }}</span>
       <span class="flex items-center">
-        <button :title="t('newDatabase.open')" class="flex size-6 items-center justify-center rounded-sm hover:bg-secondary" @click="newDb?.open()">
-          <Plus class="size-3.5" /><span class="sr-only">{{ t("newDatabase.open") }}</span>
+        <button :title="t('database.open')" class="flex size-6 items-center justify-center rounded-sm hover:bg-secondary" @click="dbDialog?.open()">
+          <Plus class="size-3.5" /><span class="sr-only">{{ t("database.open") }}</span>
         </button>
         <button :title="t('palette.button')" class="flex size-6 items-center justify-center rounded-sm hover:bg-secondary" @click="emit('search')">
           <Search class="size-3.5" /><span class="sr-only">{{ t("palette.button") }}</span>
@@ -83,7 +99,7 @@ const item = "cursor-default rounded-sm px-2 py-1 outline-none data-highlighted:
       </span>
     </div>
     <ErrorLine v-if="error" :error="error" class="m-2" />
-    <NewDatabaseDialog ref="newDb" :session-id="sessionId" @created="load" />
+    <DatabaseDialog ref="dbDialog" :session-id="sessionId" @done="load" />
     <ul class="min-h-0 flex-1 overflow-auto py-1 select-none" role="tree">
       <li v-for="s in schemas" :key="s" role="treeitem" :aria-expanded="!!expanded[s]">
         <div class="group relative">
@@ -117,6 +133,17 @@ const item = "cursor-default rounded-sm px-2 py-1 outline-none data-highlighted:
           <button :title="t('compare.open')" :class="cn(trigger, 'right-25')" @click="emit('compare', s)">
             <GitCompareArrows class="size-3.5" /><span class="sr-only">{{ t("compare.open") }}</span>
           </button>
+          <DropdownMenuRoot v-if="!SYSTEM.includes(s)">
+            <DropdownMenuTrigger :title="t('database.menu')" :class="cn(trigger, 'right-31')">
+              <Ellipsis class="size-3.5" /><span class="sr-only">{{ t("database.menu") }}</span>
+            </DropdownMenuTrigger>
+            <DropdownMenuPortal>
+              <DropdownMenuContent align="start" :class="menu">
+                <DropdownMenuItem :class="item" @select="dbDialog?.open(s)">{{ t("database.edit") }}</DropdownMenuItem>
+                <DropdownMenuItem :class="cn(item, 'text-destructive')" @select="dropSchema(s)">{{ t("database.drop") }}…</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenuPortal>
+          </DropdownMenuRoot>
         </div>
         <ul v-if="Array.isArray(expanded[s])" role="group">
           <li v-for="o in expanded[s]" :key="o.kind + o.name" role="treeitem">

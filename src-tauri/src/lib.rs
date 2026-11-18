@@ -170,13 +170,18 @@ async fn list_charsets(state: State<'_, AppState>, session_id: String) -> AppRes
 }
 
 #[tauri::command]
-fn create_database_sql(name: String, charset: String, collation: String) -> AppResult<String> {
-    designer::create_database_sql(&name, &charset, &collation)
+async fn database_options(state: State<'_, AppState>, session_id: String, name: String) -> AppResult<(String, String)> {
+    designer::database_options(&pool(&state, &session_id).await?, &name).await
 }
 
 #[tauri::command]
-async fn create_database(state: State<'_, AppState>, session_id: String, name: String, charset: String, collation: String) -> AppResult<()> {
-    designer::create_database(&pool(&state, &session_id).await?, &name, &charset, &collation).await
+fn database_sql(action: String, name: String, charset: String, collation: String) -> AppResult<String> {
+    designer::database_sql(&action, &name, &charset, &collation)
+}
+
+#[tauri::command]
+async fn database_ddl(state: State<'_, AppState>, session_id: String, action: String, name: String, charset: String, collation: String) -> AppResult<()> {
+    designer::database_ddl(&pool(&state, &session_id).await?, &action, &name, &charset, &collation).await
 }
 
 #[tauri::command]
@@ -752,8 +757,9 @@ pub fn run() {
             app_info,
             restart_app,
             list_charsets,
-            create_database_sql,
-            create_database,
+            database_options,
+            database_sql,
+            database_ddl,
             list_profiles,
             save_profile,
             delete_profile,

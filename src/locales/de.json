@@ -772,7 +772,7 @@
     "install": "Installieren und neu starten",
     "close": "Schließen"
   },
-  "newDatabase": {
+  "database": {
     "open": "Neue Datenbank…",
     "title": "Neue Datenbank",
     "name": "Name",
@@ -780,6 +780,13 @@
     "collation": "Sortierung",
     "preview": "Namen eingeben, um das SQL zu sehen.",
     "cancel": "Abbrechen",
-    "create": "Erstellen"
+    "create": "Erstellen",
+    "editTitle": "Datenbank {name}",
+    "menu": "Datenbankaktionen",
+    "edit": "Zeichensatz und Sortierung…",
+    "drop": "Datenbank löschen",
+    "dropConfirm": "Datenbank {name} mit allen Tabellen, Views, Routinen und Daten löschen? Das kann nicht rückgängig gemacht werden.",
+    "alterHint": "Nur die Vorgaben für neue Tabellen ändern sich; bestehende Tabellen und Spalten behalten ihren Zeichensatz.",
+    "apply": "Anwenden"
   }
 }

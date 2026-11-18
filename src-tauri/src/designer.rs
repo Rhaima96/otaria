@@ -716,23 +716,44 @@ pub async fn charsets(pool: &Pool) -> AppResult<Charsets> {
     Ok(Charsets { default_charset, default_collation, charsets })
 }
 
-/// `CREATE DATABASE name [CHARACTER SET cs] [COLLATE coll]`; empty charset or collation = server default.
-pub fn create_database_sql(name: &str, charset: &str, collation: &str) -> AppResult<String> {
+/// Current default character set and collation of a database (edit dialog).
+pub async fn database_options(pool: &Pool, name: &str) -> AppResult<(String, String)> {
+    pool.get_conn()
+        .await?
+        .exec_first(
+            "SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?",
+            (name,),
+        )
+        .await?
+        .ok_or_else(|| AppError::new("NOT_FOUND", name.to_string()))
+}
+
+/// CREATE, ALTER or DROP DATABASE. Empty charset or collation = server default (CREATE) or unchanged (ALTER).
+pub fn database_sql(action: &str, name: &str, charset: &str, collation: &str) -> AppResult<String> {
     if name.trim().is_empty() {
         return Err(AppError { detail: Some("name".into()), ..AppError::new("INVALID_NAME", String::new()) });
     }
-    let mut s = format!("CREATE DATABASE {}", ident(name.trim()));
+    let verb = match action {
+        "create" => "CREATE",
+        "alter" => "ALTER",
+        "drop" => return Ok(format!("DROP DATABASE {}", ident(name.trim()))),
+        _ => return Err(AppError { detail: Some("action".into()), ..AppError::new("INVALID_NAME", action.to_string()) }),
+    };
+    let mut s = format!("{verb} DATABASE {}", ident(name.trim()));
     if !charset.is_empty() {
         s += &format!(" CHARACTER SET {}", word("charset", charset)?);
     }
     if !collation.is_empty() {
         s += &format!(" COLLATE {}", word("collation", collation)?);
     }
+    if verb == "ALTER" && charset.is_empty() && collation.is_empty() {
+        return Err(AppError { detail: Some("collation".into()), ..AppError::new("INVALID_NAME", String::new()) });
+    }
     Ok(s)
 }
 
-pub async fn create_database(pool: &Pool, name: &str, charset: &str, collation: &str) -> AppResult<()> {
-    let sql = create_database_sql(name, charset, collation)?;
+pub async fn database_ddl(pool: &Pool, action: &str, name: &str, charset: &str, collation: &str) -> AppResult<()> {
+    let sql = database_sql(action, name, charset, collation)?;
     Ok(pool.get_conn().await?.query_drop(sql).await?)
 }
 
@@ -741,14 +762,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn create_database_statement() {
-        assert_eq!(create_database_sql(" shop ", "", "").unwrap(), "CREATE DATABASE `shop`");
+    fn database_statements() {
+        assert_eq!(database_sql("create", " shop ", "", "").unwrap(), "CREATE DATABASE `shop`");
         assert_eq!(
-            create_database_sql("a`b", "utf8mb4", "utf8mb4_uca1400_ai_ci").unwrap(),
+            database_sql("create", "a`b", "utf8mb4", "utf8mb4_uca1400_ai_ci").unwrap(),
             "CREATE DATABASE `a``b` CHARACTER SET utf8mb4 COLLATE utf8mb4_uca1400_ai_ci"
         );
-        assert_eq!(create_database_sql("x", "utf8; DROP", "").unwrap_err().code, "INVALID_NAME");
-        assert_eq!(create_database_sql("  ", "", "").unwrap_err().code, "INVALID_NAME");
+        assert_eq!(database_sql("alter", "s", "latin1", "latin1_swedish_ci").unwrap(), "ALTER DATABASE `s` CHARACTER SET latin1 COLLATE latin1_swedish_ci");
+        assert_eq!(database_sql("drop", "a`b", "ignored", "").unwrap(), "DROP DATABASE `a``b`");
+        assert_eq!(database_sql("alter", "s", "", "").unwrap_err().code, "INVALID_NAME");
+        assert_eq!(database_sql("create", "x", "utf8; DROP", "").unwrap_err().code, "INVALID_NAME");
+        assert_eq!(database_sql("create", "  ", "", "").unwrap_err().code, "INVALID_NAME");
+        assert_eq!(database_sql("truncate", "x", "", "").unwrap_err().code, "INVALID_NAME");
     }
 
     fn col(name: &str, ty: &str) -> ColumnDef {
@@ -991,9 +1016,12 @@ mod tests {
         let (_, colls) = c.charsets.iter().find(|(cs, _)| *cs == c.default_charset).unwrap();
         assert!(colls.contains(&c.default_collation), "{} not in {colls:?}", c.default_collation);
         run(&pool, &["DROP DATABASE IF EXISTS otaria_newdb".into()]).await.unwrap();
-        create_database(&pool, "otaria_newdb", &c.default_charset, &c.default_collation).await.unwrap();
-        assert_eq!(create_database(&pool, "otaria_newdb", "", "").await.unwrap_err().server_code, Some(1007));
-        run(&pool, &["DROP DATABASE otaria_newdb".into()]).await.unwrap();
+        database_ddl(&pool, "create", "otaria_newdb", &c.default_charset, &c.default_collation).await.unwrap();
+        assert_eq!(database_ddl(&pool, "create", "otaria_newdb", "", "").await.unwrap_err().server_code, Some(1007));
+        database_ddl(&pool, "alter", "otaria_newdb", "latin1", "latin1_swedish_ci").await.unwrap();
+        assert_eq!(database_options(&pool, "otaria_newdb").await.unwrap(), ("latin1".into(), "latin1_swedish_ci".into()));
+        database_ddl(&pool, "drop", "otaria_newdb", "", "").await.unwrap();
+        assert_eq!(database_options(&pool, "otaria_newdb").await.unwrap_err().code, "NOT_FOUND");
     }
 
     #[tokio::test]

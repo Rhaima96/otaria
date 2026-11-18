@@ -772,7 +772,7 @@
     "install": "Installa e riavvia",
     "close": "Chiudi"
   },
-  "newDatabase": {
+  "database": {
     "open": "Nuovo database…",
     "title": "Nuovo database",
     "name": "Nome",
@@ -780,6 +780,13 @@
     "collation": "Collazione",
     "preview": "Digita un nome per vedere l'SQL.",
     "cancel": "Annulla",
-    "create": "Crea"
+    "create": "Crea",
+    "editTitle": "Database {name}",
+    "menu": "Azioni sul database",
+    "edit": "Set di caratteri e collazione…",
+    "drop": "Elimina database",
+    "dropConfirm": "Eliminare il database {name} con tutte le sue tabelle, viste, routine e dati? L'operazione è irreversibile.",
+    "alterHint": "Cambiano solo i valori predefiniti delle nuove tabelle; tabelle e colonne esistenti mantengono il loro set di caratteri.",
+    "apply": "Applica"
   }
 }

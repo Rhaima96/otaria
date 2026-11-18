@@ -772,7 +772,7 @@
     "install": "Installer et redémarrer",
     "close": "Fermer"
   },
-  "newDatabase": {
+  "database": {
     "open": "Nouvelle base…",
     "title": "Nouvelle base de données",
     "name": "Nom",
@@ -780,6 +780,13 @@
     "collation": "Collation",
     "preview": "Saisissez un nom pour voir le SQL.",
     "cancel": "Annuler",
-    "create": "Créer"
+    "create": "Créer",
+    "editTitle": "Base {name}",
+    "menu": "Actions sur la base",
+    "edit": "Jeu de caractères et collation…",
+    "drop": "Supprimer la base",
+    "dropConfirm": "Supprimer la base {name} avec toutes ses tables, vues, routines et données ? C'est irréversible.",
+    "alterHint": "Seuls les réglages par défaut des nouvelles tables changent ; les tables et colonnes existantes gardent leur jeu de caractères.",
+    "apply": "Appliquer"
   }
 }
