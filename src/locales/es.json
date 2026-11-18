@@ -134,7 +134,8 @@
     "INVALID_VECTOR": "Vector no válido: escríbalo como [0.1, 0.2, …].",
     "VECTOR_DIMENSIONS": "El vector no tiene el número de dimensiones de la columna.",
     "NO_SINGLE_KEY": "Buscar por fila requiere una clave primaria de una sola columna.",
-    "INVALID_LIMIT": "k debe estar entre 1 y 1000."
+    "INVALID_LIMIT": "k debe estar entre 1 y 1000.",
+    "BINLOG_OFF": "El registro binario está desactivado en este servidor (log_bin)."
   },
   "tree": {
     "title": "Bases de datos",
@@ -363,6 +364,22 @@
       "NO": "No disponible",
       "DISABLED": "Desactivado"
     }
+  },
+  "binlog": {
+    "tab": "Binlog",
+    "filter": "Filtrar eventos",
+    "format": "Formato:",
+    "gtid": "Posición GTID:",
+    "files": "Archivos del registro binario",
+    "current": "Archivo en escritura",
+    "pos": "Posición",
+    "endPos": "Posición final",
+    "kind": "Evento",
+    "serverId": "Servidor",
+    "info": "Detalles",
+    "loaded": "{n} eventos cargados",
+    "more": "Cargar más",
+    "hint": "Los eventos Annotate_rows muestran la sentencia que originó los cambios de filas."
   },
   "vector": {
     "loading": "Cargando columnas vectoriales…",

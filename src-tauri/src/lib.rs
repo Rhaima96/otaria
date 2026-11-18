@@ -1,4 +1,5 @@
 mod admin;
+mod binlog;
 mod browse;
 mod db;
 mod designer;
@@ -295,6 +296,16 @@ async fn vector_search(
     k: u32,
 ) -> AppResult<browse::Rows> {
     vector::search(&pool(&state, &session_id).await?, &schema, &table, &column, distance, probe, k).await
+}
+
+#[tauri::command]
+async fn binlog_state(state: State<'_, AppState>, session_id: String) -> AppResult<binlog::State> {
+    binlog::state(&pool(&state, &session_id).await?).await
+}
+
+#[tauri::command]
+async fn binlog_events(state: State<'_, AppState>, session_id: String, file: String, offset: u64, limit: u64) -> AppResult<Vec<binlog::Event>> {
+    binlog::events(&pool(&state, &session_id).await?, &file, offset, limit).await
 }
 
 #[tauri::command]
@@ -679,6 +690,8 @@ pub fn run() {
             vector_columns,
             vector_search,
             engine_list,
+            binlog_state,
+            binlog_events,
             versioning_state,
             versioning_sql,
             versioning_apply,

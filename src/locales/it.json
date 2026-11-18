@@ -134,7 +134,8 @@
     "INVALID_VECTOR": "Vettore non valido: scrivilo come [0.1, 0.2, …].",
     "VECTOR_DIMENSIONS": "Il vettore non ha il numero di dimensioni della colonna.",
     "NO_SINGLE_KEY": "La ricerca per riga richiede una chiave primaria su una sola colonna.",
-    "INVALID_LIMIT": "k deve essere tra 1 e 1000."
+    "INVALID_LIMIT": "k deve essere tra 1 e 1000.",
+    "BINLOG_OFF": "Il log binario è disattivato su questo server (log_bin)."
   },
   "tree": {
     "title": "Database",
@@ -363,6 +364,22 @@
       "NO": "Non disponibile",
       "DISABLED": "Disattivato"
     }
+  },
+  "binlog": {
+    "tab": "Binlog",
+    "filter": "Filtra gli eventi",
+    "format": "Formato:",
+    "gtid": "Posizione GTID:",
+    "files": "File del log binario",
+    "current": "File in scrittura",
+    "pos": "Posizione",
+    "endPos": "Posizione finale",
+    "kind": "Evento",
+    "serverId": "Server",
+    "info": "Dettagli",
+    "loaded": "{n} eventi caricati",
+    "more": "Carica altri",
+    "hint": "Gli eventi Annotate_rows mostrano l'istruzione all'origine delle modifiche alle righe."
   },
   "vector": {
     "loading": "Caricamento delle colonne vettoriali…",

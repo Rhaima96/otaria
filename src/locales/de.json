@@ -134,7 +134,8 @@
     "INVALID_VECTOR": "Ungültiger Vektor: schreiben Sie ihn als [0.1, 0.2, …].",
     "VECTOR_DIMENSIONS": "Der Vektor hat nicht die Dimensionszahl der Spalte.",
     "NO_SINGLE_KEY": "Die Suche nach Zeile braucht einen Primärschlüssel auf einer einzigen Spalte.",
-    "INVALID_LIMIT": "k muss zwischen 1 und 1000 liegen."
+    "INVALID_LIMIT": "k muss zwischen 1 und 1000 liegen.",
+    "BINLOG_OFF": "Das Binärlog ist auf diesem Server deaktiviert (log_bin)."
   },
   "tree": {
     "title": "Datenbanken",
@@ -363,6 +364,22 @@
       "NO": "Nicht verfügbar",
       "DISABLED": "Deaktiviert"
     }
+  },
+  "binlog": {
+    "tab": "Binlog",
+    "filter": "Ereignisse filtern",
+    "format": "Format:",
+    "gtid": "GTID-Position:",
+    "files": "Binärlog-Dateien",
+    "current": "Aktuell beschriebene Datei",
+    "pos": "Position",
+    "endPos": "Endposition",
+    "kind": "Ereignis",
+    "serverId": "Server",
+    "info": "Details",
+    "loaded": "{n} Ereignisse geladen",
+    "more": "Mehr laden",
+    "hint": "Annotate_rows-Ereignisse zeigen die Anweisung hinter den Zeilenänderungen."
   },
   "vector": {
     "loading": "Vektorspalten werden geladen…",

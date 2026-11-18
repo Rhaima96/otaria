@@ -134,7 +134,8 @@
     "INVALID_VECTOR": "Vecteur invalide : écrivez-le sous la forme [0.1, 0.2, …].",
     "VECTOR_DIMENSIONS": "Le vecteur n'a pas le nombre de dimensions de la colonne.",
     "NO_SINGLE_KEY": "La recherche par ligne demande une clé primaire sur une seule colonne.",
-    "INVALID_LIMIT": "k doit être compris entre 1 et 1000."
+    "INVALID_LIMIT": "k doit être compris entre 1 et 1000.",
+    "BINLOG_OFF": "Le journal binaire est désactivé sur ce serveur (log_bin)."
   },
   "tree": {
     "title": "Bases de données",
@@ -363,6 +364,22 @@
       "NO": "Indisponible",
       "DISABLED": "Désactivé"
     }
+  },
+  "binlog": {
+    "tab": "Binlog",
+    "filter": "Filtrer les événements",
+    "format": "Format :",
+    "gtid": "Position GTID :",
+    "files": "Fichiers du journal binaire",
+    "current": "Fichier en cours d'écriture",
+    "pos": "Position",
+    "endPos": "Position de fin",
+    "kind": "Événement",
+    "serverId": "Serveur",
+    "info": "Détails",
+    "loaded": "{n} événements chargés",
+    "more": "Charger la suite",
+    "hint": "Les événements Annotate_rows montrent la requête à l'origine des modifications de lignes."
   },
   "vector": {
     "loading": "Chargement des colonnes vecteur…",

@@ -268,6 +268,23 @@ export type VectorDistance = "euclidean" | "cosine";
 /** Compare with a typed vector, or with the vector of the row whose (single-column) primary key is `value`. */
 export type VectorProbe = { kind: "text"; value: string } | { kind: "row"; value: string };
 
+export interface BinlogState {
+  /** ROW | STATEMENT | MIXED */
+  format: string;
+  /** Oldest first; the last one is being written. */
+  files: { name: string; size: number }[];
+  /** @@gtid_binlog_pos */
+  gtid: string;
+}
+
+export interface BinlogEvent {
+  pos: number;
+  kind: string;
+  serverId: number;
+  endPos: number;
+  info: string;
+}
+
 export interface Engine {
   name: string;
   /** YES | NO | DEFAULT | DISABLED */
@@ -459,6 +476,8 @@ export const api = {
   vectorColumns: (sessionId: string, schema: string, table: string) => invoke<VectorColumn[]>("vector_columns", { sessionId, schema, table }),
   vectorSearch: (sessionId: string, schema: string, table: string, column: string, distance: VectorDistance, probe: VectorProbe, k: number) =>
     invoke<Rows>("vector_search", { sessionId, schema, table, column, distance, probe, k }),
+  binlogState: (sessionId: string) => invoke<BinlogState>("binlog_state", { sessionId }),
+  binlogEvents: (sessionId: string, file: string, offset: number, limit: number) => invoke<BinlogEvent[]>("binlog_events", { sessionId, file, offset, limit }),
   engineList: (sessionId: string) => invoke<Engine[]>("engine_list", { sessionId }),
   listPlugins: (sessionId: string) => invoke<Plugin[]>("list_plugins", { sessionId }),
   pluginInstallSql: (name: string, library: string) => invoke<string>("plugin_install_sql", { name, library }),

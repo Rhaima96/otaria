@@ -134,7 +134,8 @@
     "INVALID_VECTOR": "Not a valid vector: write it as [0.1, 0.2, …].",
     "VECTOR_DIMENSIONS": "The vector does not have the column's number of dimensions.",
     "NO_SINGLE_KEY": "Searching by row needs a primary key on a single column.",
-    "INVALID_LIMIT": "k must be between 1 and 1000."
+    "INVALID_LIMIT": "k must be between 1 and 1000.",
+    "BINLOG_OFF": "Binary logging is off on this server (log_bin)."
   },
   "tree": {
     "title": "Databases",
@@ -363,6 +364,22 @@
       "NO": "Not available",
       "DISABLED": "Disabled"
     }
+  },
+  "binlog": {
+    "tab": "Binlog",
+    "filter": "Filter events",
+    "format": "Format:",
+    "gtid": "GTID position:",
+    "files": "Binary log files",
+    "current": "File being written",
+    "pos": "Position",
+    "endPos": "End position",
+    "kind": "Event",
+    "serverId": "Server",
+    "info": "Details",
+    "loaded": "{n} events loaded",
+    "more": "Load more",
+    "hint": "Annotate_rows events show the statement behind the row changes."
   },
   "vector": {
     "loading": "Loading vector columns…",
