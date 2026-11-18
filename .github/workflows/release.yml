@@ -1,6 +1,10 @@
 # Builds Otaria for macOS (one universal app: Apple Silicon + Intel), Windows and Linux, and attaches the installers
-# to a draft GitHub release. Runs on a version tag (git tag v0.1.0 && git push origin v0.1.0) or by hand.
-# Not signed yet: macOS signing and notarization plug in through the commented env block below.
+# to a draft release in the public repo Rhaima96/otaria-releases (this repo is private, and the in-app updater
+# cannot download assets from a private repo). Runs on a version tag (git tag v0.1.0 && git push origin v0.1.0)
+# or by hand. Publishing the draft makes it the update offered by the app (latest.json).
+# Secrets: RELEASES_TOKEN (fine-grained PAT, Contents read/write on otaria-releases only),
+# TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD (update signing key, `npx tauri signer generate`).
+# Not signed for macOS yet: signing and notarization plug in through the commented env block below.
 name: Release
 
 on:
@@ -60,7 +64,9 @@ jobs:
 
       - uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # macOS signing and notarization, once the secrets exist (Settings → Secrets → Actions):
           # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}                       # .p12, base64
           # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -69,6 +75,10 @@ jobs:
           # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}                             # app-specific password
           # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
+          owner: Rhaima96
+          repo: otaria-releases
+          # The tag is created in otaria-releases, which does not have this repo's commits.
+          releaseCommitish: main
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
           releaseName: Otaria ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
           releaseBody: |
@@ -76,4 +86,6 @@ jobs:
             `xattr -cr /Applications/Otaria.app`
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.args }}
+          # Updater bundles (.app.tar.gz, .msi/.exe, .AppImage + .sig) only in CI, where the signing key exists:
+          # in tauri.conf.json they would break local builds.
+          args: ${{ matrix.args }} --config '{"bundle":{"createUpdaterArtifacts":true}}'

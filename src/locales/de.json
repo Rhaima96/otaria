@@ -751,5 +751,18 @@
       "changed": "Geändert"
     },
     "portionHint": "FOR PORTION OF teilt die Zeilen, die den Bereich überlappen, an seinen Grenzen und ändert nur den Teil darin. Der Primärschlüssel muss (Periode WITHOUT OVERLAPS) enthalten, sonst schlägt die Teilung mit doppeltem Schlüssel fehl."
+  },
+  "update": {
+    "title": "Updates",
+    "current": "Installierte Version: {version}",
+    "checking": "Suche nach Updates…",
+    "latest": "Otaria ist auf dem neuesten Stand.",
+    "available": "Version {version} verfügbar",
+    "restartWarning": "Otaria startet nach der Installation neu: offene Verbindungen werden geschlossen, nicht gespeicherte Abfragen gehen verloren.",
+    "downloading": "Wird heruntergeladen…",
+    "auto": "Beim Start nach Updates suchen",
+    "check": "Jetzt suchen",
+    "install": "Installieren und neu starten",
+    "close": "Schließen"
   }
 }

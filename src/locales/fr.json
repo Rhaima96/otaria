@@ -751,5 +751,18 @@
       "changed": "Modifiée"
     },
     "portionHint": "FOR PORTION OF découpe les lignes qui chevauchent la plage à ses bornes et ne modifie que la partie intérieure. La clé primaire doit inclure (période WITHOUT OVERLAPS), sinon le découpage échoue sur une clé en double."
+  },
+  "update": {
+    "title": "Mises à jour",
+    "current": "Version installée : {version}",
+    "checking": "Recherche de mises à jour…",
+    "latest": "Otaria est à jour.",
+    "available": "Version {version} disponible",
+    "restartWarning": "Otaria redémarre après l'installation : les connexions ouvertes sont fermées et les requêtes non enregistrées sont perdues.",
+    "downloading": "Téléchargement…",
+    "auto": "Rechercher les mises à jour au démarrage",
+    "check": "Rechercher",
+    "install": "Installer et redémarrer",
+    "close": "Fermer"
   }
 }

@@ -751,5 +751,18 @@
       "changed": "Modificata"
     },
     "portionHint": "FOR PORTION OF divide le righe che si sovrappongono all'intervallo ai suoi limiti e modifica solo la parte interna. La chiave primaria deve includere (periodo WITHOUT OVERLAPS), altrimenti la divisione fallisce per chiave duplicata."
+  },
+  "update": {
+    "title": "Aggiornamenti",
+    "current": "Versione installata: {version}",
+    "checking": "Ricerca di aggiornamenti…",
+    "latest": "Otaria è aggiornato.",
+    "available": "Versione {version} disponibile",
+    "restartWarning": "Otaria si riavvia dopo l'installazione: le connessioni aperte vengono chiuse e le query non salvate vanno perse.",
+    "downloading": "Download in corso…",
+    "auto": "Cerca aggiornamenti all'avvio",
+    "check": "Cerca ora",
+    "install": "Installa e riavvia",
+    "close": "Chiudi"
   }
 }

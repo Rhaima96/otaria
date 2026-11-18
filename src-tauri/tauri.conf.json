@@ -33,5 +33,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ0MzJFNTg2NTBCM0I1MTQKUldRVXRiTlFodVV5UkFrUUE0SWs2NEhpTGNYaWJoaDNOYUF2NEZtbWU4YlovTUtEWGJtYWhFZWwK",
+      "endpoints": [
+        "https://github.com/Rhaima96/otaria-releases/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

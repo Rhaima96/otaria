@@ -485,6 +485,7 @@ export interface TransferProgress {
 
 export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
+  restartApp: () => invoke<void>("restart_app"),
   listProfiles: () => invoke<Profile[]>("list_profiles"),
   saveProfile: (profile: Profile, s: Secrets = {}) => invoke<Profile>("save_profile", { profile, ...s }),
   deleteProfile: (id: string) => invoke<void>("delete_profile", { id }),

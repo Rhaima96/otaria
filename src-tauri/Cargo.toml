@@ -30,6 +30,7 @@ uuid = { version = "1", features = ["v4"] }
 csv = "1.4.0"
 rust_xlsxwriter = { version = "0.102.0", default-features = false, features = ["constant_memory"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

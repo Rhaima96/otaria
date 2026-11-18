@@ -51,6 +51,12 @@ fn app_info() -> AppInfo {
     AppInfo { name: "Otaria", version: env!("CARGO_PKG_VERSION"), os: std::env::consts::OS }
 }
 
+/// Relaunch after an update is installed (macOS and Linux; the Windows installer restarts the app itself).
+#[tauri::command]
+fn restart_app(app: tauri::AppHandle) {
+    app.restart();
+}
+
 #[tauri::command]
 fn list_profiles(state: State<'_, AppState>) -> AppResult<Vec<Profile>> {
     state.store.list()
@@ -712,6 +718,7 @@ pub fn run() {
     });
     builder
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
             app.manage(AppState { store: Store::new(dir), sessions: Mutex::new(HashMap::new()), jobs: Default::default() });
@@ -719,6 +726,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_info,
+            restart_app,
             list_profiles,
             save_profile,
             delete_profile,

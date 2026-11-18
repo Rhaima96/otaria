@@ -5,6 +5,7 @@ import mark from "@/assets/mark.svg";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import ConnectionManager from "@/components/ConnectionManager.vue";
 import SessionView from "@/components/SessionView.vue";
+import UpdateButton from "@/components/UpdateButton.vue";
 import { LOCALES, setLocale, type Locale } from "@/i18n";
 import { useTheme, type ThemePreference } from "@/composables/useTheme";
 import { useSessions } from "@/composables/useSessions";
@@ -50,6 +51,7 @@ const tab = "flex h-full items-center gap-1.5 border-r px-3 hover:bg-secondary";
       </nav>
 
       <div class="flex items-center gap-3 px-3">
+        <UpdateButton />
         <div role="radiogroup" :aria-label="t('settings.theme')" class="flex rounded-md border p-0.5">
           <button
             v-for="th in themes"

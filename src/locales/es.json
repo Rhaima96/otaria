@@ -751,5 +751,18 @@
       "changed": "Modificada"
     },
     "portionHint": "FOR PORTION OF divide las filas que se solapan con el rango en sus límites y solo cambia la parte interior. La clave primaria debe incluir (periodo WITHOUT OVERLAPS); si no, la división falla por clave duplicada."
+  },
+  "update": {
+    "title": "Actualizaciones",
+    "current": "Versión instalada: {version}",
+    "checking": "Buscando actualizaciones…",
+    "latest": "Otaria está actualizado.",
+    "available": "Versión {version} disponible",
+    "restartWarning": "Otaria se reinicia tras la instalación: las conexiones abiertas se cierran y las consultas no guardadas se pierden.",
+    "downloading": "Descargando…",
+    "auto": "Buscar actualizaciones al iniciar",
+    "check": "Buscar ahora",
+    "install": "Instalar y reiniciar",
+    "close": "Cerrar"
   }
 }

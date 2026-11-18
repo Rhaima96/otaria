@@ -751,5 +751,18 @@
       "changed": "Changed"
     },
     "portionHint": "FOR PORTION OF splits the rows that overlap the range at its bounds and changes only the part inside. The primary key must include (period WITHOUT OVERLAPS), otherwise the split fails with a duplicate key."
+  },
+  "update": {
+    "title": "Updates",
+    "current": "Installed version: {version}",
+    "checking": "Checking for updates…",
+    "latest": "Otaria is up to date.",
+    "available": "Version {version} available",
+    "restartWarning": "Otaria restarts after the install: open connections are closed and unsaved queries are lost.",
+    "downloading": "Downloading…",
+    "auto": "Check for updates at startup",
+    "check": "Check now",
+    "install": "Install and restart",
+    "close": "Close"
   }
 }
