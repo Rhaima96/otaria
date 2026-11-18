@@ -17,8 +17,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # One universal build: a single macOS runner to get (they are the scarcest), one .dmg for both CPUs.
-          - platform: macos-latest
+          # One universal build (one .dmg for Apple Silicon and Intel) on an Intel runner: the arm64 pool
+          # (macos-latest) twice left the job unassigned for lack of capacity. Intel cross-compiles arm64.
+          # ponytail: macos-15-intel is the last Intel image (retired in 2027); move back to macos-latest then.
+          - platform: macos-15-intel
             args: --target universal-apple-darwin
           - platform: windows-latest
             args: ""
@@ -43,7 +45,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           # The universal macOS build compiles both targets.
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ startsWith(matrix.platform, 'macos') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - uses: swatinem/rust-cache@v2
         with:
