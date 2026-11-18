@@ -420,6 +420,7 @@
     "serverId": "Server",
     "info": "Details",
     "loaded": "{n} events loaded",
+    "matching": "{n} of {total} loaded events match",
     "more": "Load more",
     "hint": "Annotate_rows events show the statement behind the row changes."
   },

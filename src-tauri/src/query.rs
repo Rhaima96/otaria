@@ -168,6 +168,53 @@ pub struct StmtResult {
     pub affected_rows: u64,
     pub warnings: u16,
     pub elapsed_ms: u64,
+    /// Where each column comes from (None: an expression); the JSON viewer's JSON_TABLE helper uses it.
+    pub origins: Vec<Option<ColumnOrigin>>,
+    /// Columns of type VECTOR (bytes on the wire), found by `mark_vectors`.
+    pub vector_columns: Vec<usize>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColumnOrigin {
+    pub schema: String,
+    pub table: String,
+    pub column: String,
+    /// Binary character set: maybe a VECTOR, which the protocol does not name.
+    #[serde(skip)]
+    pub binary: bool,
+}
+
+/// Binary character set id in column metadata.
+const BINARY_CHARSET: u16 = 63;
+
+/// Mark the VECTOR columns of a run: the protocol sends them as plain bytes, so the binary columns
+/// that come from a table are looked up in information_schema. On a pool connection, never the
+/// editor's: a query there would reset its SHOW WARNINGS / FOUND_ROWS().
+pub async fn mark_vectors(pool: &Pool, out: &mut RunOutput) -> AppResult<()> {
+    let mut tables: Vec<(String, String)> = Vec::new();
+    for o in out.results.iter().flat_map(|r| r.origins.iter().flatten()).filter(|o| o.binary) {
+        if !tables.iter().any(|(s, t)| *s == o.schema && *t == o.table) {
+            tables.push((o.schema.clone(), o.table.clone()));
+        }
+    }
+    if tables.is_empty() {
+        return Ok(());
+    }
+    let mut conn = pool.get_conn().await?;
+    let mut vectors: Vec<(String, String, String)> = Vec::new();
+    for (schema, table) in tables {
+        let cols: Vec<String> = conn
+            .exec("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND DATA_TYPE = 'vector'", (&schema, &table))
+            .await?;
+        vectors.extend(cols.into_iter().map(|c| (schema.clone(), table.clone(), c)));
+    }
+    for r in &mut out.results {
+        r.vector_columns = (0..r.origins.len())
+            .filter(|&i| r.origins[i].as_ref().is_some_and(|o| o.binary && vectors.iter().any(|(s, t, c)| *s == o.schema && *t == o.table && *c == o.column)))
+            .collect();
+    }
+    Ok(())
 }
 
 #[derive(Debug, Serialize)]
@@ -211,6 +258,19 @@ async fn run_one(conn: &mut Conn, sql: &str, max_rows: usize, results: &mut Vec<
     // One statement can return several result sets (CALL).
     loop {
         let columns: Vec<String> = res.columns_ref().iter().map(|c| c.name_str().into_owned()).collect();
+        let origins = res
+            .columns_ref()
+            .iter()
+            .map(|c| {
+                let table = c.org_table_str();
+                (!table.is_empty()).then(|| ColumnOrigin {
+                    schema: c.schema_str().into_owned(),
+                    table: table.into_owned(),
+                    column: c.org_name_str().into_owned(),
+                    binary: c.character_set() == BINARY_CHARSET,
+                })
+            })
+            .collect();
         let (mut rows, mut total) = (Vec::new(), 0u64);
         // Streamed: rows past the cap are read and dropped, never kept in memory.
         // ponytail: a huge result is still read to the end; KILL QUERY at the cap if that gets slow.
@@ -228,6 +288,8 @@ async fn run_one(conn: &mut Conn, sql: &str, max_rows: usize, results: &mut Vec<
             affected_rows: res.affected_rows(),
             warnings: res.warnings(),
             elapsed_ms: t.elapsed().as_millis() as u64,
+            origins,
+            vector_columns: Vec::new(),
         };
         // A CALL ends with an empty OK packet: keep it only if nothing came before.
         if first || !r.columns.is_empty() || r.affected_rows > 0 {
@@ -452,5 +514,26 @@ LIMIT 100;"
         let out = run(&mut conn, &["SELECT SLEEP(5)".into()], 10).await;
         // SLEEP returns 1 when interrupted rather than failing.
         assert!(out.error.is_some() || out.results[0].rows[0][0].as_deref() == Some("1"));
+
+        // VECTOR columns are found through their origin; a VARBINARY and an expression are not.
+        let mut out = run(
+            &mut conn,
+            &pick(
+                "DROP DATABASE IF EXISTS otaria_vec_q; CREATE DATABASE otaria_vec_q;
+                 CREATE TABLE otaria_vec_q.t (id INT PRIMARY KEY, b VARBINARY(8), v VECTOR(2) NOT NULL);
+                 INSERT INTO otaria_vec_q.t VALUES (1, 0x01, VEC_FromText('[1,2]'));
+                 SELECT id, b, v, VEC_FromText('[3,4]') e FROM otaria_vec_q.t",
+                None,
+            ),
+            10,
+        )
+        .await;
+        assert!(out.error.is_none(), "{:?}", out.error);
+        mark_vectors(&pool, &mut out).await.unwrap();
+        let r = out.results.last().unwrap();
+        assert_eq!(r.vector_columns, vec![2]);
+        assert_eq!(r.origins[0].as_ref().map(|o| (o.table.as_str(), o.column.as_str())), Some(("t", "id")));
+        assert!(r.origins[3].is_none());
+        run(&mut conn, &["DROP DATABASE otaria_vec_q".into()], 1).await;
     }
 }

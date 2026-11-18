@@ -2,13 +2,14 @@
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { AgGridVue } from "ag-grid-vue3";
-import type { ColDef } from "ag-grid-community";
-import { Gauge, History, Play, Square, Star, TextCursorInput, Trash2, X } from "lucide-vue-next";
+import type { ColDef, GridApi, GridReadyEvent } from "ag-grid-community";
+import { Braces, Gauge, History, Play, Square, Star, TextCursorInput, Trash2, X } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
+import JsonDialog from "@/components/JsonDialog.vue";
 import PlanNode from "@/components/PlanNode.vue";
 import { useQueryLibrary } from "@/composables/useQueryLibrary";
 import { api, toAppError, type AppError, type RunOutput, type RunRequest } from "@/lib/api";
-import { theme } from "@/lib/grid";
+import { theme, vectorText } from "@/lib/grid";
 import { parsePlan } from "@/lib/plan";
 import { monaco, sources } from "@/lib/monaco";
 import { cn } from "@/lib/utils";
@@ -63,8 +64,15 @@ onMounted(() => {
   editor.addCommand(KeyMod.CtrlCmd | KeyCode.Enter, () => run(false));
   editor.addCommand(KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.Enter, () => run(true));
   editor.addCommand(KeyCode.F9, () => run(false));
+  editor.onDidChangeModelContent(() => (text.value = editor!.getValue()));
   editor.focus();
 });
+
+// Unsaved text: changed since the tab opened or since the whole script last ran (that is in the
+// history). SessionView asks before closing the tab.
+const text = ref(props.initialSql ?? "");
+const ran = ref(props.initialSql ?? "");
+defineExpose({ dirty: computed(() => text.value.trim() !== ran.value.trim()) });
 
 onBeforeUnmount(() => {
   editor?.getModel()?.dispose();
@@ -83,6 +91,7 @@ async function run(currentOnly: boolean, analyze = false) {
   const sel = editor.getSelection();
   const selected = sel && !sel.isEmpty() ? model.getValueInRange(sel) : "";
   const sql = selected || model.getValue();
+  if (!currentOnly && !analyze && !selected) ran.value = sql;
   if (!sql.trim()) return;
   const offset = model.getOffsetAt(editor.getPosition()!);
   const cursor = (currentOnly || analyze) && !selected ? new TextEncoder().encode(sql.slice(0, offset)).length : null;
@@ -152,10 +161,33 @@ const colDefs = computed<ColDef<(string | null)[]>[]>(() =>
     colId: String(i),
     headerName: name,
     valueGetter: (p) => p.data?.[i],
-    valueFormatter: (p) => (p.value === null ? "NULL" : String(p.value)),
+    valueFormatter: (p) => (p.value === null ? "NULL" : shown.value?.vectorColumns.includes(i) ? vectorText(p.value) : String(p.value)),
     cellClassRules: { "text-muted-foreground italic": (p) => p.value === null },
   })),
 );
+
+// JSON viewer on the focused result cell (read-only). Its JSON_TABLE helper needs the column's
+// table: offered only when the column comes from one; the query lands at the end of this editor.
+let gridApi: GridApi | null = null;
+const onGridReady = (e: GridReadyEvent) => (gridApi = e.api);
+const json = ref<InstanceType<typeof JsonDialog> | null>(null);
+const jsonOrigin = ref<{ schema: string; table: string } | null>(null);
+function openJson() {
+  const cell = gridApi?.getFocusedCell();
+  const r = shown.value;
+  if (!cell || !r) return;
+  const i = Number(cell.column.getColId());
+  const o = r.origins[i];
+  jsonOrigin.value = o && { schema: o.schema, table: o.table };
+  json.value?.open({ column: o?.column ?? r.columns[i], value: r.rows[cell.rowIndex]?.[i] ?? null, editable: false });
+}
+function appendSql(sql: string) {
+  if (!editor) return;
+  const end = editor.getModel()!.getFullModelRange().getEndPosition();
+  editor.executeEdits("json-table", [{ range: new monaco.Range(end.lineNumber, end.column, end.lineNumber, end.column), text: `\n\n${sql}` }]);
+  editor.revealLine(editor.getModel()!.getLineCount());
+  editor.focus();
+}
 
 /** A one-cell EXPLAIN / ANALYZE FORMAT=JSON result is drawn as a tree (toggle back to the grid). */
 const plan = computed(() => (shown.value?.columns.length === 1 && shown.value.rows.length === 1 ? parsePlan(shown.value.rows[0][0]) : null));
@@ -228,10 +260,12 @@ const tabBtn = "flex h-full shrink-0 items-center gap-1 border-r px-3 hover:bg-s
               :default-col-def="{ resizable: true, sortable: true, minWidth: 60, maxWidth: 480 }"
               :locale-text="{ noRowsToShow: t('grid.noRows') }"
               :enable-cell-text-selection="true"
+              @grid-ready="onGridReady"
             />
             <div class="flex h-7 shrink-0 items-center gap-2 border-t px-2 text-muted-foreground">
               <span>{{ t("editor.rows", { n: shown.rows.length }) }}</span>
               <span v-if="shown.totalRows > shown.rows.length" class="text-warning">{{ t("editor.capped", { total: shown.totalRows }) }}</span>
+              <button v-if="!(plan && planView)" :class="btn" class="text-foreground" :title="t('json.openHint')" @click="openJson"><Braces class="size-3.5" />{{ t("json.open") }}</button>
               <button v-if="plan" :class="btn" class="text-foreground" @click="planView = !planView">{{ planView ? t("plan.showGrid") : t("plan.showTree") }}</button>
               <span class="ml-auto">{{ t("editor.elapsed", { ms: shown.elapsedMs }) }}</span>
             </div>
@@ -312,5 +346,6 @@ const tabBtn = "flex h-full shrink-0 items-center gap-1 border-r px-3 hover:bg-s
         </div>
       </form>
     </dialog>
+    <JsonDialog ref="json" :schema="jsonOrigin?.schema ?? ''" :table="jsonOrigin?.table ?? ''" @sql="appendSql" />
   </div>
 </template>

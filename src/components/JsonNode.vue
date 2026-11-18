@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 
 type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
 /** One key of a JSON document. Scalars are edited in place (`parent[name] = …`), then `change` is emitted. */
-const props = defineProps<{ name: string | number | null; value: Json; parent: Json[] | Record<string, Json> | null; path: (string | number)[]; editable: boolean; depth: number }>();
+const props = defineProps<{ name: string | number | null; value: Json; parent: Json[] | Record<string, Json> | null; path: (string | number)[]; editable: boolean; depth: number; noTable?: boolean }>();
 const emit = defineEmits<{ change: []; table: [path: (string | number)[], sample: Json] }>();
 const { t } = useI18n();
 const open = ref(props.depth < 2);
@@ -46,7 +46,7 @@ const label = computed(() => (props.name === null ? "" : typeof props.name === "
       <span v-if="label !== ''" class="shrink-0 font-mono text-muted-foreground">{{ label }}</span>
       <template v-if="isObj">
         <span class="font-mono text-xs text-muted-foreground">{{ summary }}</span>
-        <button v-if="tableable" :title="t('json.tableHint')" class="ml-1 flex h-5 items-center gap-1 rounded-sm px-1 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground" @click="emit('table', path, (value as Json[])[0])">
+        <button v-if="tableable && !noTable" :title="t('json.tableHint')" class="ml-1 flex h-5 items-center gap-1 rounded-sm px-1 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground" @click="emit('table', path, (value as Json[])[0])">
           <TableProperties class="size-3" />{{ t("json.table") }}
         </button>
       </template>
@@ -68,6 +68,7 @@ const label = computed(() => (props.name === null ? "" : typeof props.name === "
         :parent="value as Record<string, Json>"
         :path="[...path, Array.isArray(value) ? Number(k) : k]"
         :editable="editable"
+        :no-table="noTable"
         :depth="depth + 1"
         @change="emit('change')"
         @table="(p, s) => emit('table', p, s)"

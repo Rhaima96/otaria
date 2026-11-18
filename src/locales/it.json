@@ -420,6 +420,7 @@
     "serverId": "Server",
     "info": "Dettagli",
     "loaded": "{n} eventi caricati",
+    "matching": "{n} di {total} eventi caricati corrispondono",
     "more": "Carica altri",
     "hint": "Gli eventi Annotate_rows mostrano l'istruzione all'origine delle modifiche alle righe."
   },

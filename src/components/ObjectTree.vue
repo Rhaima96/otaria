@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { nextTick, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui";
 import { ChevronRight, Database, Download, GitCompareArrows, LoaderCircle, Network, Plus, RefreshCw, Search, Upload } from "lucide-vue-next";
@@ -46,8 +46,16 @@ function toggle(schema: string) {
   else loadObjects(schema);
 }
 
+/** Expand the object's schema and scroll its row into view (object opened from Cmd+P). */
+const root = ref<HTMLElement | null>(null);
+async function reveal(schema: string, obj: DbObject) {
+  if (!Array.isArray(expanded.value[schema])) await loadObjects(schema);
+  await nextTick();
+  root.value?.querySelector(`[data-id="${CSS.escape(`${schema}.${obj.kind}.${obj.name}`)}"]`)?.scrollIntoView({ block: "nearest" });
+}
+
 onMounted(load);
-defineExpose({ load });
+defineExpose({ load, reveal });
 const row = "flex w-full items-center gap-1.5 py-0.5 pr-2 text-left hover:bg-secondary";
 // Row actions on hover. Transfer icons match the dialog: export = Download (to a file), import = Upload (a file).
 const trigger =
@@ -57,7 +65,7 @@ const item = "cursor-default rounded-sm px-2 py-1 outline-none data-highlighted:
 </script>
 
 <template>
-  <div class="flex h-full flex-col">
+  <div ref="root" class="flex h-full flex-col">
     <div class="flex h-8 shrink-0 items-center justify-between border-b px-2">
       <span class="font-medium text-muted-foreground">{{ t("tree.title") }}</span>
       <span class="flex items-center">
@@ -107,6 +115,7 @@ const item = "cursor-default rounded-sm px-2 py-1 outline-none data-highlighted:
         <ul v-if="Array.isArray(expanded[s])" role="group">
           <li v-for="o in expanded[s]" :key="o.kind + o.name" role="treeitem">
             <button
+              :data-id="`${s}.${o.kind}.${o.name}`"
               :class="cn(row, 'pl-9', selected === `${s}.${o.kind}.${o.name}` && 'bg-selection')"
               :title="t(`kinds.${o.kind}`)"
               @click="emit('open', s, o)"

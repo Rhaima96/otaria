@@ -254,6 +254,10 @@ export interface StmtResult {
   affectedRows: number;
   warnings: number;
   elapsedMs: number;
+  /** Source of each column (null: an expression). */
+  origins: ({ schema: string; table: string; column: string } | null)[];
+  /** Indexes of the VECTOR columns (bytes on the wire). */
+  vectorColumns: number[];
 }
 
 export interface RunOutput {

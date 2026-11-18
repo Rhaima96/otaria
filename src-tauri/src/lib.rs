@@ -656,8 +656,14 @@ async fn run_sql(
         return Err(AppError { detail: Some(risky.join(";\n")), ..AppError::new("CONFIRM_RISKY", "") });
     }
     let (_, _, conn) = editor(&state, &session_id, &editor_id, schema.as_deref()).await?;
-    let mut conn = conn.lock().await;
-    Ok(query::run(&mut conn, &stmts, max_rows).await)
+    let mut out = query::run(&mut *conn.lock().await, &stmts, max_rows).await;
+    // VECTOR exists on MariaDB only. Display only: if the lookup fails, the cells stay in hex.
+    if is_mariadb(&state, &session_id).await?
+        && let Ok(p) = pool(&state, &session_id).await
+    {
+        let _ = query::mark_vectors(&p, &mut out).await;
+    }
+    Ok(out)
 }
 
 #[tauri::command]

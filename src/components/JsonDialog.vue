@@ -98,7 +98,7 @@ const seg = "h-6 rounded-sm px-2 hover:bg-secondary";
 
     <div class="flex h-[60vh] flex-col gap-2 p-4">
       <div v-if="mode === 'tree' && treeOk" class="min-h-0 flex-1 overflow-auto rounded-sm border bg-card p-2">
-        <JsonNode :name="null" :value="doc" :parent="null" :path="[]" :editable="editable" :depth="0" @change="fromTree" @table="jsonTable" />
+        <JsonNode :name="null" :value="doc" :parent="null" :path="[]" :editable="editable" :depth="0" :no-table="!table" @change="fromTree" @table="jsonTable" />
       </div>
       <textarea
         v-else

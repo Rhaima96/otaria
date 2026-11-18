@@ -420,6 +420,7 @@
     "serverId": "Server",
     "info": "Details",
     "loaded": "{n} Ereignisse geladen",
+    "matching": "{n} von {total} geladenen Ereignissen passen",
     "more": "Mehr laden",
     "hint": "Annotate_rows-Ereignisse zeigen die Anweisung hinter den Zeilenänderungen."
   },

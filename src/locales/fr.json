@@ -420,6 +420,7 @@
     "serverId": "Serveur",
     "info": "Détails",
     "loaded": "{n} événements chargés",
+    "matching": "{n} sur {total} événements chargés correspondent",
     "more": "Charger la suite",
     "hint": "Les événements Annotate_rows montrent la requête à l'origine des modifications de lignes."
   },
