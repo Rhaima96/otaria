@@ -1,5 +1,5 @@
 //! Table designer: load a table definition, diff two definitions into one ALTER TABLE, CREATE TABLE,
-//! and the table-level operations (rename, truncate, drop).
+//! the table-level operations (rename, truncate, drop), and CREATE DATABASE.
 //!
 //! DDL cannot take parameters. Identifiers go through `ident`, text values (defaults, comments) through
 //! `literal`, keywords (engine, collation, FK rules, index kinds) are checked against a whitelist.
@@ -682,9 +682,74 @@ pub async fn collations(pool: &Pool) -> AppResult<Vec<String>> {
     Ok(conn.query("SELECT COLLATION_NAME FROM information_schema.COLLATIONS ORDER BY 1").await?)
 }
 
+/// Character sets with their collations, and the server defaults to preselect (new database dialog).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Charsets {
+    pub default_charset: String,
+    pub default_collation: String,
+    /// (charset, collations), the charset's default collation first.
+    pub charsets: Vec<(String, Vec<String>)>,
+}
+
+pub async fn charsets(pool: &Pool) -> AppResult<Charsets> {
+    let mut conn = pool.get_conn().await?;
+    let (default_charset, default_collation): (String, String) =
+        conn.query_first("SELECT @@character_set_server, @@collation_server").await?.unwrap_or_default();
+    // MariaDB 10.10+ lists UCA 14 collations (the default since 11.x: utf8mb4_uca1400_ai_ci) without a charset in
+    // COLLATIONS; their full per-charset names are only in FULL_COLLATION_NAME. MySQL has no such column.
+    let full = "SELECT CHARACTER_SET_NAME, FULL_COLLATION_NAME FROM information_schema.COLLATION_CHARACTER_SET_APPLICABILITY
+                ORDER BY CHARACTER_SET_NAME, IS_DEFAULT DESC, FULL_COLLATION_NAME";
+    let plain = "SELECT CHARACTER_SET_NAME, COLLATION_NAME FROM information_schema.COLLATIONS
+                 WHERE CHARACTER_SET_NAME IS NOT NULL ORDER BY CHARACTER_SET_NAME, IS_DEFAULT DESC, COLLATION_NAME";
+    let rows: Vec<(String, String)> = match conn.query(full).await {
+        Ok(rows) => rows,
+        Err(_) => conn.query(plain).await?,
+    };
+    let mut charsets: Vec<(String, Vec<String>)> = Vec::new();
+    for (cs, coll) in rows {
+        match charsets.last_mut() {
+            Some((last, colls)) if *last == cs => colls.push(coll),
+            _ => charsets.push((cs, vec![coll])),
+        }
+    }
+    Ok(Charsets { default_charset, default_collation, charsets })
+}
+
+/// `CREATE DATABASE name [CHARACTER SET cs] [COLLATE coll]`; empty charset or collation = server default.
+pub fn create_database_sql(name: &str, charset: &str, collation: &str) -> AppResult<String> {
+    if name.trim().is_empty() {
+        return Err(AppError { detail: Some("name".into()), ..AppError::new("INVALID_NAME", String::new()) });
+    }
+    let mut s = format!("CREATE DATABASE {}", ident(name.trim()));
+    if !charset.is_empty() {
+        s += &format!(" CHARACTER SET {}", word("charset", charset)?);
+    }
+    if !collation.is_empty() {
+        s += &format!(" COLLATE {}", word("collation", collation)?);
+    }
+    Ok(s)
+}
+
+pub async fn create_database(pool: &Pool, name: &str, charset: &str, collation: &str) -> AppResult<()> {
+    let sql = create_database_sql(name, charset, collation)?;
+    Ok(pool.get_conn().await?.query_drop(sql).await?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn create_database_statement() {
+        assert_eq!(create_database_sql(" shop ", "", "").unwrap(), "CREATE DATABASE `shop`");
+        assert_eq!(
+            create_database_sql("a`b", "utf8mb4", "utf8mb4_uca1400_ai_ci").unwrap(),
+            "CREATE DATABASE `a``b` CHARACTER SET utf8mb4 COLLATE utf8mb4_uca1400_ai_ci"
+        );
+        assert_eq!(create_database_sql("x", "utf8; DROP", "").unwrap_err().code, "INVALID_NAME");
+        assert_eq!(create_database_sql("  ", "", "").unwrap_err().code, "INVALID_NAME");
+    }
 
     fn col(name: &str, ty: &str) -> ColumnDef {
         ColumnDef {
@@ -917,6 +982,20 @@ mod tests {
 
     /// Round trip on a real server: what we load must diff to nothing, and our ALTERs must apply.
     /// OTARIA_TEST_DB="host:port:user:password" cargo test -- --ignored
+    #[tokio::test]
+    #[ignore]
+    async fn charsets_and_create_database_on_test_server() {
+        let pool = pool();
+        let c = charsets(&pool).await.unwrap();
+        // The server default collation must be pickable (UCA 14 names on MariaDB 11+).
+        let (_, colls) = c.charsets.iter().find(|(cs, _)| *cs == c.default_charset).unwrap();
+        assert!(colls.contains(&c.default_collation), "{} not in {colls:?}", c.default_collation);
+        run(&pool, &["DROP DATABASE IF EXISTS otaria_newdb".into()]).await.unwrap();
+        create_database(&pool, "otaria_newdb", &c.default_charset, &c.default_collation).await.unwrap();
+        assert_eq!(create_database(&pool, "otaria_newdb", "", "").await.unwrap_err().server_code, Some(1007));
+        run(&pool, &["DROP DATABASE otaria_newdb".into()]).await.unwrap();
+    }
+
     #[tokio::test]
     #[ignore]
     async fn designer_on_test_server() {

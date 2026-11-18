@@ -165,6 +165,21 @@ async fn pool(state: &AppState, session_id: &str) -> AppResult<mysql_async::Pool
 }
 
 #[tauri::command]
+async fn list_charsets(state: State<'_, AppState>, session_id: String) -> AppResult<designer::Charsets> {
+    designer::charsets(&pool(&state, &session_id).await?).await
+}
+
+#[tauri::command]
+fn create_database_sql(name: String, charset: String, collation: String) -> AppResult<String> {
+    designer::create_database_sql(&name, &charset, &collation)
+}
+
+#[tauri::command]
+async fn create_database(state: State<'_, AppState>, session_id: String, name: String, charset: String, collation: String) -> AppResult<()> {
+    designer::create_database(&pool(&state, &session_id).await?, &name, &charset, &collation).await
+}
+
+#[tauri::command]
 async fn list_schemas(state: State<'_, AppState>, session_id: String) -> AppResult<Vec<String>> {
     browse::schemas(&pool(&state, &session_id).await?).await
 }
@@ -727,6 +742,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_info,
             restart_app,
+            list_charsets,
+            create_database_sql,
+            create_database,
             list_profiles,
             save_profile,
             delete_profile,

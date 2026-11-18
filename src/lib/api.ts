@@ -56,6 +56,13 @@ export function toAppError(e: unknown): AppError {
   return isAppError(e) ? e : { code: "UNKNOWN", message: String(e), serverCode: null, detail: null };
 }
 
+/** Server character sets: [charset, collations (its default first)]. */
+export interface Charsets {
+  defaultCharset: string;
+  defaultCollation: string;
+  charsets: [string, string[]][];
+}
+
 export type ObjectKind = "table" | "view" | "sequence" | "procedure" | "function" | "trigger" | "event";
 
 /** Schema comparison: one line per object that differs; `sql` turns the target into the source. */
@@ -486,6 +493,10 @@ export interface TransferProgress {
 export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
   restartApp: () => invoke<void>("restart_app"),
+  listCharsets: (sessionId: string) => invoke<Charsets>("list_charsets", { sessionId }),
+  createDatabaseSql: (name: string, charset: string, collation: string) => invoke<string>("create_database_sql", { name, charset, collation }),
+  createDatabase: (sessionId: string, name: string, charset: string, collation: string) =>
+    invoke<void>("create_database", { sessionId, name, charset, collation }),
   listProfiles: () => invoke<Profile[]>("list_profiles"),
   saveProfile: (profile: Profile, s: Secrets = {}) => invoke<Profile>("save_profile", { profile, ...s }),
   deleteProfile: (id: string) => invoke<void>("delete_profile", { id }),

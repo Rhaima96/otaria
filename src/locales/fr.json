@@ -764,5 +764,15 @@
     "check": "Rechercher",
     "install": "Installer et redémarrer",
     "close": "Fermer"
+  },
+  "newDatabase": {
+    "open": "Nouvelle base…",
+    "title": "Nouvelle base de données",
+    "name": "Nom",
+    "charset": "Jeu de caractères",
+    "collation": "Collation",
+    "preview": "Saisissez un nom pour voir le SQL.",
+    "cancel": "Annuler",
+    "create": "Créer"
   }
 }

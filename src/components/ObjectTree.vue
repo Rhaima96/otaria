@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui";
 import { ChevronRight, Database, Download, GitCompareArrows, LoaderCircle, Network, Plus, RefreshCw, Search, Upload } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
+import NewDatabaseDialog from "@/components/NewDatabaseDialog.vue";
 import { api, toAppError, type AppError, type DbObject, type ObjectKind } from "@/lib/api";
 import { KIND_ORDER, objectIcon } from "@/lib/objects";
 import { cn } from "@/lib/utils";
@@ -18,6 +19,7 @@ const schemas = ref<string[]>([]);
 /** Loaded objects per expanded schema; "loading" while the request runs. */
 const expanded = ref<Record<string, DbObject[] | "loading">>({});
 const error = ref<AppError | null>(null);
+const newDb = ref<InstanceType<typeof NewDatabaseDialog> | null>(null);
 
 async function load() {
   error.value = null;
@@ -69,6 +71,9 @@ const item = "cursor-default rounded-sm px-2 py-1 outline-none data-highlighted:
     <div class="flex h-8 shrink-0 items-center justify-between border-b px-2">
       <span class="font-medium text-muted-foreground">{{ t("tree.title") }}</span>
       <span class="flex items-center">
+        <button :title="t('newDatabase.open')" class="flex size-6 items-center justify-center rounded-sm hover:bg-secondary" @click="newDb?.open()">
+          <Plus class="size-3.5" /><span class="sr-only">{{ t("newDatabase.open") }}</span>
+        </button>
         <button :title="t('palette.button')" class="flex size-6 items-center justify-center rounded-sm hover:bg-secondary" @click="emit('search')">
           <Search class="size-3.5" /><span class="sr-only">{{ t("palette.button") }}</span>
         </button>
@@ -78,6 +83,7 @@ const item = "cursor-default rounded-sm px-2 py-1 outline-none data-highlighted:
       </span>
     </div>
     <ErrorLine v-if="error" :error="error" class="m-2" />
+    <NewDatabaseDialog ref="newDb" :session-id="sessionId" @created="load" />
     <ul class="min-h-0 flex-1 overflow-auto py-1 select-none" role="tree">
       <li v-for="s in schemas" :key="s" role="treeitem" :aria-expanded="!!expanded[s]">
         <div class="group relative">
