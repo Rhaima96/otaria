@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { defineAsyncComponent, onMounted, onUnmounted, ref } from "vue";
-import { ask } from "@tauri-apps/plugin-dialog";
 import { useI18n } from "vue-i18n";
 import { Activity, Cog, FileCode, Gauge, Info, ListPlus, Lock, LockOpen, Plus, Puzzle, ScrollText, Share2, SlidersHorizontal, TableProperties, TriangleAlert, Users, X } from "lucide-vue-next";
 import DiagramDialog from "@/components/DiagramDialog.vue";
@@ -23,6 +22,7 @@ import UsersView from "@/components/UsersView.vue";
 import type { DbObject, ObjectKind, OpenedSession } from "@/lib/api";
 import { newScript } from "@/lib/templates";
 import { useSessions } from "@/composables/useSessions";
+import { useConfirm } from "@/composables/useConfirm";
 import { objectIcon } from "@/lib/objects";
 import { cn } from "@/lib/utils";
 
@@ -56,6 +56,7 @@ const tree = ref<InstanceType<typeof ObjectTree> | null>(null);
 // Mod+P object search, Mod+T new query, Mod+W close tab, Mod+1…9 go to tab (9 = last), Ctrl+(Shift+)Tab next / previous.
 const palette = ref<InstanceType<typeof ObjectPalette> | null>(null);
 const { activeTab } = useSessions();
+const { confirm } = useConfirm();
 const mac = navigator.userAgent.includes("Mac");
 function onKey(e: KeyboardEvent) {
   if (activeTab.value !== props.session.sessionId || e.altKey) return;
@@ -134,7 +135,7 @@ function setPanel(id: string, el: unknown) {
 }
 /** Close from the UI (cross, middle click, Mod+W): asks first if the tab has unsaved changes. */
 async function closeTab(id: string) {
-  if (panels.get(id)?.dirty && !(await ask(t("object.closeDirty"), { kind: "warning", okLabel: t("object.close"), cancelLabel: t("grid.cancel") }))) return;
+  if (panels.get(id)?.dirty && !(await confirm(t("object.closeDirty"), t("object.close")))) return;
   close(id);
 }
 

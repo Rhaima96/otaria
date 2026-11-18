@@ -2,6 +2,7 @@
 import { useI18n } from "vue-i18n";
 import { Monitor, Moon, Plug, Sun, X } from "lucide-vue-next";
 import mark from "@/assets/mark.svg";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import ConnectionManager from "@/components/ConnectionManager.vue";
 import SessionView from "@/components/SessionView.vue";
 import { LOCALES, setLocale, type Locale } from "@/i18n";
@@ -76,5 +77,6 @@ const tab = "flex h-full items-center gap-1.5 border-r px-3 hover:bg-secondary";
       <ConnectionManager v-show="activeTab === 'manager'" />
       <SessionView v-for="s in sessions" v-show="activeTab === s.sessionId" :key="s.sessionId" :session="s" />
     </main>
+    <ConfirmDialog />
   </div>
 </template>

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { ask } from "@tauri-apps/plugin-dialog";
 import { Download, Eraser, KeyRound, Pencil, Trash2, Upload } from "lucide-vue-next";
 import DataGrid from "@/components/DataGrid.vue";
 import ErrorLine from "@/components/ErrorLine.vue";
@@ -12,12 +11,14 @@ import VectorView from "@/components/VectorView.vue";
 import VersioningView from "@/components/VersioningView.vue";
 import { api, toAppError, type AppError, type DbObject, type TableInfo } from "@/lib/api";
 import { hasRows } from "@/lib/objects";
+import { useConfirm } from "@/composables/useConfirm";
 import { editScript } from "@/lib/templates";
 import { cn } from "@/lib/utils";
 
 const props = defineProps<{ sessionId: string; schema: string; obj: DbObject; mariadb: boolean }>();
 const emit = defineEmits<{ renamed: [name: string]; dropped: []; editSql: [sql: string]; treeChanged: []; versioned: [on: boolean] }>();
 const { t } = useI18n();
+const { confirm } = useConfirm();
 
 type View = "sequence" | "data" | "structure" | "versioning" | "vector" | "ddl";
 // A sequence's "rows" are its state: shown by the Sequence panel instead of a grid.
@@ -48,7 +49,7 @@ const dirty = computed(() => !!(grid.value?.dirty || designer.value?.dirty));
 defineExpose({ dirty });
 /** Views are v-if: leaving the grid or the designer drops their unsaved changes, so ask first. */
 async function switchView(v: View) {
-  if (v === view.value || (dirty.value && !(await ask(t("object.leaveDirty"), { kind: "warning", okLabel: t("object.leave"), cancelLabel: t("grid.cancel") })))) return;
+  if (v === view.value || (dirty.value && !(await confirm(t("object.leaveDirty"), t("object.leave"))))) return;
   view.value = v;
 }
 /** Bumped after a structure change: remounts the grid on the new columns. */
