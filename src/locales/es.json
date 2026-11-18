@@ -45,7 +45,9 @@
     "test": "Probar",
     "save": "Guardar",
     "delete": "Eliminar",
-    "confirmDelete": "¿Eliminar la conexión «{name}» y sus contraseñas guardadas?"
+    "confirmDelete": "¿Eliminar la conexión «{name}» y sus contraseñas guardadas?",
+    "showPassword": "Mostrar la contraseña",
+    "hidePassword": "Ocultar la contraseña"
   },
   "colors": {
     "none": "Sin color",
@@ -125,7 +127,8 @@
     "CSV_PARSE": "No se pudo leer el archivo CSV.",
     "IMPORT_ROWS": "El servidor rechazó filas del archivo. No se importó nada.",
     "COPY_SAME": "Elija una base de datos distinta de la de origen.",
-    "VARIABLE_VALUE": "Valor no válido para esta variable."
+    "VARIABLE_VALUE": "Valor no válido para esta variable.",
+    "ANALYZE_SELECT_ONLY": "Analizar funciona con una sola consulta SELECT: ponga el cursor en ella o selecciónela."
   },
   "tree": {
     "title": "Bases de datos",
@@ -218,7 +221,9 @@
     "confirmText": "Estas sentencias pueden borrar datos u objetos. ¿Ejecutarlas de todos modos?",
     "confirmRun": "Ejecutar de todos modos",
     "favoriteName": "Nombre del favorito",
-    "save": "Guardar"
+    "save": "Guardar",
+    "analyze": "Analizar",
+    "analyzeHint": "Ejecuta el SELECT bajo el cursor (o la selección) con ANALYZE FORMAT=JSON: tiempos y filas reales junto a las estimaciones. La consulta se ejecuta de verdad."
   },
   "versioned": {
     "asOf": "A fecha de",
@@ -521,5 +526,30 @@
     "hint": "Texto Mermaid: GitHub, GitLab, Notion y Obsidian lo muestran tal cual.",
     "close": "Cerrar",
     "noTables": "No hay tablas en esta base de datos."
+  },
+  "json": {
+    "open": "JSON",
+    "openHint": "Ver o editar la celda activa como JSON",
+    "title": "JSON · {column}",
+    "readOnly": "solo lectura",
+    "tree": "Árbol",
+    "text": "Texto",
+    "format": "Formatear",
+    "apply": "Aplicar a la celda",
+    "invalid": "JSON no válido: {message}",
+    "lossy": "Este documento tiene números que JavaScript no conserva exactamente (enteros grandes, ceros finales): se muestra y edita solo como texto, y se guarda tal cual.",
+    "table": "JSON_TABLE",
+    "tableHint": "Abrir una consulta JSON_TABLE sobre este array en un nuevo editor"
+  },
+  "plan": {
+    "rows": "filas",
+    "filtered": "filtradas",
+    "loops": "{n} bucles",
+    "time": "{ms} ms",
+    "key": "clave",
+    "condition": "condición:",
+    "offHint": "Estimación errónea por un factor de 10 o más: las estadísticas pueden estar desactualizadas (ANALYZE TABLE).",
+    "showGrid": "Ver el resultado bruto",
+    "showTree": "Ver el plan"
   }
 }

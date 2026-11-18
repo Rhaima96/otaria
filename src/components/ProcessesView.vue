@@ -3,6 +3,8 @@ import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { FileSearch, OctagonX, RefreshCw, Unplug } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
+import PlanNode from "@/components/PlanNode.vue";
+import { parsePlan } from "@/lib/plan";
 import { api, toAppError, type AppError, type Process } from "@/lib/api";
 import { INTERVALS, usePolling } from "@/lib/poll";
 import { cn } from "@/lib/utils";
@@ -64,6 +66,7 @@ async function kill() {
 const planDialog = ref<HTMLDialogElement | null>(null);
 const plan = ref("");
 const planOf = ref<Process | null>(null);
+const tree = computed(() => parsePlan(plan.value));
 
 async function explain(p: Process) {
   planOf.value = p;
@@ -166,7 +169,8 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-1.5 text-muted-foreground
       <div class="border-b px-4 py-2 font-semibold">{{ t("processes.planTitle", { id: planOf?.id }) }}</div>
       <pre class="max-h-[20vh] overflow-auto border-b px-4 py-2 font-mono text-xs whitespace-pre-wrap text-muted-foreground select-text">{{ planOf?.info }}</pre>
       <ErrorLine v-if="actionError" :error="actionError" class="mx-4 mt-2" />
-      <pre class="max-h-[50vh] overflow-auto p-4 font-mono text-xs select-text">{{ plan || (actionError ? "" : t("processes.planLoading")) }}</pre>
+      <div v-if="tree" class="max-h-[50vh] overflow-auto p-4 pl-7"><PlanNode :node="tree.root" :total="tree.total" /></div>
+      <pre v-else class="max-h-[50vh] overflow-auto p-4 font-mono text-xs select-text">{{ plan || (actionError ? "" : t("processes.planLoading")) }}</pre>
       <div class="flex justify-end px-4 py-3">
         <button class="h-7 rounded-sm border px-3 font-medium hover:bg-secondary" @click="planDialog?.close()">{{ t("object.close") }}</button>
       </div>

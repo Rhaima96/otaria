@@ -45,7 +45,9 @@
     "test": "Test",
     "save": "Save",
     "delete": "Delete",
-    "confirmDelete": "Delete the connection “{name}” and its saved passwords?"
+    "confirmDelete": "Delete the connection “{name}” and its saved passwords?",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password"
   },
   "colors": {
     "none": "No colour",
@@ -125,7 +127,8 @@
     "CSV_PARSE": "The CSV file could not be read.",
     "IMPORT_ROWS": "The server refused rows of the file. Nothing was imported.",
     "COPY_SAME": "Pick another database than the source.",
-    "VARIABLE_VALUE": "Not a valid value for this variable."
+    "VARIABLE_VALUE": "Not a valid value for this variable.",
+    "ANALYZE_SELECT_ONLY": "Analyze works on one SELECT statement: put the cursor in it or select it."
   },
   "tree": {
     "title": "Databases",
@@ -218,7 +221,9 @@
     "confirmText": "These statements can delete data or objects. Run them anyway?",
     "confirmRun": "Run anyway",
     "favoriteName": "Favorite name",
-    "save": "Save"
+    "save": "Save",
+    "analyze": "Analyze",
+    "analyzeHint": "Run the SELECT under the cursor (or the selection) with ANALYZE FORMAT=JSON: real times and rows next to estimates. The query really runs."
   },
   "versioned": {
     "asOf": "As of",
@@ -521,5 +526,30 @@
     "hint": "Mermaid text: GitHub, GitLab, Notion and Obsidian render it as is.",
     "close": "Close",
     "noTables": "No tables in this database."
+  },
+  "json": {
+    "open": "JSON",
+    "openHint": "View or edit the focused cell as JSON",
+    "title": "JSON · {column}",
+    "readOnly": "read-only",
+    "tree": "Tree",
+    "text": "Text",
+    "format": "Format",
+    "apply": "Apply to cell",
+    "invalid": "Invalid JSON: {message}",
+    "lossy": "This document has numbers JavaScript cannot keep exactly (big integers, trailing zeros): it is shown and edited as text only, and saved as typed.",
+    "table": "JSON_TABLE",
+    "tableHint": "Open a JSON_TABLE query over this array in a new editor"
+  },
+  "plan": {
+    "rows": "rows",
+    "filtered": "filtered",
+    "loops": "{n} loops",
+    "time": "{ms} ms",
+    "key": "key",
+    "condition": "condition:",
+    "offHint": "Estimate off by 10× or more: statistics may be stale (ANALYZE TABLE).",
+    "showGrid": "Show raw result",
+    "showTree": "Show plan"
   }
 }

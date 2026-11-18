@@ -45,7 +45,9 @@
     "test": "Testen",
     "save": "Speichern",
     "delete": "Löschen",
-    "confirmDelete": "Verbindung „{name}“ und ihre gespeicherten Passwörter löschen?"
+    "confirmDelete": "Verbindung „{name}“ und ihre gespeicherten Passwörter löschen?",
+    "showPassword": "Passwort anzeigen",
+    "hidePassword": "Passwort verbergen"
   },
   "colors": {
     "none": "Keine Farbe",
@@ -125,7 +127,8 @@
     "CSV_PARSE": "Die CSV-Datei konnte nicht gelesen werden.",
     "IMPORT_ROWS": "Der Server hat Zeilen der Datei abgelehnt. Es wurde nichts importiert.",
     "COPY_SAME": "Wählen Sie eine andere Datenbank als die Quelle.",
-    "VARIABLE_VALUE": "Kein gültiger Wert für diese Variable."
+    "VARIABLE_VALUE": "Kein gültiger Wert für diese Variable.",
+    "ANALYZE_SELECT_ONLY": "Analysieren funktioniert mit einer einzelnen SELECT-Abfrage: Cursor hineinsetzen oder sie auswählen."
   },
   "tree": {
     "title": "Datenbanken",
@@ -218,7 +221,9 @@
     "confirmText": "Diese Anweisungen können Daten oder Objekte löschen. Trotzdem ausführen?",
     "confirmRun": "Trotzdem ausführen",
     "favoriteName": "Name des Favoriten",
-    "save": "Speichern"
+    "save": "Speichern",
+    "analyze": "Analysieren",
+    "analyzeHint": "Führt das SELECT unter dem Cursor (oder die Auswahl) mit ANALYZE FORMAT=JSON aus: echte Zeiten und Zeilen neben den Schätzungen. Die Abfrage wird wirklich ausgeführt."
   },
   "versioned": {
     "asOf": "Stand vom",
@@ -521,5 +526,30 @@
     "hint": "Mermaid-Text: GitHub, GitLab, Notion und Obsidian stellen ihn direkt dar.",
     "close": "Schließen",
     "noTables": "Keine Tabellen in dieser Datenbank."
+  },
+  "json": {
+    "open": "JSON",
+    "openHint": "Aktive Zelle als JSON anzeigen oder bearbeiten",
+    "title": "JSON · {column}",
+    "readOnly": "schreibgeschützt",
+    "tree": "Baum",
+    "text": "Text",
+    "format": "Formatieren",
+    "apply": "In Zelle übernehmen",
+    "invalid": "Ungültiges JSON: {message}",
+    "lossy": "Dieses Dokument enthält Zahlen, die JavaScript nicht exakt behält (große Ganzzahlen, nachgestellte Nullen): Es wird nur als Text angezeigt und bearbeitet und wie eingegeben gespeichert.",
+    "table": "JSON_TABLE",
+    "tableHint": "JSON_TABLE-Abfrage über dieses Array in einem neuen Editor öffnen"
+  },
+  "plan": {
+    "rows": "Zeilen",
+    "filtered": "gefiltert",
+    "loops": "{n} Durchläufe",
+    "time": "{ms} ms",
+    "key": "Schlüssel",
+    "condition": "Bedingung:",
+    "offHint": "Schätzung um Faktor 10 oder mehr daneben: Statistiken sind evtl. veraltet (ANALYZE TABLE).",
+    "showGrid": "Rohergebnis anzeigen",
+    "showTree": "Plan anzeigen"
   }
 }

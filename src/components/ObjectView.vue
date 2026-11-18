@@ -112,7 +112,7 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
 
     <SequenceView v-else-if="view === 'sequence'" :session-id="sessionId" :schema="schema" :name="obj.name" class="min-h-0 flex-1" />
 
-    <DataGrid v-else-if="view === 'data' && info" :key="version" :session-id="sessionId" :schema="schema" :table="obj.name" :info="info" :versioned="obj.versioned" class="min-h-0 flex-1" />
+    <DataGrid v-else-if="view === 'data' && info" :key="version" :session-id="sessionId" :schema="schema" :table="obj.name" :info="info" :versioned="obj.versioned" class="min-h-0 flex-1" @edit-sql="(sql) => emit('editSql', sql)" />
 
     <TableDesigner v-else-if="view === 'structure' && isTable" :session-id="sessionId" :schema="schema" :table="obj.name" class="min-h-0 flex-1" @saved="saved" />
 

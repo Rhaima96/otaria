@@ -3,12 +3,14 @@ import { computed, onMounted, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { AgGridVue } from "ag-grid-vue3";
 import { type ColDef, type GridApi, type GridReadyEvent, type SortChangedEvent } from "ag-grid-community";
-import { Ban, Filter, History, Plus, RefreshCw, Save, Trash2, Undo2, X } from "lucide-vue-next";
+import { Ban, Braces, Filter, History, Plus, RefreshCw, Save, Trash2, Undo2, X } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
+import JsonDialog from "@/components/JsonDialog.vue";
 import { theme } from "@/lib/grid";
 import { api, toAppError, type AppError, type Change, type History as RowHistory, type Pairs, type Sort, type TableInfo } from "@/lib/api";
 
 const props = defineProps<{ sessionId: string; schema: string; table: string; info: TableInfo; versioned?: boolean }>();
+const emit = defineEmits<{ editSql: [sql: string] }>();
 const { t, locale } = useI18n();
 const PAGE = 1000;
 
@@ -156,6 +158,23 @@ function setNull() {
   }
 }
 
+// JSON viewer / editor on the focused cell; editing follows the same rules as the grid.
+const json = ref<InstanceType<typeof JsonDialog> | null>(null);
+let jsonCell: { row: number; col: string } | null = null;
+function openJson() {
+  const cell = grid?.getFocusedCell();
+  const node = cell && grid?.getDisplayedRowAtIndex(cell.rowIndex);
+  if (!cell || !node?.data) return;
+  const i = Number(cell.column.getColId());
+  jsonCell = { row: cell.rowIndex, col: cell.column.getColId() };
+  const v = node.data.v[i];
+  json.value?.open({ column: columns.value[i], value: v ?? null, editable: editable.value && !readOnlyCol(columns.value[i]) && !node.data.deleted });
+}
+function applyJson(text: string) {
+  const node = jsonCell && grid?.getDisplayedRowAtIndex(jsonCell.row);
+  if (jsonCell && node) node.setDataValue(jsonCell.col, text);
+}
+
 function discard() {
   rows.value = rows.value.filter((r) => r.orig).map((r) => ({ ...r, v: [...r.orig!], deleted: false }));
   tick.value++;
@@ -266,6 +285,8 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 hover:bg-secondary disa
           {{ t("versioned.rowHistory") }}
         </button>
       </template>
+      <span class="mx-1 h-4 border-l" />
+      <button :class="btn" :disabled="busy" :title="t('json.openHint')" @click="openJson"><Braces class="size-3.5" />{{ t("json.open") }}</button>
       <template v-if="editable">
         <span class="mx-1 h-4 border-l" />
         <button :class="btn" :disabled="busy" @click="addRow"><Plus class="size-3.5" />{{ t("grid.addRow") }}</button>
@@ -308,6 +329,8 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 hover:bg-secondary disa
       <span>{{ t("grid.rowCount", { n: rows.filter((r) => r.orig).length }) }}</span>
       <button v-if="hasMore" :class="btn" :disabled="busy" class="text-foreground" @click="load(true)">{{ t("grid.loadMore", { n: PAGE }) }}</button>
     </div>
+
+    <JsonDialog ref="json" :schema="schema" :table="table" @apply="applyJson" @sql="(sql) => emit('editSql', sql)" />
 
     <dialog ref="historyDialog" class="m-auto w-[min(72rem,92vw)] rounded-lg border bg-popover p-0 text-popover-foreground backdrop:bg-black/40">
       <div class="border-b px-4 py-2 font-semibold">{{ t("versioned.historyTitle", { n: history?.rows.rows.length ?? 0 }) }}</div>

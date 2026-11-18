@@ -216,6 +216,8 @@ export interface RunRequest {
   cursor: number | null;
   maxRows: number;
   confirmed: boolean;
+  /** Run the statement as ANALYZE FORMAT=JSON (one SELECT only). */
+  analyze?: boolean;
 }
 
 export interface Plugin {
@@ -419,7 +421,9 @@ export const api = {
   importCsv: (sessionId: string, jobId: string, req: CsvImport) => invoke<number>("import_csv", { sessionId, jobId, req }),
   copyData: (sessionId: string, jobId: string, req: CopyReq) => invoke<number>("copy_data", { sessionId, jobId, req }),
   cancelJob: (sessionId: string, jobId: string) => invoke<void>("cancel_job", { sessionId, jobId }),
-  runSql: (sessionId: string, editorId: string, r: RunRequest) => invoke<RunOutput>("run_sql", { sessionId, editorId, ...r }),
+  runSql: (sessionId: string, editorId: string, r: RunRequest) => invoke<RunOutput>("run_sql", { sessionId, editorId, analyze: false, ...r }),
+  jsonTableSql: (schema: string, table: string, column: string, path: (string | number)[], sample: unknown) =>
+    invoke<string>("json_table_sql", { schema, table, column, path, sample }),
   cancelSql: (sessionId: string, editorId: string) => invoke<void>("cancel_sql", { sessionId, editorId }),
   closeEditor: (sessionId: string, editorId: string) => invoke<void>("close_editor", { sessionId, editorId }),
 };

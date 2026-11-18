@@ -45,7 +45,9 @@
     "test": "Tester",
     "save": "Enregistrer",
     "delete": "Supprimer",
-    "confirmDelete": "Supprimer la connexion « {name} » et ses mots de passe enregistrés ?"
+    "confirmDelete": "Supprimer la connexion « {name} » et ses mots de passe enregistrés ?",
+    "showPassword": "Afficher le mot de passe",
+    "hidePassword": "Masquer le mot de passe"
   },
   "colors": {
     "none": "Aucune couleur",
@@ -125,7 +127,8 @@
     "CSV_PARSE": "Le fichier CSV n’a pas pu être lu.",
     "IMPORT_ROWS": "Le serveur a refusé des lignes du fichier. Rien n’a été importé.",
     "COPY_SAME": "Choisissez une autre base que la source.",
-    "VARIABLE_VALUE": "Valeur non valide pour cette variable."
+    "VARIABLE_VALUE": "Valeur non valide pour cette variable.",
+    "ANALYZE_SELECT_ONLY": "Analyser fonctionne sur une seule requête SELECT : placez le curseur dedans ou sélectionnez-la."
   },
   "tree": {
     "title": "Bases de données",
@@ -218,7 +221,9 @@
     "confirmText": "Ces instructions peuvent supprimer des données ou des objets. Les exécuter quand même ?",
     "confirmRun": "Exécuter quand même",
     "favoriteName": "Nom du favori",
-    "save": "Enregistrer"
+    "save": "Enregistrer",
+    "analyze": "Analyser",
+    "analyzeHint": "Exécute le SELECT sous le curseur (ou la sélection) avec ANALYZE FORMAT=JSON : temps et lignes réels à côté des estimations. La requête est vraiment exécutée."
   },
   "versioned": {
     "asOf": "À la date du",
@@ -521,5 +526,30 @@
     "hint": "Texte Mermaid : GitHub, GitLab, Notion et Obsidian l'affichent tel quel.",
     "close": "Fermer",
     "noTables": "Aucune table dans cette base."
+  },
+  "json": {
+    "open": "JSON",
+    "openHint": "Voir ou modifier la cellule active en JSON",
+    "title": "JSON · {column}",
+    "readOnly": "lecture seule",
+    "tree": "Arbre",
+    "text": "Texte",
+    "format": "Formater",
+    "apply": "Appliquer à la cellule",
+    "invalid": "JSON invalide : {message}",
+    "lossy": "Ce document contient des nombres que JavaScript ne garde pas exactement (grands entiers, zéros finaux) : il est affiché et modifié en texte uniquement, et enregistré tel quel.",
+    "table": "JSON_TABLE",
+    "tableHint": "Ouvrir une requête JSON_TABLE sur ce tableau dans un nouvel éditeur"
+  },
+  "plan": {
+    "rows": "lignes",
+    "filtered": "filtrées",
+    "loops": "{n} boucles",
+    "time": "{ms} ms",
+    "key": "clé",
+    "condition": "condition :",
+    "offHint": "Estimation fausse d'un facteur 10 ou plus : les statistiques sont peut-être périmées (ANALYZE TABLE).",
+    "showGrid": "Voir le résultat brut",
+    "showTree": "Voir le plan"
   }
 }

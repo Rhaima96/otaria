@@ -45,7 +45,9 @@
     "test": "Prova",
     "save": "Salva",
     "delete": "Elimina",
-    "confirmDelete": "Eliminare la connessione «{name}» e le password salvate?"
+    "confirmDelete": "Eliminare la connessione «{name}» e le password salvate?",
+    "showPassword": "Mostra la password",
+    "hidePassword": "Nascondi la password"
   },
   "colors": {
     "none": "Nessun colore",
@@ -125,7 +127,8 @@
     "CSV_PARSE": "Impossibile leggere il file CSV.",
     "IMPORT_ROWS": "Il server ha rifiutato righe del file. Non è stato importato nulla.",
     "COPY_SAME": "Scegli un database diverso dall’origine.",
-    "VARIABLE_VALUE": "Valore non valido per questa variabile."
+    "VARIABLE_VALUE": "Valore non valido per questa variabile.",
+    "ANALYZE_SELECT_ONLY": "Analizza funziona su una sola query SELECT: metti il cursore al suo interno o selezionala."
   },
   "tree": {
     "title": "Database",
@@ -218,7 +221,9 @@
     "confirmText": "Queste istruzioni possono eliminare dati o oggetti. Eseguirle comunque?",
     "confirmRun": "Esegui comunque",
     "favoriteName": "Nome del preferito",
-    "save": "Salva"
+    "save": "Salva",
+    "analyze": "Analizza",
+    "analyzeHint": "Esegue la SELECT sotto il cursore (o la selezione) con ANALYZE FORMAT=JSON: tempi e righe reali accanto alle stime. La query viene eseguita davvero."
   },
   "versioned": {
     "asOf": "Alla data del",
@@ -521,5 +526,30 @@
     "hint": "Testo Mermaid: GitHub, GitLab, Notion e Obsidian lo mostrano così com'è.",
     "close": "Chiudi",
     "noTables": "Nessuna tabella in questo database."
+  },
+  "json": {
+    "open": "JSON",
+    "openHint": "Visualizza o modifica la cella attiva come JSON",
+    "title": "JSON · {column}",
+    "readOnly": "sola lettura",
+    "tree": "Albero",
+    "text": "Testo",
+    "format": "Formatta",
+    "apply": "Applica alla cella",
+    "invalid": "JSON non valido: {message}",
+    "lossy": "Questo documento contiene numeri che JavaScript non conserva esattamente (interi grandi, zeri finali): viene mostrato e modificato solo come testo e salvato così com'è.",
+    "table": "JSON_TABLE",
+    "tableHint": "Apri una query JSON_TABLE su questo array in un nuovo editor"
+  },
+  "plan": {
+    "rows": "righe",
+    "filtered": "filtrate",
+    "loops": "{n} cicli",
+    "time": "{ms} ms",
+    "key": "chiave",
+    "condition": "condizione:",
+    "offHint": "Stima sbagliata di un fattore 10 o più: le statistiche potrebbero essere obsolete (ANALYZE TABLE).",
+    "showGrid": "Mostra il risultato grezzo",
+    "showTree": "Mostra il piano"
   }
 }

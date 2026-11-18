@@ -554,8 +554,12 @@ async fn run_sql(
     cursor: Option<usize>,
     max_rows: usize,
     confirmed: bool,
+    analyze: bool,
 ) -> AppResult<query::RunOutput> {
-    let stmts = query::pick(&sql, cursor);
+    let mut stmts = query::pick(&sql, cursor);
+    if analyze {
+        stmts = vec![query::analyze_sql(&stmts)?];
+    }
     let risky: Vec<&str> = stmts.iter().map(String::as_str).filter(|s| query::risky(s)).collect();
     if !confirmed && !risky.is_empty() {
         return Err(AppError { detail: Some(risky.join(";\n")), ..AppError::new("CONFIRM_RISKY", "") });
@@ -563,6 +567,11 @@ async fn run_sql(
     let (_, _, conn) = editor(&state, &session_id, &editor_id, schema.as_deref()).await?;
     let mut conn = conn.lock().await;
     Ok(query::run(&mut conn, &stmts, max_rows).await)
+}
+
+#[tauri::command]
+fn json_table_sql(schema: String, table: String, column: String, path: Vec<query::PathStep>, sample: serde_json::Value) -> String {
+    query::json_table_sql(&schema, &table, &column, &path, &sample)
 }
 
 #[tauri::command]
@@ -625,6 +634,7 @@ pub fn run() {
             designer_apply,
             drop_sql,
             drop_object,
+            json_table_sql,
             er_diagram,
             save_diagram,
             list_plugins,

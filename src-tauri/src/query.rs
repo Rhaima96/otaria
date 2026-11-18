@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use mysql_async::prelude::Queryable;
 use mysql_async::{Conn, Pool};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::browse::{cell, ident};
@@ -221,6 +221,93 @@ pub async fn cancel(pool: &Pool, conn_id: u32) -> AppResult<()> {
     Ok(())
 }
 
+/// First keyword of a statement, after comments and opening parentheses.
+fn first_word(sql: &str) -> String {
+    let mut s = sql;
+    loop {
+        s = s.trim_start().trim_start_matches('(');
+        if s.starts_with("--") || s.starts_with('#') {
+            s = s.find('\n').map_or("", |i| &s[i..]);
+        } else if let Some(rest) = s.strip_prefix("/*") {
+            s = rest.find("*/").map_or("", |i| &rest[i + 2..]);
+        } else {
+            break;
+        }
+    }
+    s.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect::<String>().to_ascii_uppercase()
+}
+
+/// `ANALYZE` runs the statement for real: only a single SELECT (or WITH … SELECT) is wrapped.
+pub fn analyze_sql(stmts: &[String]) -> AppResult<String> {
+    match stmts {
+        [one] if matches!(first_word(one).as_str(), "SELECT" | "WITH") => Ok(format!("ANALYZE FORMAT=JSON {one}")),
+        _ => Err(AppError::new("ANALYZE_SELECT_ONLY", stmts.join(";\n"))),
+    }
+}
+
+/// One step of a JSON path picked in the cell viewer: an object key or an array index.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum PathStep {
+    Key(String),
+    Index(usize),
+}
+
+fn json_path(steps: &[PathStep]) -> String {
+    let mut p = String::from("$");
+    for s in steps {
+        match s {
+            PathStep::Key(k) if !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') && !k.starts_with(|c: char| c.is_ascii_digit()) => {
+                p.push('.');
+                p.push_str(k);
+            }
+            PathStep::Key(k) => p.push_str(&format!(".\"{}\"", k.replace('\\', "\\\\").replace('"', "\\\""))),
+            PathStep::Index(i) => p.push_str(&format!("[{i}]")),
+        }
+    }
+    p
+}
+
+/// SQL string literal. ponytail: backslashes doubled, wrong under NO_BACKSLASH_ESCAPES (only exotic keys have one).
+fn literal(s: &str) -> String {
+    format!("'{}'", s.replace('\\', "\\\\").replace('\'', "''"))
+}
+
+/// Starter `JSON_TABLE` query over the array at `path`, one column per scalar key of `sample` (an element).
+pub fn json_table_sql(schema: &str, table: &str, column: &str, path: &[PathStep], sample: &serde_json::Value) -> String {
+    use serde_json::Value;
+    let mut cols = Vec::new();
+    let mut nested = Vec::new();
+    for (k, v) in sample.as_object().into_iter().flatten() {
+        let ty = match v {
+            Value::Bool(_) => "BOOLEAN",
+            Value::Number(n) if n.is_i64() || n.is_u64() => "BIGINT",
+            Value::Number(_) => "DOUBLE",
+            Value::Object(_) | Value::Array(_) => {
+                nested.push(format!("    -- {}: {}", k.replace('\n', " "), if v.is_array() { "NESTED PATH '...[*]' COLUMNS (...)" } else { "JSON_QUERY(...)" }));
+                continue;
+            }
+            _ => "VARCHAR(255)",
+        };
+        cols.push(format!("    {} {ty} PATH {}", ident(k), literal(&json_path(&[PathStep::Key(k.clone())]))));
+    }
+    if cols.is_empty() {
+        cols.push(format!("    {} LONGTEXT PATH '$'", ident("value")));
+    }
+    let mut body = cols.join(",\n");
+    if !nested.is_empty() {
+        body.push('\n');
+        body.push_str(&nested.join("\n"));
+    }
+    format!(
+        "SELECT jt.*\nFROM {}.{} AS t,\n  JSON_TABLE(t.{}, {} COLUMNS (\n{body}\n  )) AS jt\nLIMIT 100;",
+        ident(schema),
+        ident(table),
+        ident(column),
+        literal(&format!("{}[*]", json_path(path))),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,6 +346,37 @@ mod tests {
         assert_eq!(pick(src, Some(12)), ["SELECT 2"]);
         assert_eq!(pick(src, Some(src.len())), ["SELECT 3"]);
         assert_eq!(pick(src, None).len(), 3);
+    }
+
+    #[test]
+    fn wraps_only_one_select_in_analyze() {
+        assert_eq!(analyze_sql(&["SELECT 1".into()]).unwrap(), "ANALYZE FORMAT=JSON SELECT 1");
+        assert!(analyze_sql(&["/* x */ -- y\n (WITH a AS (SELECT 1) SELECT * FROM a)".into()]).is_ok());
+        for bad in [vec!["DELETE FROM t WHERE id = 1".to_string()], vec!["SELECT 1".into(), "SELECT 2".into()], vec![]] {
+            assert_eq!(analyze_sql(&bad).unwrap_err().code, "ANALYZE_SELECT_ONLY");
+        }
+    }
+
+    #[test]
+    fn builds_json_table_from_a_sample() {
+        let sample = serde_json::json!({"id": 1, "price": 9.5, "ok": true, "name": "x", "tags": [1], "o'k": null, "meta": {}});
+        let path = [PathStep::Key("items".into()), PathStep::Index(0), PathStep::Key("a b".into())];
+        assert_eq!(
+            json_table_sql("s", "t`x", "doc", &path, &sample),
+            "SELECT jt.*
+FROM `s`.`t``x` AS t,
+  JSON_TABLE(t.`doc`, '$.items[0].\"a b\"[*]' COLUMNS (
+    `id` BIGINT PATH '$.id',
+    `name` VARCHAR(255) PATH '$.name',
+    `o'k` VARCHAR(255) PATH '$.\"o''k\"',
+    `ok` BOOLEAN PATH '$.ok',
+    `price` DOUBLE PATH '$.price'
+    -- meta: JSON_QUERY(...)
+    -- tags: NESTED PATH '...[*]' COLUMNS (...)
+  )) AS jt
+LIMIT 100;"
+        );
+        assert!(json_table_sql("s", "t", "c", &[], &serde_json::json!(3)).contains("`value` LONGTEXT PATH '$'"));
     }
 
     #[test]

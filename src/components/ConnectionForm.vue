@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { CheckCircle2, Loader2, ShieldAlert, XCircle } from "lucide-vue-next";
+import { CheckCircle2, Eye, EyeOff, Loader2, ShieldAlert, XCircle } from "lucide-vue-next";
 import { api, isAppError, type AppError, type Profile, type ServerInfo, type TlsMode } from "@/lib/api";
 import { TAG_COLORS, tagClass } from "@/lib/tagColors";
 import { useSessions } from "@/composables/useSessions";
@@ -18,6 +18,8 @@ const copy = (p: Profile): Profile => JSON.parse(JSON.stringify(p));
 const form = ref<Profile>(copy(props.profile));
 const password = ref("");
 const sshSecret = ref("");
+/** Show the typed secret; a saved one stays in the keychain and is never shown. */
+const reveal = ref({ password: false, ssh: false });
 const busy = ref<"" | "test" | "save" | "connect">("");
 const result = ref<{ ok: true; info: ServerInfo } | { ok: false; error: AppError } | null>(null);
 
@@ -115,14 +117,27 @@ const label = "pt-1.5 text-right text-muted-foreground";
 
       <label :class="label" for="f-pass">{{ t("connection.password") }}</label>
       <div class="flex flex-col gap-1">
-        <input
-          id="f-pass"
-          v-model="password"
-          type="password"
-          :class="input"
-          autocomplete="off"
-          :placeholder="hasSavedSecret ? t('connection.passwordSaved') : ''"
-        />
+        <div class="relative">
+          <input
+            id="f-pass"
+            v-model="password"
+            :type="reveal.password ? 'text' : 'password'"
+            :class="cn(input, 'w-full pr-7')"
+            autocomplete="off"
+            spellcheck="false"
+            :placeholder="hasSavedSecret ? t('connection.passwordSaved') : ''"
+          />
+          <button
+            type="button"
+            :title="reveal.password ? t('connection.hidePassword') : t('connection.showPassword')"
+            :aria-pressed="reveal.password"
+            class="absolute inset-y-0 right-0 flex w-7 items-center justify-center text-muted-foreground hover:text-foreground"
+            @click="reveal.password = !reveal.password"
+          >
+            <component :is="reveal.password ? EyeOff : Eye" class="size-3.5" />
+            <span class="sr-only">{{ reveal.password ? t("connection.hidePassword") : t("connection.showPassword") }}</span>
+          </button>
+        </div>
         <label class="flex items-center gap-1.5 text-muted-foreground">
           <input v-model="form.savePassword" type="checkbox" class="accent-primary" />
           {{ t("connection.savePassword") }}
@@ -174,14 +189,27 @@ const label = "pt-1.5 text-right text-muted-foreground";
         <label :class="label" for="f-ssh-key">{{ t("connection.sshKey") }}</label>
         <input id="f-ssh-key" v-model="form.ssh.keyPath" :class="cn(input, 'font-mono')" spellcheck="false" :placeholder="t('connection.sshKeyPlaceholder')" />
         <label :class="label" for="f-ssh-secret">{{ form.ssh.keyPath ? t("connection.sshPassphrase") : t("connection.password") }}</label>
-        <input
-          id="f-ssh-secret"
-          v-model="sshSecret"
-          type="password"
-          :class="input"
-          autocomplete="off"
-          :placeholder="hasSavedSecret ? t('connection.passwordSaved') : ''"
-        />
+        <div class="relative">
+          <input
+            id="f-ssh-secret"
+            v-model="sshSecret"
+            :type="reveal.ssh ? 'text' : 'password'"
+            :class="cn(input, 'w-full pr-7')"
+            autocomplete="off"
+            spellcheck="false"
+            :placeholder="hasSavedSecret ? t('connection.passwordSaved') : ''"
+          />
+          <button
+            type="button"
+            :title="reveal.ssh ? t('connection.hidePassword') : t('connection.showPassword')"
+            :aria-pressed="reveal.ssh"
+            class="absolute inset-y-0 right-0 flex w-7 items-center justify-center text-muted-foreground hover:text-foreground"
+            @click="reveal.ssh = !reveal.ssh"
+          >
+            <component :is="reveal.ssh ? EyeOff : Eye" class="size-3.5" />
+            <span class="sr-only">{{ reveal.ssh ? t("connection.hidePassword") : t("connection.showPassword") }}</span>
+          </button>
+        </div>
         <template v-if="form.ssh.hostKey">
           <span :class="label">{{ t("connection.sshHostKey") }}</span>
           <span class="truncate pt-1.5 font-mono text-xs text-muted-foreground" :title="form.ssh.hostKey">{{ form.ssh.hostKey }}</span>

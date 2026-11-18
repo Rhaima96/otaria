@@ -3,16 +3,18 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { AgGridVue } from "ag-grid-vue3";
 import type { ColDef } from "ag-grid-community";
-import { History, Play, Square, Star, TextCursorInput, Trash2, X } from "lucide-vue-next";
+import { Gauge, History, Play, Square, Star, TextCursorInput, Trash2, X } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
+import PlanNode from "@/components/PlanNode.vue";
 import { useQueryLibrary } from "@/composables/useQueryLibrary";
 import { api, toAppError, type AppError, type RunOutput, type RunRequest } from "@/lib/api";
 import { theme } from "@/lib/grid";
+import { parsePlan } from "@/lib/plan";
 import { monaco, sources } from "@/lib/monaco";
 import { cn } from "@/lib/utils";
 
-/** `initialSql`: script to start with (object edit, template). */
-const props = defineProps<{ sessionId: string; profileId: string; editorId: string; schema: string | null; initialSql?: string }>();
+/** `initialSql`: script to start with (object edit, template). `mariadb`: offer ANALYZE FORMAT=JSON (hidden on MySQL). */
+const props = defineProps<{ sessionId: string; profileId: string; editorId: string; schema: string | null; initialSql?: string; mariadb: boolean }>();
 const { t, locale } = useI18n();
 const lib = useQueryLibrary(props.profileId);
 
@@ -74,7 +76,8 @@ onBeforeUnmount(() => {
 const confirmDialog = ref<HTMLDialogElement | null>(null);
 const pending = ref<{ req: RunRequest; statements: string } | null>(null);
 
-async function run(currentOnly: boolean) {
+/** `analyze`: the selection or the statement under the cursor, as ANALYZE FORMAT=JSON. */
+async function run(currentOnly: boolean, analyze = false) {
   if (!editor || running.value) return;
   const model = editor.getModel()!;
   const sel = editor.getSelection();
@@ -82,8 +85,8 @@ async function run(currentOnly: boolean) {
   const sql = selected || model.getValue();
   if (!sql.trim()) return;
   const offset = model.getOffsetAt(editor.getPosition()!);
-  const cursor = currentOnly && !selected ? new TextEncoder().encode(sql.slice(0, offset)).length : null;
-  await send({ schema: schema.value, sql, cursor, maxRows: maxRows.value, confirmed: false });
+  const cursor = (currentOnly || analyze) && !selected ? new TextEncoder().encode(sql.slice(0, offset)).length : null;
+  await send({ schema: schema.value, sql, cursor, maxRows: maxRows.value, confirmed: false, analyze });
 }
 
 async function send(req: RunRequest) {
@@ -154,6 +157,10 @@ const colDefs = computed<ColDef<(string | null)[]>[]>(() =>
   })),
 );
 
+/** A one-cell EXPLAIN / ANALYZE FORMAT=JSON result is drawn as a tree (toggle back to the grid). */
+const plan = computed(() => (shown.value?.columns.length === 1 && shown.value.rows.length === 1 ? parsePlan(shown.value.rows[0][0]) : null));
+const planView = ref(true);
+
 const fmt = (iso: string) => new Date(iso).toLocaleString(locale.value);
 const btn = "flex h-6 items-center gap-1 rounded-sm px-2 hover:bg-secondary disabled:opacity-40 disabled:hover:bg-transparent";
 const tabBtn = "flex h-full shrink-0 items-center gap-1 border-r px-3 hover:bg-secondary";
@@ -172,6 +179,9 @@ const tabBtn = "flex h-full shrink-0 items-center gap-1 border-r px-3 hover:bg-s
       </button>
       <button :class="btn" :disabled="running" :title="t('editor.runCurrentHint')" @click="run(true)">
         <TextCursorInput class="size-3.5" />{{ t("editor.runCurrent") }}
+      </button>
+      <button v-if="mariadb" :class="btn" :disabled="running" :title="t('editor.analyzeHint')" @click="run(true, true)">
+        <Gauge class="size-3.5" />{{ t("editor.analyze") }}
       </button>
       <button :class="btn" :disabled="!running" @click="cancel"><Square class="size-3.5" />{{ t("editor.cancel") }}</button>
       <span class="mx-1 h-4 border-l" />
@@ -206,7 +216,11 @@ const tabBtn = "flex h-full shrink-0 items-center gap-1 border-r px-3 hover:bg-s
           </nav>
 
           <template v-if="shown">
+            <div v-if="plan && planView" class="min-h-0 flex-1 overflow-auto p-3 pl-6">
+              <PlanNode :node="plan.root" :total="plan.total" />
+            </div>
             <AgGridVue
+              v-else
               class="min-h-0 flex-1"
               :theme="theme"
               :row-data="shown.rows"
@@ -218,6 +232,7 @@ const tabBtn = "flex h-full shrink-0 items-center gap-1 border-r px-3 hover:bg-s
             <div class="flex h-7 shrink-0 items-center gap-2 border-t px-2 text-muted-foreground">
               <span>{{ t("editor.rows", { n: shown.rows.length }) }}</span>
               <span v-if="shown.totalRows > shown.rows.length" class="text-warning">{{ t("editor.capped", { total: shown.totalRows }) }}</span>
+              <button v-if="plan" :class="btn" class="text-foreground" @click="planView = !planView">{{ planView ? t("plan.showGrid") : t("plan.showTree") }}</button>
               <span class="ml-auto">{{ t("editor.elapsed", { ms: shown.elapsedMs }) }}</span>
             </div>
           </template>
