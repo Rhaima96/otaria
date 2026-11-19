@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from "vue";
+import { onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { isTauri } from "@tauri-apps/api/core";
 import { check, type Update } from "@tauri-apps/plugin-updater";
@@ -15,7 +15,8 @@ const AUTO_KEY = "otaria.autoUpdate";
 const dialog = ref<HTMLDialogElement | null>(null);
 const auto = ref(localStorage.getItem(AUTO_KEY) !== "off");
 const version = ref("");
-const update = ref<Update | null>(null);
+// shallowRef: Update keeps #private fields, which a deep reactive Proxy breaks (TypeError on downloadAndInstall).
+const update = shallowRef<Update | null>(null);
 const state = ref<"idle" | "checking" | "latest" | "downloading">("idle");
 const received = ref(0);
 const total = ref(0);
