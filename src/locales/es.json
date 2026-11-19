@@ -143,7 +143,8 @@
     "BINLOG_TOOL": "mariadb-binlog falló.",
     "INVALID_RANGE": "Rango no válido.",
     "BINLOG_POSITION": "Esta posición está más allá del final del archivo.",
-    "SSH_CERT": "No se puede leer el certificado SSH (archivo -cert.pub de OpenSSH)."
+    "SSH_CERT": "No se puede leer el certificado SSH (archivo -cert.pub de OpenSSH).",
+    "SSH_HOST_CERT": "El servidor SSH presenta un certificado de host que las autoridades indicadas para él en known_hosts (@cert-authority) no avalan: otra autoridad, caducado, revocado o emitido para otro nombre. Conexión rechazada."
   },
   "tree": {
     "title": "Bases de datos",
@@ -485,7 +486,7 @@
     "more": "Cargar más",
     "hint": "Los eventos Annotate_rows muestran la sentencia que originó los cambios de filas.",
     "undo": "Deshacer selección ({n})",
-    "undoHint": "Genera con mariadb-binlog --flashback el SQL de deshacer de las transacciones que contienen los eventos seleccionados (de Gtid a Xid) y lo abre en el editor SQL sin ejecutarlo. Solo se revierten cambios de filas (INSERT, UPDATE, DELETE), y solo con binlog_row_image = FULL.",
+    "undoHint": "Genera con mariadb-binlog --flashback el SQL de deshacer de las transacciones que contienen los eventos seleccionados (de Gtid a Xid) y lo abre en el editor SQL sin ejecutarlo. Solo se revierten cambios de filas (INSERT, UPDATE, DELETE), y solo con binlog_row_image = FULL. A través de un túnel SSH con TLS «verificar la identidad», mariadb-binlog comprueba el certificado del servidor con la CA pero no su nombre (solo ve 127.0.0.1).",
     "undoNeedsRow": "Deshacer requiere binlog_format = ROW.",
     "undoHeader": "Deshacer los eventos {start} a {stop} de {file} (mariadb-binlog --flashback). Revíselo antes de ejecutarlo: las instrucciones BINLOG requieren el privilegio BINLOG REPLAY.",
     "byTxn": "Por transacción",

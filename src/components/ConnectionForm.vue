@@ -249,7 +249,13 @@ const label = "pt-1.5 text-right text-muted-foreground";
         </p>
         <div v-if="result.error.detail && result.error.code.startsWith('SSH_HOST')" class="mt-2 flex flex-col items-start gap-2">
           <code class="font-mono text-xs">{{ result.error.detail }}</code>
-          <button type="button" class="h-7 rounded-sm border px-3 font-medium hover:bg-secondary" @click="trustHostKey(result.error.detail)">
+          <!-- A refused host certificate shows the fingerprint of its authority: trusted through known_hosts, not here. -->
+          <button
+            v-if="result.error.code !== 'SSH_HOST_CERT'"
+            type="button"
+            class="h-7 rounded-sm border px-3 font-medium hover:bg-secondary"
+            @click="trustHostKey(result.error.detail)"
+          >
             {{ t("connection.trustHostKey") }}
           </button>
         </div>

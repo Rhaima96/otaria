@@ -143,7 +143,8 @@
     "BINLOG_TOOL": "mariadb-binlog ist fehlgeschlagen.",
     "INVALID_RANGE": "Ungültiger Bereich.",
     "BINLOG_POSITION": "Diese Position liegt hinter dem Dateiende.",
-    "SSH_CERT": "Das SSH-Zertifikat (OpenSSH-Datei -cert.pub) kann nicht gelesen werden."
+    "SSH_CERT": "Das SSH-Zertifikat (OpenSSH-Datei -cert.pub) kann nicht gelesen werden.",
+    "SSH_HOST_CERT": "Der SSH-Server zeigt ein Host-Zertifikat, für das die in known_hosts (@cert-authority) für ihn eingetragenen Stellen nicht bürgen: andere Stelle, abgelaufen, widerrufen oder für einen anderen Namen ausgestellt. Verbindung abgelehnt."
   },
   "tree": {
     "title": "Datenbanken",
@@ -485,7 +486,7 @@
     "more": "Mehr laden",
     "hint": "Annotate_rows-Ereignisse zeigen die Anweisung hinter den Zeilenänderungen.",
     "undo": "Auswahl rückgängig ({n})",
-    "undoHint": "Erzeugt mit mariadb-binlog --flashback das Rückgängig-SQL der Transaktionen mit den ausgewählten Ereignissen (von Gtid bis Xid) und öffnet es im SQL-Editor, ohne es auszuführen. Nur Zeilenänderungen (INSERT, UPDATE, DELETE) werden umgekehrt, und nur mit binlog_row_image = FULL.",
+    "undoHint": "Erzeugt mit mariadb-binlog --flashback das Rückgängig-SQL der Transaktionen mit den ausgewählten Ereignissen (von Gtid bis Xid) und öffnet es im SQL-Editor, ohne es auszuführen. Nur Zeilenänderungen (INSERT, UPDATE, DELETE) werden umgekehrt, und nur mit binlog_row_image = FULL. Über einen SSH-Tunnel mit TLS „Identität prüfen“ prüft mariadb-binlog das Serverzertifikat gegen die CA, aber nicht dessen Namen (es sieht nur 127.0.0.1).",
     "undoNeedsRow": "Rückgängig erfordert binlog_format = ROW.",
     "undoHeader": "Rückgängig der Ereignisse {start} bis {stop} in {file} (mariadb-binlog --flashback). Vor dem Ausführen prüfen: BINLOG-Anweisungen erfordern das Recht BINLOG REPLAY.",
     "byTxn": "Nach Transaktion",

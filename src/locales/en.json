@@ -143,7 +143,8 @@
     "BINLOG_TOOL": "mariadb-binlog failed.",
     "INVALID_RANGE": "Invalid range.",
     "BINLOG_POSITION": "This position is past the end of the file.",
-    "SSH_CERT": "Cannot read the SSH certificate (OpenSSH -cert.pub file)."
+    "SSH_CERT": "Cannot read the SSH certificate (OpenSSH -cert.pub file).",
+    "SSH_HOST_CERT": "The SSH server presents a host certificate that the authorities listed for it in known_hosts (@cert-authority) do not vouch for: wrong authority, expired, revoked, or issued for another name. Connection refused."
   },
   "tree": {
     "title": "Databases",
@@ -485,7 +486,7 @@
     "more": "Load more",
     "hint": "Annotate_rows events show the statement behind the row changes.",
     "undo": "Undo selection ({n})",
-    "undoHint": "Generates the undo SQL of the transactions holding the selected events (from Gtid to Xid) with mariadb-binlog --flashback, and opens it in the SQL editor without running it. Only row changes (INSERT, UPDATE, DELETE) are reversed, and only with binlog_row_image = FULL.",
+    "undoHint": "Generates the undo SQL of the transactions holding the selected events (from Gtid to Xid) with mariadb-binlog --flashback, and opens it in the SQL editor without running it. Only row changes (INSERT, UPDATE, DELETE) are reversed, and only with binlog_row_image = FULL. Through an SSH tunnel with TLS “verify identity”, mariadb-binlog checks the server certificate against the CA but not its name (it only sees 127.0.0.1).",
     "undoNeedsRow": "Undo needs binlog_format = ROW.",
     "undoHeader": "Undo of events {start} to {stop} in {file} (mariadb-binlog --flashback). Read it before running it: the BINLOG statements need the BINLOG REPLAY privilege.",
     "byTxn": "By transaction",

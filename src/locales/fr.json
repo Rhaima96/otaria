@@ -143,7 +143,8 @@
     "BINLOG_TOOL": "mariadb-binlog a échoué.",
     "INVALID_RANGE": "Plage invalide.",
     "BINLOG_POSITION": "Cette position est au-delà de la fin du fichier.",
-    "SSH_CERT": "Impossible de lire le certificat SSH (fichier -cert.pub d'OpenSSH)."
+    "SSH_CERT": "Impossible de lire le certificat SSH (fichier -cert.pub d'OpenSSH).",
+    "SSH_HOST_CERT": "Le serveur SSH présente un certificat d'hôte que les autorités indiquées pour lui dans known_hosts (@cert-authority) ne garantissent pas : autre autorité, expiré, révoqué ou émis pour un autre nom. Connexion refusée."
   },
   "tree": {
     "title": "Bases de données",
@@ -485,7 +486,7 @@
     "more": "Charger la suite",
     "hint": "Les événements Annotate_rows montrent la requête à l'origine des modifications de lignes.",
     "undo": "Annuler la sélection ({n})",
-    "undoHint": "Génère avec mariadb-binlog --flashback le SQL d'annulation des transactions qui contiennent les événements sélectionnés (du Gtid au Xid), et l'ouvre dans l'éditeur SQL sans l'exécuter. Seules les modifications de lignes (INSERT, UPDATE, DELETE) sont annulées, et seulement avec binlog_row_image = FULL.",
+    "undoHint": "Génère avec mariadb-binlog --flashback le SQL d'annulation des transactions qui contiennent les événements sélectionnés (du Gtid au Xid), et l'ouvre dans l'éditeur SQL sans l'exécuter. Seules les modifications de lignes (INSERT, UPDATE, DELETE) sont annulées, et seulement avec binlog_row_image = FULL. Par un tunnel SSH avec le TLS « vérifier l'identité », mariadb-binlog vérifie le certificat du serveur avec le CA mais pas son nom (il ne voit que 127.0.0.1).",
     "undoNeedsRow": "L'annulation demande binlog_format = ROW.",
     "undoHeader": "Annulation des événements {start} à {stop} de {file} (mariadb-binlog --flashback). Relisez-la avant de l'exécuter : les instructions BINLOG demandent le privilège BINLOG REPLAY.",
     "byTxn": "Par transaction",

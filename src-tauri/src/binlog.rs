@@ -40,8 +40,10 @@ pub fn flashback_args(cli: &Cli, file: &str, start: u64, stop: u64) -> Vec<Strin
         TlsMode::Disabled => a.push("--skip-ssl".into()),
         mode => {
             a.push("--ssl".into());
-            // ponytail: VerifyCa also skips the name check here (the client has no CA-only mode), and through a
-            // tunnel VerifyIdentity would check 127.0.0.1: both use the CA without the name check in that case.
+            // --ssl-ca with --skip-ssl-verify-server-cert checks the chain against the CA but not the name: VerifyCa
+            // exactly (checked with client 13.0 / Connector/C 3.4: a wrong CA is refused). Through a tunnel
+            // VerifyIdentity would check 127.0.0.1, and the client cannot be told the real name: CA only there (said
+            // in the Undo button's hint).
             let verify_name = mode == TlsMode::VerifyIdentity && cli.host != "127.0.0.1";
             a.push(if verify_name { "--ssl-verify-server-cert" } else { "--skip-ssl-verify-server-cert" }.into());
             if let Some(ca) = some(&cli.ca) {
