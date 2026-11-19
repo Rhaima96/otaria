@@ -201,7 +201,9 @@ pub fn column_sql(c: &ColumnDef) -> AppResult<String> {
             s += if c.nullable { " NULL" } else { " NOT NULL" };
             match &c.default {
                 DefaultValue::None => {}
-                DefaultValue::Null => s += " DEFAULT NULL",
+                // NOT NULL DEFAULT NULL is refused (1067): unticking "NULL allowed" drops the default.
+                DefaultValue::Null if c.nullable => s += " DEFAULT NULL",
+                DefaultValue::Null => {}
                 DefaultValue::Literal(v) => s += &format!(" DEFAULT {}", literal(v)),
                 DefaultValue::Expr(e) => s += &format!(" DEFAULT ({})", e.trim()),
             }
@@ -1039,6 +1041,11 @@ mod tests {
         assert_eq!(column_sql(&g).unwrap(), "`g` int AS (a + 1) PERSISTENT");
         let bad = ColumnDef { collation: Some("x; DROP".into()), ..col("c", "text") };
         assert_eq!(column_sql(&bad).unwrap_err().code, "INVALID_NAME");
+        let mut n = ColumnDef { default: DefaultValue::Null, ..col("a", "int") };
+        n.nullable = true;
+        assert_eq!(column_sql(&n).unwrap(), "`a` int NULL DEFAULT NULL");
+        n.nullable = false;
+        assert_eq!(column_sql(&n).unwrap(), "`a` int NOT NULL");
     }
 
     #[test]
