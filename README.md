@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/brand/mark.svg" width="96" alt="Otaria logo"></p>
+<p align="center"><img src="src/assets/mark.svg" width="96" alt="Otaria logo"></p>
 
 # Otaria for MariaDB
 
@@ -6,7 +6,7 @@ A fast desktop client built only for MariaDB: system-versioned tables, sequences
 
 macOS · Windows · Linux · English, Français, Español, Italiano, Deutsch
 
-> Status: early development (phase 0: app skeleton). See [PLAN.md](PLAN.md) (French) and [docs/MARIADB_REFERENCE.md](docs/MARIADB_REFERENCE.md).
+> Status: early development. Downloads: [otaria-releases](https://github.com/Rhaima96/otaria-releases/releases).
 
 ## Develop
 
@@ -23,6 +23,6 @@ Stack: Tauri 2 (Rust) · Vue 3 + TypeScript · Tailwind CSS v4 · shadcn-vue · 
 
 ## License
 
-[MIT](LICENSE). Brand guidelines: [docs/brand](docs/brand/otaria-brand-guidelines.pdf).
+[MIT](LICENSE).
 
 MariaDB is a registered trademark of MariaDB Foundation / MariaDB plc. Otaria is an independent project, not affiliated with or endorsed by them.

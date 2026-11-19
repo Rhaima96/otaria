@@ -1,6 +1,6 @@
 /*
  * Otaria design tokens: single source of truth for colours, fonts and radii.
- * Values come from docs/brand/otaria-brand-guidelines.pdf (UI tokens page).
+ * Values come from the Otaria brand guidelines (UI tokens page).
  * Variable names follow shadcn-vue conventions so its components pick them up.
  *   brand guide name -> variable here
  *   --bg -> --background, --fg -> --foreground, --surface -> --card / --sidebar,
