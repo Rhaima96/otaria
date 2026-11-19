@@ -41,8 +41,9 @@ opt-level = 3
 panic = "abort"
 strip = true
 
-# mysql_async 0.37.1 with a one-line fix: TLS "verify CA" skipped the host name check only when the
-# rustls error text said "NotValidForName", which rustls 0.23.46 no longer prints (see
-# vendor/mysql_async/src/io/tls/rustls_io.rs, "Otaria patch"). Drop when upstream fixes it.
+# mysql_async 0.37.1 with two fixes, each marked "Otaria patch". Drop when upstream fixes them:
+# - TLS "verify CA" skipped the host name check only when the rustls error text said "NotValidForName",
+#   which rustls 0.23.46 no longer prints (src/io/tls/rustls_io.rs);
+# - connection attributes were dropped over TLS: the SSL request left out CLIENT_CONNECT_ATTRS (src/opts/mod.rs).
 [patch.crates-io]
 mysql_async = { path = "vendor/mysql_async" }

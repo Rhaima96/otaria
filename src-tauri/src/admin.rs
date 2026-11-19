@@ -253,12 +253,16 @@ mod tests {
         assert!(matches!(res, Err(mysql_async::Error::Server(ref e)) if e.code == 1317), "{res:?}");
         assert!(explain(&pool, 999_999).await.is_err());
 
-        // Connections tagged with the session attribute are the app's own when performance_schema is on.
+        // Connections tagged with the session attribute are the app's own when performance_schema is on,
+        // over TLS too (patched mysql_async: the SSL request announces the attributes).
         let tagged = Pool::new(
             mysql_async::OptsBuilder::default().ip_or_hostname(p[0]).tcp_port(p[1].parse().unwrap()).user(Some(p[2])).pass(Some(p[3])).prefer_socket(false)
+                .ssl_opts(mysql_async::SslOpts::default().with_danger_accept_invalid_certs(true))
                 .connect_attribute("otaria_session", "t1"),
         );
-        let idle = tagged.get_conn().await.unwrap();
+        let mut idle = tagged.get_conn().await.unwrap();
+        let cipher: Option<(String, String)> = idle.query_first("SHOW SESSION STATUS LIKE 'Ssl_cipher'").await.unwrap();
+        assert!(cipher.is_some_and(|(_, c)| !c.is_empty()), "tagged connection must be encrypted");
         let ps: bool = pool.get_conn().await.unwrap().query_first("SELECT @@performance_schema").await.unwrap().unwrap();
         let list = processes(&pool, true, &[], "t1").await.unwrap();
         assert_eq!(list.iter().find(|x| x.id == idle.id() as u64).unwrap().own, ps, "performance_schema = {ps}");

@@ -1173,6 +1173,12 @@ impl Opts {
         if self.client_found_rows() {
             out |= CapabilityFlags::CLIENT_FOUND_ROWS;
         }
+        // Otaria patch: the handshake response adds this flag itself, but the SSL request sent
+        // before it did not, and over TLS the server keeps the SSL request's flags: the
+        // attributes were dropped. Announce it here so both packets agree.
+        if self.inner.mysql_opts.connect_attributes.is_some() {
+            out |= CapabilityFlags::CLIENT_CONNECT_ATTRS;
+        }
 
         out
     }

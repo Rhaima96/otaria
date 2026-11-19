@@ -68,8 +68,7 @@ fn opts(profile: &Profile, password: Option<&str>, tunnel: Option<&Tunnel>, mode
         // Affected rows = matched rows, so a grid UPDATE that changes nothing still counts as 1 (edit.rs checks it).
         .client_found_rows(true)
         // Shown by performance_schema.session_connect_attrs (and SHOW PROCESSLIST tools that read it).
-        // ponytail: lost over TLS: mysql_async 0.37 leaves CLIENT_CONNECT_ATTRS out of its SSL request packet,
-        // so the server drops them; plain TCP and sockets carry them. Recheck when mysql_async is upgraded.
+        // Over TLS too thanks to the patched mysql_async (vendor/, see opts/mod.rs "Otaria patch").
         .connect_attribute("program_name", "otaria")
         .connect_attribute("otaria_session", tag)
         .user(Some(profile.user.clone()))
