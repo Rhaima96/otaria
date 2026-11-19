@@ -147,7 +147,7 @@ const cell = "border-b px-2 py-1 text-left align-top";
             v-model="probe"
             required
             rows="3"
-            :placeholder="t('vector.textPlaceholder', { n: current?.dimensions ?? 0 })"
+            :placeholder="t('vector.textPlaceholder', current?.dimensions ?? 0)"
             :aria-label="t('vector.byText')"
             class="rounded-sm border bg-background px-2 py-1 font-mono text-xs"
           />
@@ -155,7 +155,7 @@ const cell = "border-b px-2 py-1 text-left align-top";
             <button type="submit" :disabled="busy || !probe.trim()" :class="primary">
               <Loader2 v-if="busy" class="size-3.5 animate-spin" />{{ t("vector.run") }}
             </button>
-            <span v-if="result" class="text-muted-foreground">{{ t("editor.rows", { n: result.rows.length }) }}</span>
+            <span v-if="result" class="text-muted-foreground">{{ t("editor.rows", result.rows.length) }}</span>
           </div>
           <ErrorLine v-if="searchError" :error="searchError" />
         </form>

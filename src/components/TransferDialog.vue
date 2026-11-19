@@ -123,7 +123,7 @@ async function runExport() {
     const req = { schema, table, targetSession: targetSession.value, targetSchema: targetSchema.value.trim(), data: data.value, drop: drop.value };
     await track(
       (id) => api.copyData(props.sessionId, id, req),
-      (n) => t("transfer.copied", { n, to: `${to?.profile.name} · ${req.targetSchema}` }),
+      (n) => t("transfer.copied", { n, to: `${to?.profile.name} · ${req.targetSchema}` }, n),
     );
     emit("imported", req.targetSchema, "export");
     return;
@@ -133,7 +133,7 @@ async function runExport() {
   if (!path) return;
   await track(
     (id) => api.exportData(props.sessionId, id, { schema, table, format: format.value, path, data: data.value, drop: drop.value, nullAsN: nullAsN.value }),
-    (n) => t("transfer.exported", { n, path }),
+    (n) => t("transfer.exported", { n, path }, n),
   );
 }
 
@@ -143,7 +143,7 @@ async function runImport() {
   const schema = target.value.schema;
   await track(
     (id) => api.importSql(props.sessionId, id, schema, path, encoding.value),
-    (n) => t("transfer.imported", { n }),
+    (n) => t("transfer.imported", n),
   );
   // Even a stopped import may have created objects.
   emit("imported", schema, target.value.mode);
@@ -181,7 +181,7 @@ async function loadPreview() {
 async function runCsv() {
   const { schema, table } = target.value;
   const req = { schema, table: table!, path: csvPath.value, delimiter: delimiter.value!, header: header.value, mapping: mapping.value, emptyNull: emptyNull.value, encoding: encoding.value };
-  if (await track((id) => api.importCsv(props.sessionId, id, req), (n) => t("transfer.csvImported", { n }, n))) emit("imported", schema, target.value.mode);
+  if (await track((id) => api.importCsv(props.sessionId, id, req), (n) => t("transfer.csvImported", n))) emit("imported", schema, target.value.mode);
 }
 
 const canRun = computed(() => {
@@ -320,7 +320,7 @@ const cell = "border-b px-2 py-1 text-left align-top";
         <p class="flex items-center gap-1.5 text-muted-foreground">
           <LoaderCircle class="size-3.5 animate-spin" />
           <template v-if="progress && progress.total">{{ t("transfer.progressBytes", { done: mb(progress.done), total: mb(progress.total) }) }}</template>
-          <template v-else-if="progress">{{ t("transfer.progressRows", { n: progress.done }) }}</template>
+          <template v-else-if="progress">{{ t("transfer.progressRows", progress.done) }}</template>
           <template v-else>{{ t("transfer.starting") }}</template>
         </p>
         <progress v-if="progress && progress.total" :value="progress.done" :max="progress.total" class="h-1.5 w-full accent-primary" />

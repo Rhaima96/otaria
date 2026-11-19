@@ -111,7 +111,7 @@ function pick(k: unknown) {
         <input v-model="bodies" type="checkbox" class="size-3.5" />{{ t("palette.searchBodies") }}
       </label>
       <p v-if="!loading && query.trim() && !results.length && !inside.length" class="px-3 pb-3 text-muted-foreground">{{ t("palette.none") }}</p>
-      <p v-else-if="!query.trim()" class="px-3 pb-3 text-muted-foreground">{{ t("palette.hint", { n: objects.length }) }}</p>
+      <p v-else-if="!query.trim()" class="px-3 pb-3 text-muted-foreground">{{ t("palette.hint", { n: objects.length }, objects.length) }}</p>
     </ListboxRoot>
   </dialog>
 </template>

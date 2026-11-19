@@ -286,7 +286,7 @@ const tabBtn = "flex h-full shrink-0 items-center gap-1 border-r px-3 hover:bg-s
               @grid-ready="onGridReady"
             />
             <div class="flex h-7 shrink-0 items-center gap-2 border-t px-2 text-muted-foreground">
-              <span>{{ t("editor.rows", { n: shown.rows.length }) }}</span>
+              <span>{{ t("editor.rows", shown.rows.length) }}</span>
               <template v-if="shown.stopped && typeof resultTab === 'number'">
                 <span v-if="counts[resultTab] !== undefined" class="text-warning">{{ t("editor.cappedTotal", { total: counts[resultTab] }) }}</span>
                 <template v-else>
@@ -305,9 +305,9 @@ const tabBtn = "flex h-full shrink-0 items-center gap-1 border-r px-3 hover:bg-s
             <li v-for="(r, i) in output.results" :key="i" class="border-b py-1.5">
               <div class="truncate text-muted-foreground">{{ r.sql }}</div>
               <div>
-                {{ r.columns.length ? t(r.stopped ? "editor.rowsAtLeast" : "editor.rows", { n: r.totalRows }) : t("editor.affected", { n: r.affectedRows }) }}
+                {{ r.columns.length ? t(r.stopped ? "editor.rowsAtLeast" : "editor.rows", r.totalRows) : t("editor.affected", r.affectedRows) }}
                 · {{ t("editor.elapsed", { ms: r.elapsedMs }) }}
-                <span v-if="r.warnings" class="text-warning">· {{ t("editor.warnings", { n: r.warnings }) }}</span>
+                <span v-if="r.warnings" class="text-warning">· {{ t("editor.warnings", r.warnings) }}</span>
               </div>
             </li>
             <li v-if="output.error" class="py-1.5">

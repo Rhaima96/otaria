@@ -230,7 +230,7 @@ const cell = "border-b px-2 py-1 text-left align-top";
             </div>
             <template v-if="diff">
               <p class="mt-2 text-muted-foreground">
-                {{ t("versioning.diffCount", { n: diff.rows.length }) }}
+                {{ t("versioning.diffCount", diff.rows.length) }}
                 <span v-if="diff.truncated" class="text-warning">· {{ t("versioning.diffTruncated") }}</span>
               </p>
               <table v-if="diff.rows.length" class="mt-2 w-full border-collapse">

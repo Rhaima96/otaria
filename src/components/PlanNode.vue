@@ -46,7 +46,7 @@ const time = computed(() => {
         {{ t("plan.rows") }} {{ num(s.rows) }}<template v-if="s.r_rows !== undefined"> → {{ num(s.r_rows) }}</template>
       </span>
       <span v-if="s.filtered !== undefined">{{ t("plan.filtered") }} {{ num(s.filtered) }} %<template v-if="s.r_filtered !== undefined"> → {{ num(s.r_filtered) }} %</template></span>
-      <span v-if="s.r_loops !== undefined" class="text-muted-foreground">{{ t("plan.loops", { n: num(s.r_loops) }) }}</span>
+      <span v-if="s.r_loops !== undefined" class="text-muted-foreground">{{ t("plan.loops", { n: num(s.r_loops) }, Number(s.r_loops)) }}</span>
       <span v-if="time !== null" class="flex items-center gap-1.5">
         {{ t("plan.time", { ms: num(time) }) }}
         <span class="h-1.5 w-20 overflow-hidden rounded-full bg-secondary"><span class="block h-full bg-primary" :style="{ width: `${total > 0 ? Math.min(100, (time / total) * 100) : 0}%` }" /></span>

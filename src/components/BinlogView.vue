@@ -268,8 +268,8 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
         <div class="flex h-7 shrink-0 items-center gap-2 border-t px-2 text-muted-foreground">
           <Loader2 v-if="busy" class="size-3.5 animate-spin" />
           <span v-if="from !== null" class="shrink-0 font-mono">{{ t("binlog.fromPos", { pos: from }) }}</span>
-          <span v-if="byTxn" class="shrink-0">{{ t("binlog.txnCount", { n: txns.length }) }}</span>
-          <span class="shrink-0">{{ shown.length < events.length ? t("binlog.matching", { n: shown.length, total: events.length }) : t("binlog.loaded", { n: events.length }) }}</span>
+          <span v-if="byTxn" class="shrink-0">{{ t("binlog.txnCount", txns.length) }}</span>
+          <span class="shrink-0">{{ shown.length < events.length ? t("binlog.matching", { n: shown.length, total: events.length }, shown.length) : t("binlog.loaded", events.length) }}</span>
           <button v-if="more" :disabled="busy" :class="btn" class="text-foreground" @click="open(file, true)">{{ t("binlog.more") }}</button>
           <span class="ml-auto min-w-0 truncate" :title="t('binlog.hint')">{{ t("binlog.hint") }}</span>
         </div>

@@ -394,14 +394,14 @@ const btn = "flex h-6 shrink-0 items-center gap-1 rounded-sm px-2 whitespace-now
     />
 
     <div class="flex h-7 shrink-0 items-center gap-2 border-t px-2 text-muted-foreground">
-      <span>{{ t("grid.rowCount", { n: rows.filter((r) => r.orig).length }) }}</span>
+      <span>{{ t("grid.rowCount", rows.filter((r) => r.orig).length) }}</span>
       <button v-if="hasMore" :class="btn" :disabled="busy" class="text-foreground" @click="load(true)">{{ t("grid.loadMore", { n: PAGE }) }}</button>
     </div>
 
     <JsonDialog ref="json" :schema="schema" :table="table" @apply="applyJson" @sql="(sql) => emit('editSql', sql)" />
 
     <dialog ref="historyDialog" class="m-auto w-[min(72rem,92vw)] rounded-lg border bg-popover p-0 text-popover-foreground backdrop:bg-black/40">
-      <div class="border-b px-4 py-2 font-semibold">{{ t("versioned.historyTitle", { n: history?.rows.rows.length ?? 0 }) }}</div>
+      <div class="border-b px-4 py-2 font-semibold">{{ t("versioned.historyTitle", history?.rows.rows.length ?? 0) }}</div>
       <AgGridVue
         v-if="history"
         class="h-[50vh]"
