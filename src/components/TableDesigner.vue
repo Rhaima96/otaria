@@ -285,7 +285,7 @@ const subtab = "h-full border-b-2 px-3 font-medium";
           <thead class="text-muted-foreground">
             <tr>
               <th :class="head">{{ t("designer.kind") }}</th>
-              <th :class="head">{{ t("structure.name") }}</th>
+              <th :class="head">{{ t("sequence.name") }}</th>
               <th :class="head">{{ t("designer.indexColumns") }}</th>
               <th :class="head">{{ t("structure.comment") }}</th>
               <th :class="head" :title="t('designer.ignoredHint')">{{ t("designer.ignored") }}</th>
@@ -347,7 +347,7 @@ const subtab = "h-full border-b-2 px-3 font-medium";
         <table class="w-full border-collapse">
           <thead class="text-muted-foreground">
             <tr>
-              <th :class="head">{{ t("structure.name") }}</th>
+              <th :class="head">{{ t("sequence.name") }}</th>
               <th :class="head">{{ t("designer.indexColumns") }}</th>
               <th :class="head">{{ t("designer.refSchema") }}</th>
               <th :class="head">{{ t("designer.refTable") }}</th>
@@ -399,7 +399,7 @@ const subtab = "h-full border-b-2 px-3 font-medium";
         <table class="w-full border-collapse">
           <thead class="text-muted-foreground">
             <tr>
-              <th :class="cn(head, 'w-56')">{{ t("structure.name") }}</th>
+              <th :class="cn(head, 'w-56')">{{ t("sequence.name") }}</th>
               <th :class="head">{{ t("designer.condition") }}</th>
               <th :class="head" />
             </tr>
