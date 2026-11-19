@@ -137,6 +137,18 @@ pub struct TableDef {
     pub partitions: String,
 }
 
+/// MySQL's STATISTICS.EXPRESSION is the SHOW CREATE TABLE text escaped once more (`\'` for `'`,
+/// `\\` for `\`): one level of backslashes removed gives back SQL that runs (between `ESCAPES_ON` and
+/// `ESCAPES_RESTORE`, like every designer statement).
+fn unescape_once(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        out.push(if c == '\\' { chars.next().unwrap_or('\\') } else { c });
+    }
+    out
+}
+
 /// Quoted text literal. `'` is doubled and `\` doubled: the statements run between `ESCAPES_ON` and
 /// `ESCAPES_RESTORE`, so the backslash escape holds even on a server set to NO_BACKSLASH_ESCAPES.
 pub fn literal(s: &str) -> String {
@@ -743,7 +755,7 @@ pub async fn load_tables(pool: &Pool, schema: &str, only: Option<&str>, mariadb:
         for (name, non_unique, col, sub_part, itype, icomment, desc, ignored, expr) in indexes.remove(&table).unwrap_or_default() {
             let column = match (col, expr) {
                 (Some(col), _) => IndexColumn { name: col, length: sub_part, desc, expr: None },
-                (None, Some(e)) => IndexColumn { name: String::new(), length: None, desc, expr: Some(e) },
+                (None, Some(e)) => IndexColumn { name: String::new(), length: None, desc, expr: Some(unescape_once(&e)) },
                 (None, None) => continue,
             };
             match idx.last_mut().filter(|i| i.name == name) {
@@ -947,6 +959,11 @@ pub async fn database_ddl(pool: &Pool, action: &str, name: &str, charset: &str, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unescapes_mysql_index_expressions() {
+        assert_eq!(unescape_once(r"concat(`b`,_utf8mb4\'it\\\'s\',_utf8mb4\'b\\\\s\')"), r"concat(`b`,_utf8mb4'it\'s',_utf8mb4'b\\s')");
+    }
 
     #[test]
     fn database_statements() {
@@ -1454,5 +1471,42 @@ mod tests {
         assert_eq!(mode, "NO_BACKSLASH_ESCAPES");
         drop(conn);
         run(&pool, &["DROP DATABASE otaria_nbe".into()]).await.unwrap();
+    }
+
+    /// MySQL 8 functional key parts: loaded with their expression, diff to nothing, and a table
+    /// created from what was loaded gets the same index back.
+    /// OTARIA_TEST_MYSQL="host:port:user:password" cargo test -- --ignored
+    #[tokio::test]
+    #[ignore]
+    async fn functional_index_on_mysql() {
+        let spec = std::env::var("OTARIA_TEST_MYSQL").expect("set OTARIA_TEST_MYSQL");
+        let p: Vec<&str> = spec.splitn(4, ':').collect();
+        let pool = Pool::new(
+            mysql_async::OptsBuilder::default().ip_or_hostname(p[0]).tcp_port(p[1].parse().unwrap()).user(Some(p[2])).pass(Some(p[3])).prefer_socket(false),
+        );
+        run(
+            &pool,
+            &[
+                "DROP DATABASE IF EXISTS otaria_fx".into(),
+                "CREATE DATABASE otaria_fx".into(),
+                "CREATE TABLE otaria_fx.t (id INT PRIMARY KEY, a INT, b VARCHAR(20), INDEX fx (a, (a + 1) DESC, (CONCAT(b, ',', 'it''s', 'b\\\\s'))))".into(),
+            ],
+        )
+        .await
+        .unwrap();
+        let t = load(&pool, "otaria_fx", "t", false).await.unwrap();
+        let fx = t.indexes.iter().find(|i| i.name == "fx").unwrap();
+        assert_eq!(fx.columns.len(), 3, "{fx:?}");
+        assert_eq!((fx.columns[0].name.as_str(), fx.columns[0].expr.is_none()), ("a", true));
+        assert!(fx.columns[1].desc && fx.columns[1].expr.as_deref().is_some_and(|e| e.contains('+')), "{fx:?}");
+        assert!(fx.columns[2].expr.as_deref().is_some_and(|e| e.contains("concat")), "{fx:?}");
+        assert!(alter_sql("otaria_fx", &t, &t, Algorithm::Default, false).unwrap().is_empty());
+
+        let mut copy = t.clone();
+        copy.name = "t2".into();
+        run(&pool, &[create_sql("otaria_fx", &copy, false).unwrap()]).await.unwrap();
+        let t2 = load(&pool, "otaria_fx", "t2", false).await.unwrap();
+        assert_eq!(t2.indexes.iter().find(|i| i.name == "fx").map(|i| &i.columns), Some(&fx.columns));
+        run(&pool, &["DROP DATABASE otaria_fx".into()]).await.unwrap();
     }
 }
