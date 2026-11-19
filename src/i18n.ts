@@ -24,6 +24,8 @@ export const i18n = createI18n({
   locale: initialLocale(),
   fallbackLocale: "en",
   messages: { en, fr, es, it, de },
+  // "a | b" messages: French keeps 0 singular (others use the default: 1 singular, 0 plural).
+  pluralRules: { fr: (n: number) => (n > 1 ? 1 : 0) },
 });
 
 export function setLocale(locale: Locale) {

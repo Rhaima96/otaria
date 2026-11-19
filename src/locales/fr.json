@@ -718,7 +718,7 @@
     "skip": "— ignorer —",
     "csvHint": "Toutes les lignes passent dans une seule transaction : une ligne en erreur et rien n’est importé.",
     "csvRun": "Importer",
-    "csvImported": "{n} lignes insérées.",
+    "csvImported": "{n} ligne insérée. | {n} lignes insérées.",
     "fileLines": "Lignes du fichier : {lines}",
     "encoding": "Encodage",
     "encodings": {

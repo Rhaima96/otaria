@@ -718,7 +718,7 @@
     "skip": "— überspringen —",
     "csvHint": "Alle Zeilen laufen in einer Transaktion: Bei einer fehlerhaften Zeile wird nichts importiert.",
     "csvRun": "Importieren",
-    "csvImported": "{n} Zeilen eingefügt.",
+    "csvImported": "{n} Zeile eingefügt. | {n} Zeilen eingefügt.",
     "fileLines": "Zeilen der Datei: {lines}",
     "encoding": "Kodierung",
     "encodings": {

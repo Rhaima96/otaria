@@ -181,7 +181,7 @@ async function loadPreview() {
 async function runCsv() {
   const { schema, table } = target.value;
   const req = { schema, table: table!, path: csvPath.value, delimiter: delimiter.value!, header: header.value, mapping: mapping.value, emptyNull: emptyNull.value, encoding: encoding.value };
-  if (await track((id) => api.importCsv(props.sessionId, id, req), (n) => t("transfer.csvImported", { n }))) emit("imported", schema, target.value.mode);
+  if (await track((id) => api.importCsv(props.sessionId, id, req), (n) => t("transfer.csvImported", { n }, n))) emit("imported", schema, target.value.mode);
 }
 
 const canRun = computed(() => {

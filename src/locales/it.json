@@ -718,7 +718,7 @@
     "skip": "— ignora —",
     "csvHint": "Tutte le righe vanno in un’unica transazione: con una riga errata non viene importato nulla.",
     "csvRun": "Importa",
-    "csvImported": "{n} righe inserite.",
+    "csvImported": "{n} riga inserita. | {n} righe inserite.",
     "fileLines": "Righe del file: {lines}",
     "encoding": "Codifica",
     "encodings": {

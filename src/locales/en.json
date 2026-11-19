@@ -718,7 +718,7 @@
     "skip": "— skip —",
     "csvHint": "All rows go in one transaction: one bad row and nothing is imported.",
     "csvRun": "Import",
-    "csvImported": "{n} rows inserted.",
+    "csvImported": "{n} row inserted. | {n} rows inserted.",
     "fileLines": "File lines: {lines}",
     "encoding": "Encoding",
     "encodings": {
