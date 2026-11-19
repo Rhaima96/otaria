@@ -515,6 +515,9 @@ export interface CsvPreview {
   delimiter: string;
 }
 
+/** Text encoding of an imported file; latin1 = Windows-1252 (covers ISO-8859-1). */
+export type Encoding = "utf8" | "latin1";
+
 export interface CsvImport {
   schema: string;
   table: string;
@@ -524,6 +527,7 @@ export interface CsvImport {
   /** Target column per CSV column, in file order; null = skip. */
   mapping: (string | null)[];
   emptyNull: boolean;
+  encoding: Encoding;
 }
 
 export interface CopyReq {
@@ -640,8 +644,9 @@ export const api = {
   accountDropSql: (user: string, host: string, isRole: boolean) => invoke<string>("account_drop_sql", { user, host, isRole }),
   accountDrop: (sessionId: string, user: string, host: string, isRole: boolean) => invoke<void>("account_drop", { sessionId, user, host, isRole }),
   exportData: (sessionId: string, jobId: string, req: ExportReq) => invoke<number>("export_data", { sessionId, jobId, req }),
-  importSql: (sessionId: string, jobId: string, schema: string, path: string) => invoke<number>("import_sql", { sessionId, jobId, schema, path }),
-  csvPreview: (path: string, delimiter: string | null, header: boolean) => invoke<CsvPreview>("csv_preview", { path, delimiter, header }),
+  importSql: (sessionId: string, jobId: string, schema: string, path: string, encoding: Encoding) =>
+    invoke<number>("import_sql", { sessionId, jobId, schema, path, encoding }),
+  csvPreview: (path: string, encoding: Encoding, delimiter: string | null, header: boolean) => invoke<CsvPreview>("csv_preview", { path, encoding, delimiter, header }),
   importCsv: (sessionId: string, jobId: string, req: CsvImport) => invoke<number>("import_csv", { sessionId, jobId, req }),
   copyData: (sessionId: string, jobId: string, req: CopyReq) => invoke<number>("copy_data", { sessionId, jobId, req }),
   cancelJob: (sessionId: string, jobId: string) => invoke<void>("cancel_job", { sessionId, jobId }),

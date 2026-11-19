@@ -643,20 +643,20 @@ async fn export_data(app: AppHandle, state: State<'_, AppState>, session_id: Str
 
 /// Run an SQL file in `schema`. Returns the number of statements run.
 #[tauri::command]
-async fn import_sql(app: AppHandle, state: State<'_, AppState>, session_id: String, job_id: String, schema: String, path: String) -> AppResult<u64> {
+async fn import_sql(app: AppHandle, state: State<'_, AppState>, session_id: String, job_id: String, schema: String, path: String, encoding: transfer::Encoding) -> AppResult<u64> {
     let pool = pool(&state, &session_id).await?;
     let mut conn = query::open_editor(&pool, Some(&schema)).await?;
     let job = Job::new(&state, &job_id, conn.conn_id);
     let conn = Arc::get_mut(&mut conn.conn).expect("connection not shared yet").get_mut();
-    transfer::import_sql(conn, &path, &job.cancel, |done, total| {
+    transfer::import_sql(conn, &path, encoding, &job.cancel, |done, total| {
         let _ = app.emit("transfer-progress", Progress { id: &job_id, done, total });
     })
     .await
 }
 
 #[tauri::command]
-fn csv_preview(path: String, delimiter: Option<String>, header: bool) -> AppResult<transfer::CsvPreview> {
-    transfer::csv_preview(&path, delimiter.as_deref(), header)
+fn csv_preview(path: String, encoding: transfer::Encoding, delimiter: Option<String>, header: bool) -> AppResult<transfer::CsvPreview> {
+    transfer::csv_preview(&path, encoding, delimiter.as_deref(), header)
 }
 
 /// CSV file → table, in one transaction. Returns the number of rows inserted.

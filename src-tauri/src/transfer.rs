@@ -392,9 +392,78 @@ async fn dump_rows(
 }
 
 /// Run an SQL file on `conn`, read in chunks so a large dump never sits in memory whole.
+/// Text encoding of an imported file.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Encoding {
+    #[default]
+    Utf8,
+    /// Windows-1252, which covers ISO-8859-1 for every printable character (the server's `latin1` is the same).
+    Latin1,
+}
+
+/// Windows-1252 bytes 0x80–0x9F; the five it leaves undefined keep their C1 code, as WHATWG decoders do.
+const CP1252_HIGH: [char; 32] = [
+    '\u{20AC}', '\u{81}', '\u{201A}', '\u{192}', '\u{201E}', '\u{2026}', '\u{2020}', '\u{2021}', '\u{2C6}', '\u{2030}', '\u{160}', '\u{2039}', '\u{152}', '\u{8D}', '\u{17D}', '\u{8F}',
+    '\u{90}', '\u{2018}', '\u{2019}', '\u{201C}', '\u{201D}', '\u{2022}', '\u{2013}', '\u{2014}', '\u{2DC}', '\u{2122}', '\u{161}', '\u{203A}', '\u{153}', '\u{9D}', '\u{17E}', '\u{178}',
+];
+
+fn cp1252(b: u8) -> char {
+    if (0x80..0xA0).contains(&b) { CP1252_HIGH[(b - 0x80) as usize] } else { b as char }
+}
+
+/// A Windows-1252 byte stream read as UTF-8, for the CSV reader.
+struct Cp1252Reader<R> {
+    inner: R,
+    out: Vec<u8>,
+    at: usize,
+}
+
+impl<R: std::io::Read> std::io::Read for Cp1252Reader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.at == self.out.len() {
+            let mut raw = [0u8; 8192];
+            let n = self.inner.read(&mut raw)?;
+            self.out.clear();
+            self.at = 0;
+            let mut tmp = [0u8; 4];
+            for &b in &raw[..n] {
+                self.out.extend_from_slice(cp1252(b).encode_utf8(&mut tmp).as_bytes());
+            }
+        }
+        let n = buf.len().min(self.out.len() - self.at);
+        buf[..n].copy_from_slice(&self.out[self.at..self.at + n]);
+        self.at += n;
+        Ok(n)
+    }
+}
+
+/// The file as UTF-8 text, decoded on the way when it is Windows-1252.
+fn text_reader(path: &str, encoding: Encoding) -> AppResult<Box<dyn std::io::Read + Send>> {
+    let f = File::open(path)?;
+    Ok(match encoding {
+        Encoding::Utf8 => Box::new(f),
+        Encoding::Latin1 => Box::new(Cp1252Reader { inner: std::io::BufReader::new(f), out: vec![], at: 0 }),
+    })
+}
+
 /// Stops at the first failing statement (the ones before it stay applied, as with the mariadb client).
 /// `progress(bytes read, file size)`. Returns the number of statements run.
-pub async fn import_sql(conn: &mut Conn, path: &str, cancel: &AtomicBool, progress: impl Fn(u64, u64)) -> AppResult<u64> {
+/// Latin-1: the bytes go to the server as they are, after `SET NAMES latin1` (the server's latin1 is
+/// Windows-1252), so a `SET NAMES` in the file keeps its meaning; the text is only decoded byte for byte to
+/// find where statements end.
+pub async fn import_sql(conn: &mut Conn, path: &str, encoding: Encoding, cancel: &AtomicBool, progress: impl Fn(u64, u64)) -> AppResult<u64> {
+    if encoding == Encoding::Utf8 {
+        return import_statements(conn, path, encoding, cancel, progress).await;
+    }
+    conn.query_drop("SET NAMES latin1").await?;
+    let r = import_statements(conn, path, encoding, cancel, progress).await;
+    // The connection goes back to the pool: never left in latin1.
+    conn.query_drop("SET NAMES utf8mb4").await?;
+    r
+}
+
+async fn import_statements(conn: &mut Conn, path: &str, encoding: Encoding, cancel: &AtomicBool, progress: impl Fn(u64, u64)) -> AppResult<u64> {
     let mut file = tokio::fs::File::open(path).await?;
     let total = file.metadata().await?.len();
     let mut chunk = vec![0u8; 1 << 20];
@@ -409,13 +478,16 @@ pub async fn import_sql(conn: &mut Conn, path: &str, cancel: &AtomicBool, progre
         let cut = if eof { pending.len() } else { pending.iter().rposition(|&c| c == b'\n').map_or(0, |p| p + 1) };
         if cut > 0 {
             let piece: Vec<u8> = pending.drain(..cut).collect();
-            text.push_str(&String::from_utf8(piece).map_err(|_| AppError::new("FILE_NOT_UTF8", path))?);
+            match encoding {
+                Encoding::Utf8 => text.push_str(&String::from_utf8(piece).map_err(|_| AppError::new("FILE_NOT_UTF8", path))?),
+                Encoding::Latin1 => text.extend(piece.iter().map(|&b| b as char)),
+            }
             // ponytail: an unfinished statement is parsed again with each new chunk; quadratic only for a
             // single statement of many MiB.
             let (stmts, tail, d) = query::split_from(&text, &delim);
             for s in &stmts {
                 n += 1;
-                run(conn, &s.sql, n, cancel).await?;
+                run(conn, &s.sql, encoding, n, cancel).await?;
             }
             text.drain(..tail);
             delim = d;
@@ -428,16 +500,21 @@ pub async fn import_sql(conn: &mut Conn, path: &str, cancel: &AtomicBool, progre
     let last = text.trim();
     if !last.is_empty() {
         n += 1;
-        run(conn, last, n, cancel).await?;
+        run(conn, last, encoding, n, cancel).await?;
     }
     Ok(n)
 }
 
-async fn run(conn: &mut Conn, sql: &str, n: u64, cancel: &AtomicBool) -> AppResult<()> {
+/// `sql` is sent as UTF-8, or for Latin-1 as the original bytes (each char of it is one byte, < 256).
+async fn run(conn: &mut Conn, sql: &str, encoding: Encoding, n: u64, cancel: &AtomicBool) -> AppResult<()> {
     if cancel.load(Ordering::Relaxed) {
         return Err(cancelled());
     }
-    conn.query_drop(sql).await.map_err(|e| {
+    let res = match encoding {
+        Encoding::Utf8 => conn.query_drop(sql).await,
+        Encoding::Latin1 => conn.query_drop(sql.chars().map(|c| c as u8).collect::<Vec<u8>>().as_slice()).await,
+    };
+    res.map_err(|e| {
         let mut err = AppError::from(e);
         if err.code != "QUERY_CANCELLED" {
             err.code = "IMPORT_STATEMENT";
@@ -480,20 +557,21 @@ fn csv_err(e: csv::Error) -> AppError {
     AppError { detail: line.map(|l| l.to_string()), ..AppError::new(code, e.to_string()) }
 }
 
-fn csv_reader(path: &str, delimiter: u8, header: bool) -> AppResult<csv::Reader<File>> {
-    csv::ReaderBuilder::new().delimiter(delimiter).has_headers(header).from_path(path).map_err(csv_err)
+fn csv_reader(path: &str, encoding: Encoding, delimiter: u8, header: bool) -> AppResult<csv::Reader<Box<dyn std::io::Read + Send>>> {
+    Ok(csv::ReaderBuilder::new().delimiter(delimiter).has_headers(header).from_reader(text_reader(path, encoding)?))
 }
 
-pub fn csv_preview(path: &str, delimiter: Option<&str>, header: bool) -> AppResult<CsvPreview> {
+pub fn csv_preview(path: &str, encoding: Encoding, delimiter: Option<&str>, header: bool) -> AppResult<CsvPreview> {
     let d = match delimiter {
         Some(d) => delimiter_byte(d)?,
         None => {
             let mut first = String::new();
-            std::io::BufRead::read_line(&mut std::io::BufReader::new(File::open(path)?), &mut first)?;
+            std::io::BufRead::read_line(&mut std::io::BufReader::new(text_reader(path, encoding)?), &mut first)
+                .map_err(|_| AppError::new("FILE_NOT_UTF8", path))?;
             detect_delimiter(&first)
         }
     };
-    let mut rd = csv_reader(path, d, header)?;
+    let mut rd = csv_reader(path, encoding, d, header)?;
     let rows: Vec<Vec<String>> =
         rd.records().take(PREVIEW_ROWS).map(|r| r.map(|r| r.iter().map(str::to_string).collect())).collect::<Result<_, _>>().map_err(csv_err)?;
     let columns = if header {
@@ -517,6 +595,8 @@ pub struct CsvImport {
     pub mapping: Vec<Option<String>>,
     /// Empty field → NULL (what the CSV export writes for NULL).
     pub empty_null: bool,
+    #[serde(default)]
+    pub encoding: Encoding,
 }
 
 /// Placeholders per statement: the protocol allows 65,535.
@@ -546,7 +626,7 @@ pub async fn import_csv(pool: &Pool, req: &CsvImport, cancel: &AtomicBool, progr
     let full_sql = insert_sql(&req.schema, &req.table, &cols, batch);
 
     let total = std::fs::metadata(&req.path)?.len();
-    let mut rd = csv_reader(&req.path, delimiter_byte(&req.delimiter)?, req.header)?;
+    let mut rd = csv_reader(&req.path, req.encoding, delimiter_byte(&req.delimiter)?, req.header)?;
     let mut tx = conn.start_transaction(TxOpts::default()).await?;
     let (mut params, mut in_batch, mut first_line, mut last_line, mut n) = (Vec::<Value>::new(), 0usize, 0u64, 0u64, 0u64);
     let mut record = csv::StringRecord::new();
@@ -577,7 +657,8 @@ pub async fn import_csv(pool: &Pool, req: &CsvImport, cancel: &AtomicBool, progr
             })?;
             n += in_batch as u64;
             in_batch = 0;
-            progress(record.position().map_or(0, |p| p.byte()), total);
+            // Decoded Latin-1 is longer than the file: the position is capped at its size.
+            progress(record.position().map_or(0, |p| p.byte()).min(total), total);
         }
         if !more {
             break;
@@ -612,7 +693,7 @@ pub async fn copy(src: &Pool, dst: &Pool, req: &CopyReq, cancel: &AtomicBool, pr
         let mut conn = dst.get_conn().await?;
         conn.query_drop(format!("CREATE DATABASE IF NOT EXISTS {}", ident(&req.target_schema))).await?;
         conn.query_drop(format!("USE {}", ident(&req.target_schema))).await?;
-        import_sql(&mut conn, &path, cancel, &progress).await?;
+        import_sql(&mut conn, &path, Encoding::Utf8, cancel, &progress).await?;
         Ok(rows)
     }
     .await;
@@ -623,6 +704,15 @@ pub async fn copy(src: &Pool, dst: &Pool, req: &CopyReq, cancel: &AtomicBool, pr
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_windows_1252() {
+        use std::io::Read;
+        let mut out = String::new();
+        let mut r = Cp1252Reader { inner: &b"caf\xe9 \x80\x93\x81 \xff"[..], out: vec![], at: 0 };
+        r.read_to_string(&mut out).unwrap();
+        assert_eq!(out, "café €\u{201C}\u{81} ÿ");
+    }
 
     #[test]
     fn writes_sql_literals() {
@@ -732,7 +822,7 @@ mod tests {
         assert_eq!(export(&pool, &req(Format::Sql, None, "sql"), &no, |_| {}).await.unwrap(), 2);
         let mut im = pool.get_conn().await.unwrap();
         im.query_drop("USE otaria_im").await.unwrap();
-        assert!(import_sql(&mut im, &path("sql"), &no, |_, _| {}).await.unwrap() > 10);
+        assert!(import_sql(&mut im, &path("sql"), Encoding::Utf8, &no, |_, _| {}).await.unwrap() > 10);
         let same: Option<u8> = conn
             .query_first(
                 "SELECT COUNT(*) = 2 FROM otaria_ex.t a JOIN otaria_im.t b USING (id)
@@ -770,7 +860,7 @@ mod tests {
 
         // A failing statement stops the import and says which one; a cancelled export leaves no file.
         std::fs::write(path("bad.sql"), "SELECT 1;\nSELEC 2;\nSELECT 3;").unwrap();
-        let err = import_sql(&mut im, &path("bad.sql"), &no, |_, _| {}).await.unwrap_err();
+        let err = import_sql(&mut im, &path("bad.sql"), Encoding::Utf8, &no, |_, _| {}).await.unwrap_err();
         assert_eq!((err.code, err.detail.as_deref()), ("IMPORT_STATEMENT", Some("#2: SELEC 2")));
         let stop = AtomicBool::new(true);
         assert_eq!(export(&pool, &req(Format::Csv, Some("t"), "stop.csv"), &stop, |_| {}).await.unwrap_err().code, "QUERY_CANCELLED");
@@ -779,7 +869,7 @@ mod tests {
         // CSV → table: BOM, quoted delimiter and newline, empty = NULL, \N = NULL, unmapped column skipped.
         conn.query_drop("CREATE TABLE otaria_im.c (id INT PRIMARY KEY, name VARCHAR(20), n INT)").await.unwrap();
         std::fs::write(path("in.csv"), "\u{feff}id;skip;name;n\n1;x;\"a;\nb\";5\n2;x;;\n3;x;\\N;7\n").unwrap();
-        let pre = csv_preview(&path("in.csv"), None, true).unwrap();
+        let pre = csv_preview(&path("in.csv"), Encoding::Utf8, None, true).unwrap();
         assert_eq!((pre.delimiter.as_str(), pre.columns[0].as_str(), pre.rows.len()), (";", "id", 3));
         let imp = |mapping: Vec<Option<&str>>| CsvImport {
             schema: "otaria_im".into(),
@@ -789,6 +879,7 @@ mod tests {
             header: true,
             mapping: mapping.into_iter().map(|m| m.map(Into::into)).collect(),
             empty_null: true,
+            encoding: Encoding::Utf8,
         };
         assert_eq!(import_csv(&pool, &imp(vec![Some("id"), None, Some("name"), Some("n")]), &no, |_, _| {}).await.unwrap(), 3);
         let got: Vec<(i32, Option<String>, Option<i32>)> = conn.query("SELECT id, name, n FROM otaria_im.c ORDER BY id").await.unwrap();
@@ -800,6 +891,21 @@ mod tests {
         let left: Option<u64> = conn.query_first("SELECT COUNT(*) FROM otaria_im.c").await.unwrap();
         assert_eq!(left, Some(2));
         assert_eq!(import_csv(&pool, &imp(vec![Some("nope")]), &no, |_, _| {}).await.unwrap_err().code, "NOT_FOUND");
+
+        // Windows-1252 files: refused as UTF-8, read right as Latin-1 (é, €, en dash, ü, ß) into utf8mb4 columns.
+        std::fs::write(path("l1.sql"), b"SET NAMES latin1;\nINSERT INTO otaria_im.c VALUES (10, 'caf\xe9 \x80 \x96', 1);\n").unwrap();
+        assert_eq!(import_sql(&mut im, &path("l1.sql"), Encoding::Utf8, &no, |_, _| {}).await.unwrap_err().code, "FILE_NOT_UTF8");
+        assert_eq!(import_sql(&mut im, &path("l1.sql"), Encoding::Latin1, &no, |_, _| {}).await.unwrap(), 2);
+        let cs: Option<String> = im.query_first("SELECT @@character_set_client").await.unwrap();
+        assert_eq!(cs.as_deref(), Some("utf8mb4"), "connection back to utf8mb4");
+        std::fs::write(path("l1.csv"), b"id;name;n\n20;Gr\xfc\xdfe \x80;1\n").unwrap();
+        assert_eq!(csv_preview(&path("l1.csv"), Encoding::Utf8, None, true).unwrap_err().code, "FILE_NOT_UTF8");
+        let pre = csv_preview(&path("l1.csv"), Encoding::Latin1, None, true).unwrap();
+        assert_eq!(pre.rows[0][1], "Grüße €");
+        let l1 = CsvImport { path: path("l1.csv"), encoding: Encoding::Latin1, ..imp(vec![Some("id"), Some("name"), Some("n")]) };
+        assert_eq!(import_csv(&pool, &l1, &no, |_, _| {}).await.unwrap(), 1);
+        let got: Vec<(i32, String)> = conn.query("SELECT id, name FROM otaria_im.c WHERE id >= 10 ORDER BY id").await.unwrap();
+        assert_eq!(got, [(10, "café € –".to_string()), (20, "Grüße €".to_string())]);
 
         // Copy one table into a schema that does not exist yet.
         let req = CopyReq { schema: "otaria_ex".into(), table: Some("t".into()), target_session: String::new(), target_schema: "otaria_cp".into(), data: true, drop: false };

@@ -124,7 +124,7 @@
     "EXPORT_FORMAT": "Este formato no puede exportar una base de datos completa.",
     "EXPORT_TOO_MANY_ROWS": "Demasiadas filas para una hoja de Excel. Use CSV o JSON.",
     "IMPORT_STATEMENT": "La importación se detuvo en una instrucción con error. Las instrucciones anteriores se aplicaron.",
-    "FILE_NOT_UTF8": "El archivo no es texto UTF-8.",
+    "FILE_NOT_UTF8": "El archivo no es texto UTF-8. Si viene de una herramienta antigua o de Excel, elija la codificación Latin-1 / Windows-1252.",
     "CSV_DELIMITER": "El separador debe ser un solo carácter.",
     "CSV_PARSE": "No se pudo leer el archivo CSV.",
     "IMPORT_ROWS": "El servidor rechazó filas del archivo. No se importó nada.",
@@ -719,7 +719,12 @@
     "csvHint": "Todas las filas van en una sola transacción: con una fila errónea no se importa nada.",
     "csvRun": "Importar",
     "csvImported": "{n} filas insertadas.",
-    "fileLines": "Líneas del archivo: {lines}"
+    "fileLines": "Líneas del archivo: {lines}",
+    "encoding": "Codificación",
+    "encodings": {
+      "utf8": "UTF-8",
+      "latin1": "Latin-1 / Windows-1252"
+    }
   },
   "diagram": {
     "open": "Diagrama ER…",

@@ -124,7 +124,7 @@
     "EXPORT_FORMAT": "Dieses Format kann keine ganze Datenbank exportieren.",
     "EXPORT_TOO_MANY_ROWS": "Zu viele Zeilen für ein Excel-Blatt. Verwenden Sie CSV oder JSON.",
     "IMPORT_STATEMENT": "Der Import wurde bei einer fehlerhaften Anweisung gestoppt. Die vorherigen Anweisungen wurden angewendet.",
-    "FILE_NOT_UTF8": "Die Datei ist kein UTF-8-Text.",
+    "FILE_NOT_UTF8": "Die Datei ist kein UTF-8-Text. Stammt sie aus einem älteren Programm oder aus Excel, wählen Sie die Kodierung Latin-1 / Windows-1252.",
     "CSV_DELIMITER": "Das Trennzeichen muss ein einzelnes Zeichen sein.",
     "CSV_PARSE": "Die CSV-Datei konnte nicht gelesen werden.",
     "IMPORT_ROWS": "Der Server hat Zeilen der Datei abgelehnt. Es wurde nichts importiert.",
@@ -719,7 +719,12 @@
     "csvHint": "Alle Zeilen laufen in einer Transaktion: Bei einer fehlerhaften Zeile wird nichts importiert.",
     "csvRun": "Importieren",
     "csvImported": "{n} Zeilen eingefügt.",
-    "fileLines": "Zeilen der Datei: {lines}"
+    "fileLines": "Zeilen der Datei: {lines}",
+    "encoding": "Kodierung",
+    "encodings": {
+      "utf8": "UTF-8",
+      "latin1": "Latin-1 / Windows-1252"
+    }
   },
   "diagram": {
     "open": "ER-Diagramm…",

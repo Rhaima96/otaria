@@ -6,7 +6,7 @@ import { open as openFile, save } from "@tauri-apps/plugin-dialog";
 import { Copy, Download, FileSpreadsheet, LoaderCircle, Upload } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
 import { useSessions } from "@/composables/useSessions";
-import { api, toAppError, type AppError, type CsvPreview, type ExportFormat, type TransferProgress } from "@/lib/api";
+import { api, toAppError, type AppError, type CsvPreview, type Encoding, type ExportFormat, type TransferProgress } from "@/lib/api";
 
 /**
  * One dialog for every transfer: export a table / view / schema (to a file or another connection),
@@ -61,6 +61,8 @@ const csvPath = ref("");
 const delimiter = ref<string | null>(null);
 const header = ref(true);
 const emptyNull = ref(true);
+/** Encoding of the imported file (SQL and CSV). */
+const encoding = ref<Encoding>("utf8");
 const preview = ref<CsvPreview | null>(null);
 const tableColumns = ref<string[]>([]);
 const mapping = ref<(string | null)[]>([]);
@@ -83,6 +85,7 @@ function open(x: TransferTarget) {
   delimiter.value = null;
   header.value = true;
   emptyNull.value = true;
+  encoding.value = "utf8";
   dialog.value?.showModal();
 }
 defineExpose({ open });
@@ -139,7 +142,7 @@ async function runImport() {
   if (typeof path !== "string") return;
   const schema = target.value.schema;
   await track(
-    (id) => api.importSql(props.sessionId, id, schema, path),
+    (id) => api.importSql(props.sessionId, id, schema, path, encoding.value),
     (n) => t("transfer.imported", { n }),
   );
   // Even a stopped import may have created objects.
@@ -165,7 +168,7 @@ async function loadPreview() {
       // Generated columns cannot receive values.
       tableColumns.value = info.columns.filter((c) => !/GENERATED/i.test(c.extra)).map((c) => c.name);
     }
-    preview.value = await api.csvPreview(csvPath.value, delimiter.value, header.value);
+    preview.value = await api.csvPreview(csvPath.value, encoding.value, delimiter.value, header.value);
     delimiter.value = preview.value.delimiter;
     const byName = (n: string) => tableColumns.value.find((c) => c.toLowerCase() === n.trim().toLowerCase()) ?? null;
     mapping.value = preview.value.columns.map((c, i) => (header.value ? byName(c) : (tableColumns.value[i] ?? null)));
@@ -177,7 +180,7 @@ async function loadPreview() {
 
 async function runCsv() {
   const { schema, table } = target.value;
-  const req = { schema, table: table!, path: csvPath.value, delimiter: delimiter.value!, header: header.value, mapping: mapping.value, emptyNull: emptyNull.value };
+  const req = { schema, table: table!, path: csvPath.value, delimiter: delimiter.value!, header: header.value, mapping: mapping.value, emptyNull: emptyNull.value, encoding: encoding.value };
   if (await track((id) => api.importCsv(props.sessionId, id, req), (n) => t("transfer.csvImported", { n }))) emit("imported", schema, target.value.mode);
 }
 
@@ -254,7 +257,16 @@ const cell = "border-b px-2 py-1 text-left align-top";
         </label>
       </template>
 
-      <p v-else-if="target.mode === 'import'" class="text-muted-foreground">{{ t("transfer.importHint", { schema: target.schema }) }}</p>
+      <template v-else-if="target.mode === 'import'">
+        <p class="text-muted-foreground">{{ t("transfer.importHint", { schema: target.schema }) }}</p>
+        <label class="flex items-center gap-1.5">
+          {{ t("transfer.encoding") }}
+          <select v-model="encoding" :disabled="running" :class="field">
+            <option value="utf8">{{ t("transfer.encodings.utf8") }}</option>
+            <option value="latin1">{{ t("transfer.encodings.latin1") }}</option>
+          </select>
+        </label>
+      </template>
 
       <template v-else>
         <div class="flex flex-wrap items-center gap-2">
@@ -267,6 +279,13 @@ const cell = "border-b px-2 py-1 text-left align-top";
               {{ t("transfer.delimiter") }}
               <select v-model="delimiter" :disabled="running" :class="field" @change="loadPreview">
                 <option v-for="(key, d) in DELIMITERS" :key="d" :value="d">{{ t(`transfer.delimiters.${key}`) }}</option>
+              </select>
+            </label>
+            <label class="flex items-center gap-1.5">
+              {{ t("transfer.encoding") }}
+              <select v-model="encoding" :disabled="running" :class="field" @change="loadPreview">
+                <option value="utf8">{{ t("transfer.encodings.utf8") }}</option>
+                <option value="latin1">{{ t("transfer.encodings.latin1") }}</option>
               </select>
             </label>
             <label class="flex items-center gap-1.5"><input v-model="header" :disabled="running" type="checkbox" class="size-3.5" @change="loadPreview" />{{ t("transfer.header") }}</label>
