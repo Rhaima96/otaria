@@ -89,6 +89,7 @@
   "errors": {
     "UNKNOWN": "Error inesperado.",
     "DB_ACCESS_DENIED": "Acceso denegado: comprueba el usuario y la contraseña.",
+    "DB_NO_PRIVILEGE": "Acceso denegado: esta cuenta no tiene el privilegio necesario para esta acción.",
     "DB_UNKNOWN_DATABASE": "La base de datos por defecto no existe.",
     "DB_SERVER": "El servidor devolvió un error.",
     "DB_UNREACHABLE": "No se puede contactar con el servidor: comprueba host, puerto y cortafuegos.",

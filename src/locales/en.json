@@ -89,6 +89,7 @@
   "errors": {
     "UNKNOWN": "Unexpected error.",
     "DB_ACCESS_DENIED": "Access denied: check the user name and password.",
+    "DB_NO_PRIVILEGE": "Access denied: this account lacks the privilege for this action.",
     "DB_UNKNOWN_DATABASE": "The default database does not exist.",
     "DB_SERVER": "The server returned an error.",
     "DB_UNREACHABLE": "Cannot reach the server: check the host, port and firewall.",

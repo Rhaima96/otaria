@@ -89,6 +89,7 @@
   "errors": {
     "UNKNOWN": "Erreur inattendue.",
     "DB_ACCESS_DENIED": "Accès refusé : vérifiez l'utilisateur et le mot de passe.",
+    "DB_NO_PRIVILEGE": "Accès refusé : ce compte n’a pas le privilège nécessaire pour cette action.",
     "DB_UNKNOWN_DATABASE": "La base par défaut n'existe pas.",
     "DB_SERVER": "Le serveur a renvoyé une erreur.",
     "DB_UNREACHABLE": "Serveur injoignable : vérifiez l'hôte, le port et le pare-feu.",

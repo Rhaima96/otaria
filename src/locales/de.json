@@ -89,6 +89,7 @@
   "errors": {
     "UNKNOWN": "Unerwarteter Fehler.",
     "DB_ACCESS_DENIED": "Zugriff verweigert: Benutzername und Passwort prüfen.",
+    "DB_NO_PRIVILEGE": "Zugriff verweigert: Diesem Konto fehlt das Recht für diese Aktion.",
     "DB_UNKNOWN_DATABASE": "Die Standarddatenbank existiert nicht.",
     "DB_SERVER": "Der Server hat einen Fehler gemeldet.",
     "DB_UNREACHABLE": "Server nicht erreichbar: Host, Port und Firewall prüfen.",

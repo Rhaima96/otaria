@@ -28,7 +28,9 @@ impl From<mysql_async::Error> for AppError {
         match e {
             Error::Server(s) => {
                 let code = match s.code {
-                    1045 | 1044 | 1698 => "DB_ACCESS_DENIED",
+                    1045 => "DB_ACCESS_DENIED",
+                    // Missing privilege (database, table, routine, SUPER, role admin option…), not a bad password.
+                    1044 | 1142 | 1143 | 1227 | 1370 | 1698 => "DB_NO_PRIVILEGE",
                     1049 => "DB_UNKNOWN_DATABASE",
                     1317 => "QUERY_CANCELLED",
                     // ALGORITHM=INSTANT / LOCK=NONE not possible for this change.

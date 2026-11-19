@@ -89,6 +89,7 @@
   "errors": {
     "UNKNOWN": "Errore imprevisto.",
     "DB_ACCESS_DENIED": "Accesso negato: controlla utente e password.",
+    "DB_NO_PRIVILEGE": "Accesso negato: questo account non ha il privilegio necessario per questa azione.",
     "DB_UNKNOWN_DATABASE": "Il database predefinito non esiste.",
     "DB_SERVER": "Il server ha restituito un errore.",
     "DB_UNREACHABLE": "Server non raggiungibile: controlla host, porta e firewall.",
