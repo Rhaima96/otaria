@@ -155,33 +155,122 @@ pub struct Sort {
     pub desc: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Default, Serialize)]
 pub struct Rows {
     pub columns: Vec<String>,
     /// Text values as sent by the server; NULL = None. Non-UTF-8 bytes come as 0x… hex.
     pub rows: Vec<Vec<Option<String>>>,
+    /// Per row, the columns whose value was cut to `CELL_CUT` characters (grid only).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub cut: Vec<Vec<usize>>,
+}
+
+/// Characters of a long TEXT / BLOB cell sent to the grid; the whole value is read on demand.
+pub const CELL_CUT: usize = 1024;
+/// Extra last column of a grid query: which cells of the row were cut (`"2,5"`).
+const CUT_MARK: &str = "__otaria_cut";
+
+/// Visible columns of a table, and whether the grid cuts them: long text and binary types, never a
+/// key column (rows are edited and paged by their key).
+pub async fn grid_columns(pool: &Pool, schema: &str, table: &str) -> AppResult<Vec<(String, bool)>> {
+    let mut conn = pool.get_conn().await?;
+    Ok(conn
+        .exec(
+            "SELECT COLUMN_NAME, DATA_TYPE IN ('text', 'mediumtext', 'longtext', 'blob', 'mediumblob', 'longblob', 'json') AND COLUMN_KEY <> 'PRI'
+             FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND EXTRA NOT LIKE '%INVISIBLE%' ORDER BY ORDINAL_POSITION",
+            (schema, table),
+        )
+        .await?)
+}
+
+/// Select list of a grid query: `*`, or the columns with the long ones cut and `CUT_MARK` last.
+pub fn select_list(cols: &[(String, bool)]) -> String {
+    if !cols.iter().any(|(_, cut)| *cut) {
+        return "*".into();
+    }
+    let mut flags = Vec::new();
+    let list: Vec<String> = cols
+        .iter()
+        .enumerate()
+        .map(|(i, (c, cut))| {
+            if *cut {
+                flags.push(format!("IF(CHAR_LENGTH({0}) > {CELL_CUT}, '{i}', NULL)", ident(c)));
+                format!("LEFT({0}, {CELL_CUT}) AS {0}", ident(c))
+            } else {
+                ident(c)
+            }
+        })
+        .collect();
+    format!("{}, CONCAT_WS(',', {}) AS {CUT_MARK}", list.join(", "), flags.join(", "))
+}
+
+/// The whole value of one cell, found by the row's primary key.
+pub async fn cell_value(pool: &Pool, schema: &str, table: &str, key: &[(String, Option<String>)], column: &str) -> AppResult<Option<String>> {
+    if key.is_empty() {
+        return Err(AppError::new("NO_PRIMARY_KEY", table.to_string()));
+    }
+    let cond: Vec<String> = key.iter().map(|(c, _)| format!("{} <=> ?", ident(c))).collect();
+    let params: Vec<Value> = key.iter().map(|(_, v)| Value::from(v.clone())).collect();
+    let sql = format!("SELECT {} FROM {}.{} WHERE {}", ident(column), ident(schema), ident(table), cond.join(" AND "));
+    let mut conn = pool.get_conn().await?;
+    let row: Option<Row> = conn.exec_first(sql, params).await?;
+    let mut row = row.ok_or_else(|| AppError::new("NOT_FOUND", table.to_string()))?;
+    Ok(row.take::<Value, _>(0).and_then(cell))
 }
 
 /// Session variable holding the "as of" timestamp of a versioned table (set by `data`, never inlined).
 pub const AS_OF_VAR: &str = "@otaria_as_of";
 
+/// Session variables `@otaria_after0`, `@otaria_after1`…: the sort values of the last row shown.
+pub const AFTER_VAR: &str = "@otaria_after";
+
+/// Which page of the grid to read.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Page {
+    /// Skip this many rows (any sort; slower the deeper it goes).
+    Offset(u64),
+    /// Rows after the ones whose sort values are held in `AFTER_VAR`0…n (keyset: as fast at any
+    /// depth). Only for a sort on NOT NULL columns, which the grid uses on the primary key.
+    After,
+}
+
 /// `as_of`: read a system-versioned table as it was at the timestamp held in `AS_OF_VAR`.
-pub fn data_sql(schema: &str, table: &str, filter: Option<&str>, order: &[Sort], offset: u64, limit: u64, as_of: bool) -> String {
-    let mut sql = format!("SELECT * FROM {}.{}", ident(schema), ident(table));
+/// `select`: `*` or `select_list`. Sort columns are named through the table, so a cut column sorts
+/// on its whole value, not on the cut one of the same name.
+#[allow(clippy::too_many_arguments)]
+pub fn data_sql(schema: &str, table: &str, select: &str, filter: Option<&str>, order: &[Sort], page: Page, limit: u64, as_of: bool) -> String {
+    let mut sql = format!("SELECT {select} FROM {}.{}", ident(schema), ident(table));
     if as_of {
         sql += &format!(" FOR SYSTEM_TIME AS OF TIMESTAMP {AS_OF_VAR}");
     }
+    let mut conds = Vec::new();
     // The filter is the user's own SQL, run with their own privileges, like any query they type.
     if let Some(f) = filter.map(str::trim).filter(|f| !f.is_empty()) {
-        sql += &format!(" WHERE ({f}\n)");
+        conds.push(format!("({f}\n)"));
+    }
+    if page == Page::After && !order.is_empty() {
+        // (a > @0) OR (a = @0 AND b > @1) …, `<` for a descending column.
+        let parts: Vec<String> = (0..order.len())
+            .map(|i| {
+                let mut p: Vec<String> = order[..i].iter().enumerate().map(|(j, s)| format!("{} = {AFTER_VAR}{j}", ident(&s.column))).collect();
+                p.push(format!("{} {} {AFTER_VAR}{i}", ident(&order[i].column), if order[i].desc { "<" } else { ">" }));
+                format!("({})", p.join(" AND "))
+            })
+            .collect();
+        conds.push(format!("({})", parts.join(" OR ")));
+    }
+    if !conds.is_empty() {
+        sql += &format!(" WHERE {}", conds.join(" AND "));
     }
     if !order.is_empty() {
         let cols: Vec<String> =
-            order.iter().map(|s| format!("{}{}", ident(&s.column), if s.desc { " DESC" } else { "" })).collect();
+            order.iter().map(|s| format!("{}.{}{}", ident(table), ident(&s.column), if s.desc { " DESC" } else { "" })).collect();
         sql += &format!(" ORDER BY {}", cols.join(", "));
     }
-    // ponytail: LIMIT/OFFSET, slow on very deep pages of huge tables; switch to keyset on the PK if it matters.
-    sql + &format!(" LIMIT {limit} OFFSET {offset}")
+    match page {
+        Page::Offset(offset) => sql + &format!(" LIMIT {limit} OFFSET {offset}"),
+        Page::After => sql + &format!(" LIMIT {limit}"),
+    }
 }
 
 pub fn cell(v: Value) -> Option<String> {
@@ -197,20 +286,31 @@ pub fn cell(v: Value) -> Option<String> {
 
 // ponytail: whole cells are loaded (no BLOB truncation), heavy for big BLOB columns × 1000 rows.
 /// `vars`: user values bound as session variables first (prepared), so the query itself stays on the
-/// text protocol. With vars, timestamps are in UTC (`time_zone = '+00:00'`); the pool resets the
-/// connection when it is returned, so this never leaks into other queries.
-pub async fn data(pool: &Pool, sql: &str, vars: &[(&str, Option<String>)]) -> AppResult<Rows> {
+/// text protocol. `utc`: timestamps in UTC (`time_zone = '+00:00'`), for "as of" reads. The pool
+/// resets the connection when it is returned, so neither leaks into other queries.
+pub async fn data(pool: &Pool, sql: &str, vars: &[(&str, Option<String>)], utc: bool) -> AppResult<Rows> {
     let mut conn = pool.get_conn().await?;
-    if !vars.is_empty() {
-        let sets: Vec<String> = vars.iter().map(|(name, _)| format!("{name} = ?")).collect();
+    let mut sets: Vec<String> = vars.iter().map(|(name, _)| format!("{name} = ?")).collect();
+    if utc {
+        sets.insert(0, "time_zone = '+00:00'".into());
+    }
+    if !sets.is_empty() {
         let params: Vec<Value> = vars.iter().map(|(_, v)| Value::from(v.clone())).collect();
-        conn.exec_drop(format!("SET time_zone = '+00:00', {}", sets.join(", ")), params).await?;
+        conn.exec_drop(format!("SET {}", sets.join(", ")), params).await?;
     }
     let mut result = conn.query_iter(sql).await?;
-    let columns = result.columns_ref().iter().map(|c| c.name_str().into_owned()).collect();
-    let rows = result.map(|row: Row| row.unwrap().into_iter().map(cell).collect()).await?;
+    let mut columns: Vec<String> = result.columns_ref().iter().map(|c| c.name_str().into_owned()).collect();
+    let mut rows: Vec<Vec<Option<String>>> = result.map(|row: Row| row.unwrap().into_iter().map(cell).collect()).await?;
     drop(result);
-    Ok(Rows { columns, rows })
+    let mut cut = Vec::new();
+    if columns.last().is_some_and(|c| c == CUT_MARK) {
+        columns.pop();
+        cut = rows
+            .iter_mut()
+            .map(|r| r.pop().flatten().map(|f| f.split(',').filter_map(|i| i.parse().ok()).collect()).unwrap_or_default())
+            .collect();
+    }
+    Ok(Rows { columns, rows, cut })
 }
 
 /// Names of the ROW START / ROW END columns, read from `SHOW CREATE TABLE`.
@@ -304,7 +404,7 @@ pub async fn row_history(pool: &Pool, schema: &str, table: &str, key: &[(String,
         ident(&end)
     );
     let vars: Vec<(&str, Option<String>)> = names.iter().map(String::as_str).zip(key.iter().map(|(_, v)| v.clone())).collect();
-    Ok(History { rows: data(pool, &sql, &vars).await?, start, end })
+    Ok(History { rows: data(pool, &sql, &vars, true).await?, start, end })
 }
 
 #[cfg(test)]
@@ -328,13 +428,19 @@ mod tests {
     fn builds_data_query() {
         let order = [Sort { column: "name".into(), desc: true }, Sort { column: "id".into(), desc: false }];
         assert_eq!(
-            data_sql("s", "t", Some(" id > 3 "), &order, 1000, 500, false),
-            "SELECT * FROM `s`.`t` WHERE (id > 3\n) ORDER BY `name` DESC, `id` LIMIT 500 OFFSET 1000"
+            data_sql("s", "t", "*", Some(" id > 3 "), &order, Page::Offset(1000), 500, false),
+            "SELECT * FROM `s`.`t` WHERE (id > 3\n) ORDER BY `t`.`name` DESC, `t`.`id` LIMIT 500 OFFSET 1000"
         );
-        assert_eq!(data_sql("s", "t", Some("  "), &[], 0, 10, false), "SELECT * FROM `s`.`t` LIMIT 10 OFFSET 0");
+        assert_eq!(data_sql("s", "t", "*", Some("  "), &[], Page::Offset(0), 10, false), "SELECT * FROM `s`.`t` LIMIT 10 OFFSET 0");
         assert_eq!(
-            data_sql("s", "t", None, &[], 0, 10, true),
+            data_sql("s", "t", "*", None, &[], Page::Offset(0), 10, true),
             "SELECT * FROM `s`.`t` FOR SYSTEM_TIME AS OF TIMESTAMP @otaria_as_of LIMIT 10 OFFSET 0"
+        );
+        // Keyset: rows after the last one shown, filter kept.
+        let pk = [Sort { column: "a".into(), desc: false }, Sort { column: "b".into(), desc: true }];
+        assert_eq!(
+            data_sql("s", "t", "*", Some("x = 1"), &pk, Page::After, 10, false),
+            "SELECT * FROM `s`.`t` WHERE (x = 1\n) AND ((`a` > @otaria_after0) OR (`a` = @otaria_after0 AND `b` < @otaria_after1)) ORDER BY `t`.`a`, `t`.`b` DESC LIMIT 10"
         );
     }
 
@@ -389,7 +495,7 @@ mod tests {
         conn.query_drop("DO SLEEP(0.01); UPDATE vi SET v = 'b' WHERE id = 1; UPDATE ve SET v = 20 WHERE id = 1").await.unwrap();
         drop(conn);
 
-        let past = data(&pool, &data_sql("otaria_ver", "vi", None, &[], 0, 10, true), &[(AS_OF_VAR, Some(before))]).await.unwrap();
+        let past = data(&pool, &data_sql("otaria_ver", "vi", "*", None, &[], Page::Offset(0), 10, true), &[(AS_OF_VAR, Some(before))], true).await.unwrap();
         assert_eq!(past.rows, [[Some("1".to_string()), Some("a".to_string())]]);
 
         let key = [("id".to_string(), Some("1".to_string()))];
@@ -400,5 +506,66 @@ mod tests {
         assert_eq!(h.columns, ["id", "v", "rs", "re"]);
         assert_eq!(h.rows.len(), 2);
         pool.get_conn().await.unwrap().query_drop("DROP DATABASE otaria_ver").await.unwrap();
+    }
+
+    /// Keyset pages read back the same rows as one offset read, on a composite key with a
+    /// descending part, a text column in another collation and a date.
+    #[tokio::test]
+    #[ignore]
+    async fn keyset_pages_on_test_server() {
+        let spec = std::env::var("OTARIA_TEST_DB").expect("set OTARIA_TEST_DB");
+        let p: Vec<&str> = spec.splitn(4, ':').collect();
+        let pool = Pool::new(
+            mysql_async::OptsBuilder::default().ip_or_hostname(p[0]).tcp_port(p[1].parse().unwrap()).user(Some(p[2])).pass(Some(p[3])).prefer_socket(false),
+        );
+        pool.get_conn()
+            .await
+            .unwrap()
+            .query_drop(
+                "DROP DATABASE IF EXISTS otaria_ks; CREATE DATABASE otaria_ks;
+                 CREATE TABLE otaria_ks.t (a INT, b VARCHAR(5) CHARACTER SET latin1 COLLATE latin1_bin, d DATETIME, PRIMARY KEY (a, b, d));
+                 INSERT INTO otaria_ks.t SELECT seq % 4, CHAR(65 + seq % 3), '2026-01-01' + INTERVAL seq HOUR FROM mysql.seq_1_to_23;",
+            )
+            .await
+            .unwrap();
+        let order = [Sort { column: "a".into(), desc: false }, Sort { column: "b".into(), desc: true }, Sort { column: "d".into(), desc: false }];
+        let all = data(&pool, &data_sql("otaria_ks", "t", "*", None, &order, Page::Offset(0), 100, false), &[], false).await.unwrap().rows;
+        let names: Vec<String> = (0..3).map(|i| format!("{AFTER_VAR}{i}")).collect();
+        let mut pages = data(&pool, &data_sql("otaria_ks", "t", "*", None, &order, Page::Offset(0), 5, false), &[], false).await.unwrap().rows;
+        loop {
+            let last = pages.last().unwrap().clone();
+            let vars: Vec<(&str, Option<String>)> = names.iter().map(String::as_str).zip(last).collect();
+            let next = data(&pool, &data_sql("otaria_ks", "t", "*", None, &order, Page::After, 5, false), &vars, false).await.unwrap().rows;
+            if next.is_empty() {
+                break;
+            }
+            pages.extend(next);
+        }
+        assert_eq!(all.len(), 23);
+        assert_eq!(pages, all);
+
+        // Long cells come cut and flagged; the whole value is read by key.
+        pool.get_conn()
+            .await
+            .unwrap()
+            .query_drop(
+                "CREATE TABLE otaria_ks.l (id INT PRIMARY KEY, short TEXT, big LONGTEXT, raw BLOB);
+                 INSERT INTO otaria_ks.l VALUES (1, 'x', CONCAT(REPEAT('é', 1024), 'b'), REPEAT('z', 2000)), (2, NULL, CONCAT(REPEAT('é', 1024), 'a'), NULL);",
+            )
+            .await
+            .unwrap();
+        let cols = grid_columns(&pool, "otaria_ks", "l").await.unwrap();
+        assert_eq!(cols.iter().filter(|c| c.1).count(), 3);
+        let by_id = [Sort { column: "id".into(), desc: true }];
+        let r = data(&pool, &data_sql("otaria_ks", "l", &select_list(&cols), None, &by_id, Page::Offset(0), 10, false), &[], false).await.unwrap();
+        assert_eq!(r.columns, ["id", "short", "big", "raw"]);
+        assert_eq!(r.rows[0][0].as_deref(), Some("2"));
+        assert_eq!(r.rows[0][2].as_ref().unwrap().chars().count(), CELL_CUT);
+        assert_eq!(r.cut, [vec![2], vec![2, 3]]);
+        let key = [("id".to_string(), Some("1".to_string()))];
+        let full = cell_value(&pool, "otaria_ks", "l", &key, "big").await.unwrap().unwrap();
+        assert!(full.ends_with('b') && full.chars().count() == CELL_CUT + 1);
+        assert_eq!(cell_value(&pool, "otaria_ks", "l", &[("id".into(), Some("2".into()))], "short").await.unwrap(), None);
+        pool.get_conn().await.unwrap().query_drop("DROP DATABASE otaria_ks").await.unwrap();
     }
 }

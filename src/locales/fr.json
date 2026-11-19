@@ -195,6 +195,7 @@
   },
   "grid": {
     "default": "(défaut)",
+    "cutHint": "Valeur longue coupée à 1024 caractères : ouvrez-la avec le bouton JSON pour la lire ou la modifier en entier.",
     "filter": "Filtre",
     "filterPlaceholder": "Condition WHERE, ex. id > 100",
     "reload": "Recharger",
@@ -231,6 +232,8 @@
     "messages": "Messages",
     "rows": "{n} lignes",
     "capped": "affichage plafonné, le serveur en a envoyé {total}",
+    "cappedStopped": "affichage plafonné, la suite n'a pas été lue (le serveur a été arrêté)",
+    "rowsAtLeast": "au moins {n} lignes",
     "elapsed": "{ms} ms",
     "affected": "{n} lignes touchées",
     "warnings": "{n} avertissements",

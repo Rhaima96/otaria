@@ -195,6 +195,7 @@
   },
   "grid": {
     "default": "(Standard)",
+    "cutHint": "Langer Wert nach 1024 Zeichen abgeschnitten: mit der Schaltfläche JSON ganz lesen oder bearbeiten.",
     "filter": "Filter",
     "filterPlaceholder": "WHERE-Bedingung, z. B. id > 100",
     "reload": "Neu laden",
@@ -231,6 +232,8 @@
     "messages": "Meldungen",
     "rows": "{n} Zeilen",
     "capped": "Anzeige begrenzt, der Server sandte {total}",
+    "cappedStopped": "Anzeige begrenzt, der Rest wurde nicht gelesen (der Server wurde gestoppt)",
+    "rowsAtLeast": "mindestens {n} Zeilen",
     "elapsed": "{ms} ms",
     "affected": "{n} Zeilen betroffen",
     "warnings": "{n} Warnungen",

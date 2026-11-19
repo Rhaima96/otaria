@@ -145,7 +145,7 @@ pub async fn search(pool: &Pool, schema: &str, table: &str, column: &str, distan
     let columns = result.columns_ref().iter().map(|c| c.name_str().into_owned()).collect();
     let rows = result.map(|row: mysql_async::Row| row.unwrap().into_iter().map(browse::cell).collect()).await?;
     drop(result);
-    Ok(Rows { columns, rows })
+    Ok(Rows { columns, rows, cut: vec![] })
 }
 
 #[cfg(test)]

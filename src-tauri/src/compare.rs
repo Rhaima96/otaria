@@ -284,13 +284,9 @@ fn strip_schema(ddl: &str, schema: &str) -> String {
 }
 
 /// Every table (fully loaded), sequence, view, routine, trigger and event of a schema.
-// ponytail: one designer::load per table (a handful of queries each); batch per schema if hundreds of tables get slow.
 pub async fn load(pool: &Pool, schema: &str, mariadb: bool) -> AppResult<Schema> {
     let objects = browse::objects(pool, schema).await?;
-    let mut tables = Vec::new();
-    for o in objects.iter().filter(|o| o.kind == "table") {
-        tables.push(designer::load(pool, schema, &o.name, mariadb).await?);
-    }
+    let tables = designer::load_tables(pool, schema, None, mariadb).await?;
     let mut conn = pool.get_conn().await?;
     // After USE, SHOW CREATE leaves the schema name out of view bodies.
     conn.query_drop(format!("USE {}", ident(schema))).await?;

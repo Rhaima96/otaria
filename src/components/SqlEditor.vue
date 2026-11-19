@@ -264,7 +264,8 @@ const tabBtn = "flex h-full shrink-0 items-center gap-1 border-r px-3 hover:bg-s
             />
             <div class="flex h-7 shrink-0 items-center gap-2 border-t px-2 text-muted-foreground">
               <span>{{ t("editor.rows", { n: shown.rows.length }) }}</span>
-              <span v-if="shown.totalRows > shown.rows.length" class="text-warning">{{ t("editor.capped", { total: shown.totalRows }) }}</span>
+              <span v-if="shown.stopped" class="text-warning">{{ t("editor.cappedStopped") }}</span>
+              <span v-else-if="shown.totalRows > shown.rows.length" class="text-warning">{{ t("editor.capped", { total: shown.totalRows }) }}</span>
               <button v-if="!(plan && planView)" :class="btn" class="text-foreground" :title="t('json.openHint')" @click="openJson"><Braces class="size-3.5" />{{ t("json.open") }}</button>
               <button v-if="plan" :class="btn" class="text-foreground" @click="planView = !planView">{{ planView ? t("plan.showGrid") : t("plan.showTree") }}</button>
               <span class="ml-auto">{{ t("editor.elapsed", { ms: shown.elapsedMs }) }}</span>
@@ -275,7 +276,7 @@ const tabBtn = "flex h-full shrink-0 items-center gap-1 border-r px-3 hover:bg-s
             <li v-for="(r, i) in output.results" :key="i" class="border-b py-1.5">
               <div class="truncate text-muted-foreground">{{ r.sql }}</div>
               <div>
-                {{ r.columns.length ? t("editor.rows", { n: r.totalRows }) : t("editor.affected", { n: r.affectedRows }) }}
+                {{ r.columns.length ? t(r.stopped ? "editor.rowsAtLeast" : "editor.rows", { n: r.totalRows }) : t("editor.affected", { n: r.affectedRows }) }}
                 · {{ t("editor.elapsed", { ms: r.elapsedMs }) }}
                 <span v-if="r.warnings" class="text-warning">· {{ t("editor.warnings", { n: r.warnings }) }}</span>
               </div>

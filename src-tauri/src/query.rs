@@ -192,8 +192,11 @@ pub struct StmtResult {
     /// Empty when the statement returns no result set (INSERT, SET…).
     pub columns: Vec<String>,
     pub rows: Vec<Vec<Option<String>>>,
-    /// Rows the server sent; more than `rows.len()` when the display cap was hit.
+    /// Rows read; more than `rows.len()` when the display cap was hit.
     pub total_rows: u64,
+    /// The cap was hit on a read-only statement and the server was told to stop: `total_rows` is
+    /// not the full count.
+    pub stopped: bool,
     pub affected_rows: u64,
     pub warnings: u16,
     pub elapsed_ms: u64,
@@ -267,10 +270,11 @@ pub fn pick(sql: &str, cursor: Option<usize>) -> Vec<String> {
     }
 }
 
-pub async fn run(conn: &mut Conn, stmts: &[String], max_rows: usize) -> RunOutput {
+/// `stop`: the pool and the editor connection's id, to `KILL QUERY` a read past the cap.
+pub async fn run(conn: &mut Conn, stmts: &[String], max_rows: usize, stop: Option<(&Pool, u32)>) -> RunOutput {
     let mut out = RunOutput { results: Vec::new(), error: None, error_sql: None, schema: None };
     for sql in stmts {
-        if let Err(e) = run_one(conn, sql, max_rows, &mut out.results).await {
+        if let Err(e) = run_one(conn, sql, max_rows, stop, &mut out.results).await {
             out.error = Some(e.into());
             out.error_sql = Some(sql.clone());
             break;
@@ -280,8 +284,17 @@ pub async fn run(conn: &mut Conn, stmts: &[String], max_rows: usize) -> RunOutpu
     out
 }
 
-async fn run_one(conn: &mut Conn, sql: &str, max_rows: usize, results: &mut Vec<StmtResult>) -> Result<(), mysql_async::Error> {
+async fn run_one(
+    conn: &mut Conn,
+    sql: &str,
+    max_rows: usize,
+    stop: Option<(&Pool, u32)>,
+    results: &mut Vec<StmtResult>,
+) -> Result<(), mysql_async::Error> {
     let t = Instant::now();
+    // Only a plain read is cut short: a CALL stopped halfway could leave half its work done.
+    let read_only = matches!(first_word(sql).as_str(), "SELECT" | "WITH" | "VALUES" | "TABLE");
+    let mut stopped = false;
     let mut res = conn.query_iter(sql).await?;
     let mut first = true;
     // One statement can return several result sets (CALL).
@@ -301,12 +314,23 @@ async fn run_one(conn: &mut Conn, sql: &str, max_rows: usize, results: &mut Vec<
             })
             .collect();
         let (mut rows, mut total) = (Vec::new(), 0u64);
-        // Streamed: rows past the cap are read and dropped, never kept in memory.
-        // ponytail: a huge result is still read to the end; KILL QUERY at the cap if that gets slow.
-        while let Some(row) = res.next().await? {
-            total += 1;
-            if rows.len() < max_rows {
-                rows.push(row.unwrap().into_iter().map(cell).collect::<Vec<_>>());
+        // Streamed: rows past the cap are never kept. On a read, the first one past it stops the
+        // server; what it had already sent is read and dropped, then comes "interrupted" (1317).
+        loop {
+            match res.next().await {
+                Ok(Some(row)) => {
+                    total += 1;
+                    if rows.len() < max_rows {
+                        rows.push(row.unwrap().into_iter().map(cell).collect::<Vec<_>>());
+                    } else if read_only && !stopped
+                        && let Some((pool, id)) = stop
+                    {
+                        stopped = cancel(pool, id).await.is_ok();
+                    }
+                }
+                Ok(None) => break,
+                Err(mysql_async::Error::Server(e)) if stopped && e.code == 1317 => break,
+                Err(e) => return Err(e),
             }
         }
         let r = StmtResult {
@@ -314,6 +338,7 @@ async fn run_one(conn: &mut Conn, sql: &str, max_rows: usize, results: &mut Vec<
             columns,
             rows,
             total_rows: total,
+            stopped,
             affected_rows: res.affected_rows(),
             warnings: res.warnings(),
             elapsed_ms: t.elapsed().as_millis() as u64,
@@ -552,11 +577,21 @@ LIMIT 100;"
         let pool = Pool::new(opts);
         let ed = open_editor(&pool, Some("mysql")).await.unwrap();
         let mut conn = ed.conn.lock().await;
-        let out = run(&mut conn, &pick("SELECT 1 a UNION SELECT 2; DO 1; SELECT x", None), 1).await;
+        let out = run(&mut conn, &pick("SELECT 1 a UNION SELECT 2; DO 1; SELECT x", None), 1, None).await;
         assert_eq!(out.results.len(), 2);
         assert_eq!((out.results[0].rows.len(), out.results[0].total_rows), (1, 2));
         assert_eq!(out.error.unwrap().server_code, Some(1054));
         assert_eq!(out.schema.as_deref(), Some("mysql"));
+
+        // Past the cap, a read is stopped on the server instead of read to the end; the next
+        // statement runs normally on the same connection.
+        let t = Instant::now();
+        let out = run(&mut conn, &pick("SELECT seq FROM seq_1_to_100000000; SELECT 7", None), 10, Some((&pool, ed.conn_id))).await;
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let r = &out.results[0];
+        assert!(r.stopped && r.rows.len() == 10 && r.total_rows < 100_000_000, "{} rows read", r.total_rows);
+        assert_eq!(out.results[1].rows[0][0].as_deref(), Some("7"));
+        assert!(t.elapsed().as_secs() < 10, "{:?}", t.elapsed());
 
         let id = ed.conn_id;
         let p2 = pool.clone();
@@ -564,7 +599,7 @@ LIMIT 100;"
             tokio::time::sleep(std::time::Duration::from_millis(300)).await;
             cancel(&p2, id).await.unwrap();
         });
-        let out = run(&mut conn, &["SELECT SLEEP(5)".into()], 10).await;
+        let out = run(&mut conn, &["SELECT SLEEP(5)".into()], 10, None).await;
         // SLEEP returns 1 when interrupted rather than failing.
         assert!(out.error.is_some() || out.results[0].rows[0][0].as_deref() == Some("1"));
 
@@ -579,6 +614,7 @@ LIMIT 100;"
                 None,
             ),
             10,
+            None,
         )
         .await;
         assert!(out.error.is_none(), "{:?}", out.error);
@@ -587,6 +623,6 @@ LIMIT 100;"
         assert_eq!(r.vector_columns, vec![2]);
         assert_eq!(r.origins[0].as_ref().map(|o| (o.table.as_str(), o.column.as_str())), Some(("t", "id")));
         assert!(r.origins[3].is_none());
-        run(&mut conn, &["DROP DATABASE otaria_vec_q".into()], 1).await;
+        run(&mut conn, &["DROP DATABASE otaria_vec_q".into()], 1, None).await;
     }
 }

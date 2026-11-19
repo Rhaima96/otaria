@@ -20,6 +20,8 @@ interface GridRow {
   v: (string | null | undefined)[];
   orig: (string | null)[] | null;
   deleted: boolean;
+  /** Columns whose value came cut (long TEXT / BLOB): read-only until the whole value is loaded. */
+  cut: number[];
 }
 
 const columns = ref<string[]>([]);
@@ -53,21 +55,34 @@ const readOnlyCol = (name: string) => {
   return !c || BINARY.test(c.dataType) || /GENERATED|PERSISTENT/i.test(c.extra);
 };
 
+/** Last row loaded: on a sort by the primary key alone, the next page starts after it (keyset). */
+let lastRow: (string | null)[] | null = null;
+// Keys shown as text that would not compare back exactly (hex bytes, rounded floats): offset instead.
+const INEXACT = /blob|binary|bit|float|double|real|vector|geometry/i;
+
 async function load(append = false) {
   busy.value = true;
   error.value = null;
   try {
     // Server-side sort, with the primary key as tie-breaker so pages are stable.
     const pk = props.info.primaryKey.filter((k) => !order.value.some((s) => s.column === k)).map((column) => ({ column, desc: false }));
+    const sort = [...order.value, ...pk];
+    const keyset =
+      append &&
+      lastRow !== null &&
+      sort.every((s) => props.info.primaryKey.includes(s.column)) &&
+      !props.info.columns.some((c) => props.info.primaryKey.includes(c.name) && INEXACT.test(c.dataType));
     const res = await api.tableData(props.sessionId, props.schema, props.table, {
       filter: filter.value,
-      order: [...order.value, ...pk],
+      order: sort,
       offset: append ? rows.value.filter((r) => r.orig).length : 0,
       limit: PAGE,
       asOf: asOf.value,
+      after: keyset ? sort.map((s) => lastRow![columns.value.indexOf(s.column)] ?? "") : null,
     });
+    lastRow = res.rows.at(-1) ?? (append ? lastRow : null);
     columns.value = res.columns;
-    const loaded = res.rows.map((r) => ({ id: nextId++, v: [...r], orig: r, deleted: false }));
+    const loaded = res.rows.map((r, k) => ({ id: nextId++, v: [...r], orig: r, deleted: false, cut: res.cut?.[k] ?? [] }));
     rows.value = append ? [...rows.value, ...loaded] : loaded;
     hasMore.value = res.rows.length === PAGE;
     tick.value++;
@@ -109,13 +124,21 @@ const colDefs = computed<ColDef<GridRow>[]>(() =>
     // The editor gives "" for an empty cell; NULL is set with its own button.
     valueParser: (p) => p.newValue ?? "",
     valueFormatter: (p) =>
-      p.value === null ? "NULL" : p.value === undefined ? t("grid.default") : vectorCols.value.has(name) ? vectorText(p.value) : String(p.value),
-    editable: (p) => editable.value && !readOnlyCol(name) && !p.data?.deleted,
+      p.value === null
+        ? "NULL"
+        : p.value === undefined
+          ? t("grid.default")
+          : vectorCols.value.has(name)
+            ? vectorText(p.value)
+            : String(p.value) + (p.data?.cut.includes(i) ? "…" : ""),
+    tooltipValueGetter: (p) => (p.data?.cut.includes(i) ? t("grid.cutHint") : undefined),
+    editable: (p) => editable.value && !readOnlyCol(name) && !p.data?.deleted && !p.data?.cut.includes(i),
     // Rows come sorted from the server: a constant comparator keeps that order on the client.
     sortable: !dirty.value,
     comparator: () => 0,
     cellClassRules: {
       "text-muted-foreground italic": (p) => p.value == null,
+      "text-muted-foreground": (p) => !!p.data?.cut.includes(i),
       "bg-warning/15!": (p) => !!p.data?.orig && p.data.v[i] !== p.data.orig[i] && p.data.v[i] !== undefined,
     },
   })),
@@ -141,7 +164,7 @@ function refreshStyles() {
 }
 
 function addRow() {
-  const r: GridRow = { id: nextId++, v: columns.value.map(() => undefined), orig: null, deleted: false };
+  const r: GridRow = { id: nextId++, v: columns.value.map(() => undefined), orig: null, deleted: false, cut: [] };
   rows.value = [...rows.value, r];
   tick.value++;
   setTimeout(() => grid?.ensureIndexVisible(rows.value.length - 1));
@@ -166,14 +189,28 @@ function setNull() {
 // JSON viewer / editor on the focused cell; editing follows the same rules as the grid.
 const json = ref<InstanceType<typeof JsonDialog> | null>(null);
 let jsonCell: { row: number; col: string } | null = null;
-function openJson() {
+async function openJson() {
   const cell = grid?.getFocusedCell();
   const node = cell && grid?.getDisplayedRowAtIndex(cell.rowIndex);
   if (!cell || !node?.data) return;
   const i = Number(cell.column.getColId());
   jsonCell = { row: cell.rowIndex, col: cell.column.getColId() };
-  const v = node.data.v[i];
-  json.value?.open({ column: columns.value[i], value: v ?? null, editable: editable.value && !readOnlyCol(columns.value[i]) && !node.data.deleted });
+  const row = node.data;
+  // A cut value: read it whole first (it becomes the row's original value, so not a change).
+  if (row.cut.includes(i) && hasKey.value && row.orig) {
+    try {
+      const full = await api.cellValue(props.sessionId, props.schema, props.table, keyOf(row), columns.value[i]);
+      row.orig[i] = full;
+      row.v[i] = full;
+      row.cut = row.cut.filter((c) => c !== i);
+      refreshStyles();
+    } catch (e) {
+      error.value = toAppError(e);
+      return;
+    }
+  }
+  const v = row.v[i];
+  json.value?.open({ column: columns.value[i], value: v ?? null, editable: editable.value && !readOnlyCol(columns.value[i]) && !row.deleted && !row.cut.includes(i) });
 }
 function applyJson(text: string) {
   const node = jsonCell && grid?.getDisplayedRowAtIndex(jsonCell.row);

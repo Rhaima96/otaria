@@ -302,7 +302,7 @@ pub async fn compare(pool: &Pool, schema: &str, table: &str, key: &[String], a: 
             order.join(", "),
             COMPARE_CAP + 1
         );
-        async move { browse::data(pool, &sql, &[(var, Some(at))]).await }
+        async move { browse::data(pool, &sql, &[(var, Some(at))], true).await }
     };
     let (mut ra, mut rb) = (read("@otaria_a", timestamp(a)?).await?, read("@otaria_b", timestamp(b)?).await?);
     let truncated = ra.rows.len() > COMPARE_CAP || rb.rows.len() > COMPARE_CAP;
@@ -392,7 +392,7 @@ mod tests {
 
     #[test]
     fn diffs_rows_on_key() {
-        let rows = |r: &[[&str; 2]]| Rows { columns: vec!["id".into(), "v".into()], rows: r.iter().map(|x| x.iter().map(|s| Some(s.to_string())).collect()).collect() };
+        let rows = |r: &[[&str; 2]]| Rows { columns: vec!["id".into(), "v".into()], rows: r.iter().map(|x| x.iter().map(|s| Some(s.to_string())).collect()).collect(), cut: vec![] };
         let a = rows(&[["1", "a"], ["2", "b"], ["3", "c"]]);
         let b = rows(&[["1", "a"], ["2", "B"], ["4", "d"]]);
         let kinds: Vec<(&str, Option<String>)> = diff(&a, &b, &[0]).iter().map(|d| (d.kind, d.after.as_ref().or(d.before.as_ref()).unwrap()[0].clone())).collect();

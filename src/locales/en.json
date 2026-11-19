@@ -195,6 +195,7 @@
   },
   "grid": {
     "default": "(default)",
+    "cutHint": "Long value cut at 1024 characters: open it with the JSON button to read or edit it whole.",
     "filter": "Filter",
     "filterPlaceholder": "WHERE condition, e.g. id > 100",
     "reload": "Reload",
@@ -231,6 +232,8 @@
     "messages": "Messages",
     "rows": "{n} rows",
     "capped": "display capped, the server sent {total}",
+    "cappedStopped": "display capped, the rest was not read (the server was stopped)",
+    "rowsAtLeast": "at least {n} rows",
     "elapsed": "{ms} ms",
     "affected": "{n} rows affected",
     "warnings": "{n} warnings",

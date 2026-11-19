@@ -195,6 +195,7 @@
   },
   "grid": {
     "default": "(predeterminado)",
+    "cutHint": "Valor largo cortado a 1024 caracteres: ábralo con el botón JSON para leerlo o editarlo completo.",
     "filter": "Filtro",
     "filterPlaceholder": "Condición WHERE, p. ej. id > 100",
     "reload": "Recargar",
@@ -231,6 +232,8 @@
     "messages": "Mensajes",
     "rows": "{n} filas",
     "capped": "visualización limitada, el servidor envió {total}",
+    "cappedStopped": "visualización limitada, el resto no se leyó (se detuvo el servidor)",
+    "rowsAtLeast": "al menos {n} filas",
     "elapsed": "{ms} ms",
     "affected": "{n} filas afectadas",
     "warnings": "{n} advertencias",

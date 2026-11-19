@@ -35,11 +35,14 @@ function open(s: string) {
 }
 defineExpose({ open });
 
+const SYSTEM = ["information_schema", "performance_schema", "mysql", "sys"];
+
 // Default source schema: another one than the target when comparing inside one connection.
 async function loadSchemas() {
   schemas.value = [];
   try {
-    schemas.value = await api.listSchemas(source.value);
+    // System schemas hold system views that SHOW CREATE cannot read, and are no one's schema to align.
+    schemas.value = (await api.listSchemas(source.value)).filter((x) => !SYSTEM.includes(x));
     if (!schemas.value.includes(sourceSchema.value) || (source.value === props.sessionId && sourceSchema.value === schema.value))
       sourceSchema.value = schemas.value.find((x) => source.value !== props.sessionId || x !== schema.value) ?? "";
   } catch (e) {

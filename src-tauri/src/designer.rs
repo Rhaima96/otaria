@@ -6,6 +6,7 @@
 //! Types and expressions (generated columns, DEFAULT expressions, CHECK clauses) are the user's own SQL,
 //! run with their own privileges, like the grid filter or the SQL editor.
 
+use std::collections::HashMap;
 use mysql_async::prelude::Queryable;
 use mysql_async::{Pool, Row};
 use serde::{Deserialize, Serialize};
@@ -494,179 +495,212 @@ fn parse_default(raw: Option<String>, mariadb: bool, extra: &str) -> DefaultValu
 }
 
 pub async fn load(pool: &Pool, schema: &str, table: &str, mariadb: bool) -> AppResult<TableDef> {
+    load_tables(pool, schema, Some(table), mariadb).await?.pop().ok_or_else(|| AppError::new("NOT_FOUND", table.to_string()))
+}
+
+/// Rows of one information_schema query, grouped by the table name in their first column.
+fn by_table<T>(rows: Vec<(String, T)>) -> HashMap<String, Vec<T>> {
+    let mut map: HashMap<String, Vec<T>> = HashMap::new();
+    for (table, r) in rows {
+        map.entry(table).or_default().push(r);
+    }
+    map
+}
+
+/// Every table of `schema` (views and sequences left out), or only `only`: the same five queries
+/// whatever the number of tables. SHOW CREATE TABLE is read only for a table that needs it (vector
+/// index options, FK rules hidden from a SELECT-only account).
+pub async fn load_tables(pool: &Pool, schema: &str, only: Option<&str>, mariadb: bool) -> AppResult<Vec<TableDef>> {
     let mut conn = pool.get_conn().await?;
-    let opts: Option<(String, String, String)> = conn
-        .exec_first(
-            "SELECT IFNULL(ENGINE, ''), IFNULL(TABLE_COLLATION, ''), IFNULL(TABLE_COMMENT, '')
-               FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?",
-            (schema, table),
+    // `? IS NULL OR TABLE_NAME = ?`: all tables, or one.
+    let which = (schema, only, only);
+    let tables: Vec<(String, String, String, String)> = conn
+        .exec(
+            "SELECT TABLE_NAME, IFNULL(ENGINE, ''), IFNULL(TABLE_COLLATION, ''), IFNULL(TABLE_COMMENT, '')
+               FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND (? IS NULL OR TABLE_NAME = ?)
+                AND TABLE_TYPE NOT IN ('VIEW', 'SYSTEM VIEW', 'SEQUENCE') ORDER BY TABLE_NAME",
+            which,
         )
         .await?;
-    let (engine, collation, comment) = opts.ok_or_else(|| AppError::new("NOT_FOUND", table.to_string()))?;
 
     // Column-level CHECKs (MariaDB only) are named after their column.
-    let mut col_checks: Vec<(String, String)> = Vec::new();
-    let mut checks = Vec::new();
-    if mariadb {
-        let rows: Vec<(String, String, String)> = conn
+    let checks: Vec<(String, (String, String, String))> = if mariadb {
+        let rows: Vec<(String, String, String, String)> = conn
             .exec(
-                "SELECT CONSTRAINT_NAME, CHECK_CLAUSE, LEVEL FROM information_schema.CHECK_CONSTRAINTS
-                  WHERE CONSTRAINT_SCHEMA = ? AND TABLE_NAME = ? ORDER BY CONSTRAINT_NAME",
-                (schema, table),
+                "SELECT TABLE_NAME, CONSTRAINT_NAME, CHECK_CLAUSE, LEVEL FROM information_schema.CHECK_CONSTRAINTS
+                  WHERE CONSTRAINT_SCHEMA = ? AND (? IS NULL OR TABLE_NAME = ?) ORDER BY TABLE_NAME, CONSTRAINT_NAME",
+                which,
             )
             .await?;
-        for (name, clause, level) in rows {
-            match level.as_str() {
-                "Column" => col_checks.push((name, clause)),
-                _ => checks.push(CheckDef { original: Some(name.clone()), name, clause }),
-            }
-        }
+        rows.into_iter().map(|(t, n, c, l)| (t, (n, c, l))).collect()
     } else {
         // MySQL 8.0.16+; older servers have no such table: no checks then.
-        let rows: Vec<(String, String)> = conn
+        let rows: Vec<(String, String, String)> = conn
             .exec(
-                "SELECT c.CONSTRAINT_NAME, c.CHECK_CLAUSE FROM information_schema.CHECK_CONSTRAINTS c
+                "SELECT t.TABLE_NAME, c.CONSTRAINT_NAME, c.CHECK_CLAUSE FROM information_schema.CHECK_CONSTRAINTS c
                    JOIN information_schema.TABLE_CONSTRAINTS t USING (CONSTRAINT_SCHEMA, CONSTRAINT_NAME)
-                  WHERE t.TABLE_SCHEMA = ? AND t.TABLE_NAME = ? AND t.CONSTRAINT_TYPE = 'CHECK' ORDER BY 1",
-                (schema, table),
+                  WHERE t.TABLE_SCHEMA = ? AND (? IS NULL OR t.TABLE_NAME = ?) AND t.CONSTRAINT_TYPE = 'CHECK' ORDER BY 1, 2",
+                which,
             )
             .await
             .unwrap_or_default();
-        checks = rows.into_iter().map(|(name, clause)| CheckDef { original: Some(name.clone()), name, clause }).collect();
-    }
+        rows.into_iter().map(|(t, n, c)| (t, (n, c, "Table".to_string()))).collect()
+    };
+    let mut checks = by_table(checks);
 
     let rows: Vec<Row> = conn
         .exec(
-            "SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE = 'YES', COLUMN_DEFAULT, LOWER(EXTRA), COLLATION_NAME,
+            "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE = 'YES', COLUMN_DEFAULT, LOWER(EXTRA), COLLATION_NAME,
                     COLUMN_COMMENT, IFNULL(GENERATION_EXPRESSION, '')
-               FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
-            (schema, table),
+               FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND (? IS NULL OR TABLE_NAME = ?)
+              ORDER BY TABLE_NAME, ORDINAL_POSITION",
+            which,
         )
         .await?;
-    let mut columns = Vec::new();
-    for mut r in rows {
-        let name: String = r.take(0).unwrap_or_default();
-        let extra: String = r.take(4).unwrap_or_default();
-        let coll: Option<String> = r.take(5).unwrap_or_default();
-        let gen_expr: String = r.take(7).unwrap_or_default();
-        let generated = (extra.contains("virtual generated") || extra.contains("stored generated"))
-            .then(|| Generated { expr: gen_expr, stored: extra.contains("stored") });
-        let on_update = extra.find("on update ").map(|i| {
-            let rest = &extra[i + 10..];
-            rest.split_whitespace().next().unwrap_or_default().to_string()
-        });
-        columns.push(ColumnDef {
-            original: Some(name.clone()),
-            check: col_checks.iter().find(|(n, _)| *n == name).map(|(_, c)| c.clone()),
-            col_type: r.take(1).unwrap_or_default(),
-            nullable: r.take(2).unwrap_or_default(),
-            default: if generated.is_some() { DefaultValue::None } else { parse_default(r.take(3).unwrap_or_default(), mariadb, &extra) },
-            auto_increment: extra.contains("auto_increment"),
-            on_update,
-            invisible: extra.contains("invisible"),
-            collation: coll.filter(|c| *c != collation),
-            comment: r.take(6).unwrap_or_default(),
-            generated,
-            name,
-        });
-    }
+    let mut columns = by_table(rows.into_iter().map(|mut r| (r.take::<String, _>(0).unwrap_or_default(), r)).collect());
 
     // IGNORED exists from MariaDB 10.6 (oldest supported: 10.11); MySQL calls it IS_VISIBLE.
     let ignored = if mariadb { "IGNORED = 'YES'" } else { "IS_VISIBLE = 'NO'" };
-    type IndexRow = (String, bool, Option<String>, Option<u32>, String, String, bool, bool);
+    type IndexRow = (String, String, bool, Option<String>, Option<u32>, String, String, bool, bool);
     let rows: Vec<IndexRow> = conn
         .exec(
             format!(
-                "SELECT INDEX_NAME, NON_UNIQUE = 1, COLUMN_NAME, SUB_PART, INDEX_TYPE, IFNULL(INDEX_COMMENT, ''),
+                "SELECT TABLE_NAME, INDEX_NAME, NON_UNIQUE = 1, COLUMN_NAME, SUB_PART, INDEX_TYPE, IFNULL(INDEX_COMMENT, ''),
                         IFNULL(COLLATION = 'D', 0), {ignored}
-                   FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
-                  ORDER BY INDEX_NAME = 'PRIMARY' DESC, INDEX_NAME, SEQ_IN_INDEX"
+                   FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND (? IS NULL OR TABLE_NAME = ?)
+                  ORDER BY TABLE_NAME, INDEX_NAME = 'PRIMARY' DESC, INDEX_NAME, SEQ_IN_INDEX"
             ),
-            (schema, table),
+            which,
         )
         .await?;
-    let mut indexes: Vec<IndexDef> = Vec::new();
-    for (name, non_unique, col, sub_part, itype, icomment, desc, ignored) in rows {
-        // ponytail: functional index parts (MySQL, COLUMN_NAME NULL) are skipped; such an index is shown without them.
-        let Some(col) = col else { continue };
-        let column = IndexColumn { name: col, length: sub_part, desc };
-        match indexes.last_mut().filter(|i| i.name == name) {
-            Some(i) => i.columns.push(column),
-            None => indexes.push(IndexDef {
-                original: Some(name.clone()),
-                kind: match (name.as_str(), itype.as_str(), non_unique) {
-                    ("PRIMARY", _, _) => "PRIMARY",
-                    (_, "FULLTEXT", _) => "FULLTEXT",
-                    (_, "SPATIAL", _) => "SPATIAL",
-                    (_, "VECTOR", _) => "VECTOR",
-                    (_, _, false) => "UNIQUE",
-                    _ => "INDEX",
-                }
-                .into(),
-                name,
-                columns: vec![column],
-                comment: icomment,
-                ignored,
-                m: None,
-                distance: None,
-            }),
-        }
-    }
-    // M and DISTANCE are only in SHOW CREATE TABLE: without them a rebuilt vector index could change.
-    if indexes.iter().any(|i| i.kind == "VECTOR") {
-        let found = crate::vector::vector_indexes(&crate::browse::ddl_on(&mut conn, schema, table, "table").await?);
-        for i in indexes.iter_mut().filter(|i| i.kind == "VECTOR") {
-            if let Some((_, v)) = found.iter().find(|(_, v)| v.name == i.name) {
-                (i.m, i.distance) = (v.m, v.distance.clone());
-            }
-        }
-    }
+    let mut indexes = by_table(rows.into_iter().map(|(t, a, b, c, d, e, f, g, h)| (t, (a, b, c, d, e, f, g, h))).collect());
 
     // LEFT JOIN: with SELECT only, MariaDB lists the FK in KEY_COLUMN_USAGE but hides its
     // REFERENTIAL_CONSTRAINTS row; the rules then come from SHOW CREATE TABLE (visible with SELECT).
-    type FkRow = (String, String, String, String, String, Option<String>, Option<String>);
+    type FkRow = (String, String, String, String, String, String, Option<String>, Option<String>);
     let rows: Vec<FkRow> = conn
         .exec(
-            "SELECT k.CONSTRAINT_NAME, k.COLUMN_NAME, k.REFERENCED_TABLE_SCHEMA, k.REFERENCED_TABLE_NAME,
+            "SELECT k.TABLE_NAME, k.CONSTRAINT_NAME, k.COLUMN_NAME, k.REFERENCED_TABLE_SCHEMA, k.REFERENCED_TABLE_NAME,
                     k.REFERENCED_COLUMN_NAME, r.UPDATE_RULE, r.DELETE_RULE
                FROM information_schema.KEY_COLUMN_USAGE k
                LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS r
                  ON r.CONSTRAINT_SCHEMA = k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME = k.CONSTRAINT_NAME AND r.TABLE_NAME = k.TABLE_NAME
-              WHERE k.TABLE_SCHEMA = ? AND k.TABLE_NAME = ? AND k.REFERENCED_TABLE_NAME IS NOT NULL
-              ORDER BY k.CONSTRAINT_NAME, k.ORDINAL_POSITION",
-            (schema, table),
+              WHERE k.TABLE_SCHEMA = ? AND (? IS NULL OR k.TABLE_NAME = ?) AND k.REFERENCED_TABLE_NAME IS NOT NULL
+              ORDER BY k.TABLE_NAME, k.CONSTRAINT_NAME, k.ORDINAL_POSITION",
+            which,
         )
         .await?;
-    let ddl = match rows.iter().any(|r| r.5.is_none()) {
-        true => crate::browse::ddl_on(&mut conn, schema, table, "table").await?,
-        false => String::new(),
-    };
-    let mut fks: Vec<FkDef> = Vec::new();
-    for (name, col, rs, rt, rc, upd, del) in rows {
-        let (upd, del) = match (upd, del) {
-            (Some(u), Some(d)) => (u, d),
-            _ => fk_rules_from_ddl(&ddl, &name),
-        };
-        match fks.last_mut().filter(|f| f.name == name) {
-            Some(f) => {
-                f.columns.push(col);
-                f.ref_columns.push(rc);
-            }
-            None => fks.push(FkDef {
-                original: Some(name.clone()),
-                name,
-                columns: vec![col],
-                // Same schema: leave empty so the FK follows the table if the schema is copied.
-                ref_schema: if rs == schema { String::new() } else { rs },
-                ref_table: rt,
-                ref_columns: vec![rc],
-                on_update: upd,
-                on_delete: del,
-            }),
-        }
-    }
+    let mut fk_rows = by_table(rows.into_iter().map(|(t, a, b, c, d, e, f, g)| (t, (a, b, c, d, e, f, g))).collect());
 
-    Ok(TableDef { name: table.to_string(), engine, collation, comment, columns, indexes, fks, checks })
+    let mut out = Vec::new();
+    for (table, engine, collation, comment) in tables {
+        let mut col_checks: Vec<(String, String)> = Vec::new();
+        let mut table_checks = Vec::new();
+        for (name, clause, level) in checks.remove(&table).unwrap_or_default() {
+            match level.as_str() {
+                "Column" => col_checks.push((name, clause)),
+                _ => table_checks.push(CheckDef { original: Some(name.clone()), name, clause }),
+            }
+        }
+
+        let mut cols = Vec::new();
+        for mut r in columns.remove(&table).unwrap_or_default() {
+            let name: String = r.take(1).unwrap_or_default();
+            let extra: String = r.take(5).unwrap_or_default();
+            let coll: Option<String> = r.take(6).unwrap_or_default();
+            let gen_expr: String = r.take(8).unwrap_or_default();
+            let generated = (extra.contains("virtual generated") || extra.contains("stored generated"))
+                .then(|| Generated { expr: gen_expr, stored: extra.contains("stored") });
+            let on_update = extra.find("on update ").map(|i| {
+                let rest = &extra[i + 10..];
+                rest.split_whitespace().next().unwrap_or_default().to_string()
+            });
+            cols.push(ColumnDef {
+                original: Some(name.clone()),
+                check: col_checks.iter().find(|(n, _)| *n == name).map(|(_, c)| c.clone()),
+                col_type: r.take(2).unwrap_or_default(),
+                nullable: r.take(3).unwrap_or_default(),
+                default: if generated.is_some() { DefaultValue::None } else { parse_default(r.take(4).unwrap_or_default(), mariadb, &extra) },
+                auto_increment: extra.contains("auto_increment"),
+                on_update,
+                invisible: extra.contains("invisible"),
+                collation: coll.filter(|c| *c != collation),
+                comment: r.take(7).unwrap_or_default(),
+                generated,
+                name,
+            });
+        }
+
+        let mut idx: Vec<IndexDef> = Vec::new();
+        for (name, non_unique, col, sub_part, itype, icomment, desc, ignored) in indexes.remove(&table).unwrap_or_default() {
+            // ponytail: functional index parts (MySQL, COLUMN_NAME NULL) are skipped; such an index is shown without them.
+            let Some(col) = col else { continue };
+            let column = IndexColumn { name: col, length: sub_part, desc };
+            match idx.last_mut().filter(|i| i.name == name) {
+                Some(i) => i.columns.push(column),
+                None => idx.push(IndexDef {
+                    original: Some(name.clone()),
+                    kind: match (name.as_str(), itype.as_str(), non_unique) {
+                        ("PRIMARY", _, _) => "PRIMARY",
+                        (_, "FULLTEXT", _) => "FULLTEXT",
+                        (_, "SPATIAL", _) => "SPATIAL",
+                        (_, "VECTOR", _) => "VECTOR",
+                        (_, _, false) => "UNIQUE",
+                        _ => "INDEX",
+                    }
+                    .into(),
+                    name,
+                    columns: vec![column],
+                    comment: icomment,
+                    ignored,
+                    m: None,
+                    distance: None,
+                }),
+            }
+        }
+
+        let fk_list = fk_rows.remove(&table).unwrap_or_default();
+        // SHOW CREATE TABLE only when needed: M and DISTANCE of a vector index (else a rebuilt one
+        // could change), FK rules hidden from a SELECT-only account.
+        let needs_ddl = idx.iter().any(|i| i.kind == "VECTOR") || fk_list.iter().any(|r| r.5.is_none());
+        let ddl = if needs_ddl { crate::browse::ddl_on(&mut conn, schema, &table, "table").await? } else { String::new() };
+        if idx.iter().any(|i| i.kind == "VECTOR") {
+            let found = crate::vector::vector_indexes(&ddl);
+            for i in idx.iter_mut().filter(|i| i.kind == "VECTOR") {
+                if let Some((_, v)) = found.iter().find(|(_, v)| v.name == i.name) {
+                    (i.m, i.distance) = (v.m, v.distance.clone());
+                }
+            }
+        }
+
+        let mut fks: Vec<FkDef> = Vec::new();
+        for (name, col, rs, rt, rc, upd, del) in fk_list {
+            let (upd, del) = match (upd, del) {
+                (Some(u), Some(d)) => (u, d),
+                _ => fk_rules_from_ddl(&ddl, &name),
+            };
+            match fks.last_mut().filter(|f| f.name == name) {
+                Some(f) => {
+                    f.columns.push(col);
+                    f.ref_columns.push(rc);
+                }
+                None => fks.push(FkDef {
+                    original: Some(name.clone()),
+                    name,
+                    columns: vec![col],
+                    // Same schema: leave empty so the FK follows the table if the schema is copied.
+                    ref_schema: if rs == schema { String::new() } else { rs },
+                    ref_table: rt,
+                    ref_columns: vec![rc],
+                    on_update: upd,
+                    on_delete: del,
+                }),
+            }
+        }
+
+        out.push(TableDef { name: table, engine, collation, comment, columns: cols, indexes: idx, fks, checks: table_checks });
+    }
+    Ok(out)
 }
 
 /// ON UPDATE / ON DELETE of constraint `name` in SHOW CREATE TABLE; a missing clause is RESTRICT.

@@ -146,6 +146,8 @@ export interface Sort {
 export interface Rows {
   columns: string[];
   rows: (string | null)[][];
+  /** Grid only: per row, the columns whose long value came cut. */
+  cut?: number[][];
 }
 
 /** Column/value pairs; null = SQL NULL. */
@@ -258,6 +260,8 @@ export interface StmtResult {
   rows: (string | null)[][];
   /** Rows sent by the server; above rows.length when the display cap was hit. */
   totalRows: number;
+  /** Cap hit on a read: the server was stopped, totalRows is not the full count. */
+  stopped: boolean;
   affectedRows: number;
   warnings: number;
   elapsedMs: number;
@@ -513,8 +517,10 @@ export const api = {
   tableInfo: (sessionId: string, schema: string, table: string) => invoke<TableInfo>("table_info", { sessionId, schema, table }),
   objectDdl: (sessionId: string, schema: string, name: string, kind: ObjectKind) =>
     invoke<string>("object_ddl", { sessionId, schema, name, kind }),
-  tableData: (sessionId: string, schema: string, table: string, q: { filter: string; order: Sort[]; offset: number; limit: number; asOf: string | null }) =>
+  tableData: (sessionId: string, schema: string, table: string, q: { filter: string; order: Sort[]; offset: number; limit: number; asOf: string | null; after: string[] | null }) =>
     invoke<Rows>("table_data", { sessionId, schema, table, ...q }),
+  cellValue: (sessionId: string, schema: string, table: string, key: Pairs, column: string) =>
+    invoke<string | null>("cell_value", { sessionId, schema, table, key, column }),
   previewChanges: (schema: string, table: string, changes: Change[]) => invoke<string[]>("preview_changes", { schema, table, changes }),
   applyChanges: (sessionId: string, schema: string, table: string, changes: Change[]) =>
     invoke<number>("apply_changes", { sessionId, schema, table, changes }),

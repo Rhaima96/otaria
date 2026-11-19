@@ -221,13 +221,27 @@ async fn table_data(
     offset: u64,
     limit: u64,
     as_of: Option<String>,
+    // Sort values of the last row shown (one per `order` column): read the next page by keyset.
+    after: Option<Vec<String>>,
 ) -> AppResult<browse::Rows> {
-    let sql = browse::data_sql(&schema, &table, filter.as_deref(), &order, offset, limit, as_of.is_some());
-    let vars = match as_of {
-        Some(t) => vec![(browse::AS_OF_VAR, Some(t))],
-        None => vec![],
-    };
-    browse::data(&pool(&state, &session_id).await?, &sql, &vars).await
+    let after = after.filter(|a| a.len() == order.len());
+    let page = if after.is_some() { browse::Page::After } else { browse::Page::Offset(offset) };
+    let pool = pool(&state, &session_id).await?;
+    let select = browse::select_list(&browse::grid_columns(&pool, &schema, &table).await?);
+    let sql = browse::data_sql(&schema, &table, &select, filter.as_deref(), &order, page, limit, as_of.is_some());
+    let names: Vec<String> = (0..order.len()).map(|i| format!("{}{i}", browse::AFTER_VAR)).collect();
+    let mut vars: Vec<(&str, Option<String>)> = after.into_iter().flatten().zip(&names).map(|(v, n)| (n.as_str(), Some(v))).collect();
+    let utc = as_of.is_some();
+    if let Some(t) = as_of {
+        vars.push((browse::AS_OF_VAR, Some(t)));
+    }
+    browse::data(&pool, &sql, &vars, utc).await
+}
+
+/// Whole value of a grid cell that came cut (`browse::CELL_CUT`), by the row's primary key.
+#[tauri::command]
+async fn cell_value(state: State<'_, AppState>, session_id: String, schema: String, table: String, key: edit::Pairs, column: String) -> AppResult<Option<String>> {
+    browse::cell_value(&pool(&state, &session_id).await?, &schema, &table, &key, &column).await
 }
 
 /// MariaDB or MySQL: some metadata and DDL keywords differ.
@@ -690,8 +704,8 @@ async fn run_sql(
     if !confirmed && !risky.is_empty() {
         return Err(AppError { detail: Some(risky.join(";\n")), ..AppError::new("CONFIRM_RISKY", "") });
     }
-    let (_, _, conn) = editor(&state, &session_id, &editor_id, schema.as_deref()).await?;
-    let mut out = query::run(&mut *conn.lock().await, &stmts, max_rows).await;
+    let (ed_pool, conn_id, conn) = editor(&state, &session_id, &editor_id, schema.as_deref()).await?;
+    let mut out = query::run(&mut *conn.lock().await, &stmts, max_rows, Some((&ed_pool, conn_id))).await;
     // VECTOR exists on MariaDB only. Display only: if the lookup fails, the cells stay in hex.
     if is_mariadb(&state, &session_id).await?
         && let Ok(p) = pool(&state, &session_id).await
@@ -772,6 +786,7 @@ pub fn run() {
             table_info,
             object_ddl,
             table_data,
+            cell_value,
             preview_changes,
             apply_changes,
             run_sql,
