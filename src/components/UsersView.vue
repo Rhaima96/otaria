@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { Lock, RefreshCw, Shield, Trash2, User, UserPlus } from "lucide-vue-next";
+import { Lock, Plus, RefreshCw, Shield, Trash2, User, UserPlus, X } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
 import GrantsEditor from "@/components/GrantsEditor.vue";
 import { api, toAppError, type Account, type AccountForm, type AppError, type Privilege } from "@/lib/api";
@@ -27,14 +27,16 @@ async function load() {
 }
 onMounted(load);
 
-const key = (a: { user: string; host: string; isRole: boolean }) => (a.isRole ? a.user : `${a.user}@${a.host}`);
+/** A role's name: MariaDB roles have no host; a MySQL role `r`@`%` is "r", another host "r@host". */
+const roleKey = (a: { user: string; host: string }) => (!a.host || a.host === "%" ? a.user : `${a.user}@${a.host}`);
+const key = (a: { user: string; host: string; isRole: boolean }) => (a.isRole ? roleKey(a) : `${a.user}@${a.host}`);
 const shown = computed(() => {
   const f = filter.value.trim().toLowerCase();
   return accounts.value.filter((a) => !f || key(a).toLowerCase().includes(f));
 });
-const roles = computed(() => accounts.value.filter((a) => a.isRole).map((a) => a.user));
+const roles = computed(() => accounts.value.filter((a) => a.isRole).map(roleKey));
 /** Roles this account can hold (a role cannot hold itself). */
-const grantable = computed(() => roles.value.filter((r) => !form.value?.isRole || r !== form.value.user));
+const grantable = computed(() => roles.value.filter((r) => !form.value?.isRole || r !== roleKey(form.value)));
 
 // The account being edited; original = null for a new one.
 const form = ref<AccountForm | null>(null);
@@ -42,7 +44,9 @@ const tab = ref<"account" | "privileges">("account");
 const pluginChoices = computed(() => [...new Set([...plugins.value, form.value?.plugin ?? ""].filter(Boolean))]);
 
 function select(a: Account) {
-  form.value = { ...a, roles: [...a.roles], adminRoles: [...a.adminRoles], original: [a.user, a.host], password: null, expireNow: false };
+  form.value = { ...a, roles: [...a.roles], adminRoles: [...a.adminRoles], proxies: a.proxies.map((p) => [...p]), original: [a.user, a.host], password: null, expireNow: false };
+  newProxy.value = "";
+  proxyOpen.value = a.proxies.length > 0;
   lifetimeMode.value = a.lifetime === null ? "default" : a.lifetime === 0 ? "never" : "days";
   days.value = a.lifetime || 90;
   tab.value = "account";
@@ -52,7 +56,7 @@ function select(a: Account) {
 function create(isRole: boolean) {
   const a: Account = {
     user: "",
-    host: isRole ? "" : "%",
+    host: isRole && props.mariadb ? "" : "%",
     isRole,
     plugin: isRole ? "" : "mysql_native_password",
     locked: false,
@@ -67,9 +71,26 @@ function create(isRole: boolean) {
     roles: [],
     adminRoles: [],
     require: "",
+    issuer: "",
+    subject: "",
+    cipher: "",
+    proxies: [],
   };
   select(a);
   form.value!.original = null;
+}
+
+// GRANT PROXY ON user@host: typed as user@host (no "@" = any host), split at the last "@".
+const newProxy = ref("");
+/** Unfolded when the account has proxies on opening; then left to the user. */
+const proxyOpen = ref(false);
+function addProxy() {
+  const v = newProxy.value.trim();
+  if (!v || !form.value) return;
+  const at = v.lastIndexOf("@");
+  const p: [string, string] = at < 0 ? [v, "%"] : [v.slice(0, at), v.slice(at + 1)];
+  if (!form.value.proxies.some((x) => x[0] === p[0] && x[1] === p[1])) form.value.proxies.push(p);
+  newProxy.value = "";
 }
 
 // Password lifetime: server default, never, or N days.
@@ -164,8 +185,7 @@ const tabBtn = "h-8 border-b-2 px-3";
       </div>
       <div class="flex flex-wrap gap-1 border-b p-2 whitespace-nowrap">
         <button :class="btn" @click="create(false)"><UserPlus class="size-3.5" />{{ t("users.newUser") }}</button>
-        <!-- Roles: MariaDB only (MySQL roles are not handled here). -->
-        <button v-if="mariadb" :class="btn" @click="create(true)"><Shield class="size-3.5" />{{ t("users.newRole") }}</button>
+        <button :class="btn" @click="create(true)"><Shield class="size-3.5" />{{ t("users.newRole") }}</button>
       </div>
       <ErrorLine v-if="error" :error="error" class="m-2" />
       <ul class="min-h-0 flex-1 overflow-auto py-1">
@@ -176,7 +196,7 @@ const tabBtn = "h-8 border-b-2 px-3";
           >
             <component :is="a.isRole ? Shield : User" class="size-3.5 shrink-0 text-muted-foreground" />
             <span class="truncate font-mono text-xs">{{ key(a) }}</span>
-            <Lock v-if="a.locked" class="ml-auto size-3 shrink-0 text-warning" :aria-label="t('users.locked')" />
+            <Lock v-if="a.locked && !a.isRole" class="ml-auto size-3 shrink-0 text-warning" :aria-label="t('users.locked')" />
           </button>
         </li>
       </ul>
@@ -237,14 +257,22 @@ const tabBtn = "h-8 border-b-2 px-3";
 
             <label :class="label" for="u-req">{{ t("users.require") }}</label>
             <div class="flex items-center gap-2">
-              <select id="u-req" v-model="form.require" :disabled="form.require === 'SPECIFIED'" :class="input">
+              <select id="u-req" v-model="form.require" :class="input">
                 <option value="">{{ t("users.requireNone") }}</option>
                 <option value="SSL">{{ t("users.requireSsl") }}</option>
                 <option value="X509">{{ t("users.requireX509") }}</option>
-                <option v-if="form.require === 'SPECIFIED'" value="SPECIFIED">{{ t("users.requireSpecified") }}</option>
+                <option value="SPECIFIED">{{ t("users.requireSpecified") }}</option>
               </select>
               <span class="text-xs text-muted-foreground">{{ form.require === "SPECIFIED" ? t("users.requireSpecifiedHint") : t("users.requireHint") }}</span>
             </div>
+            <template v-if="form.require === 'SPECIFIED'">
+              <label :class="label" for="u-issuer">{{ t("users.issuer") }}</label>
+              <input id="u-issuer" v-model="form.issuer" placeholder="/C=FR/O=Example/CN=CA" :class="cn(input, 'font-mono')" />
+              <label :class="label" for="u-subject">{{ t("users.subject") }}</label>
+              <input id="u-subject" v-model="form.subject" placeholder="/C=FR/O=Example/CN=client" :class="cn(input, 'font-mono')" />
+              <label :class="label" for="u-cipher">{{ t("users.cipher") }}</label>
+              <input id="u-cipher" v-model="form.cipher" placeholder="ECDHE-RSA-AES256-GCM-SHA384" :class="cn(input, 'font-mono')" />
+            </template>
 
             <span :class="cn(label, 'self-start pt-1.5')">{{ t("users.limits") }}</span>
             <div class="grid grid-cols-[auto_6rem] items-center gap-x-2 gap-y-1">
@@ -259,27 +287,42 @@ const tabBtn = "h-8 border-b-2 px-3";
             </div>
           </template>
 
-          <template v-if="mariadb">
-            <span :class="cn(label, 'self-start pt-1')">{{ t("users.roles") }}</span>
-            <div class="flex flex-wrap gap-x-4 gap-y-1">
-              <span v-for="r in grantable" :key="r" class="flex items-center gap-1.5 font-mono text-xs">
-                <label class="flex items-center gap-1.5"><input v-model="form.roles" type="checkbox" :value="r" class="size-3.5" />{{ r }}</label>
-                <label v-if="form.roles.includes(r)" class="flex items-center gap-1 font-sans text-muted-foreground" :title="t('users.adminOptionHint')">
-                  (<input v-model="form.adminRoles" type="checkbox" :value="r" class="size-3" />{{ t("users.adminOption") }})
-                </label>
-              </span>
-              <span v-if="!grantable.length" class="text-muted-foreground">{{ t("users.noRoles") }}</span>
-            </div>
+          <span :class="cn(label, 'self-start pt-1')">{{ t("users.roles") }}</span>
+          <div class="flex flex-wrap gap-x-4 gap-y-1">
+            <span v-for="r in grantable" :key="r" class="flex items-center gap-1.5 font-mono text-xs">
+              <label class="flex items-center gap-1.5"><input v-model="form.roles" type="checkbox" :value="r" class="size-3.5" />{{ r }}</label>
+              <label v-if="form.roles.includes(r)" class="flex items-center gap-1 font-sans text-muted-foreground" :title="t('users.adminOptionHint')">
+                (<input v-model="form.adminRoles" type="checkbox" :value="r" class="size-3" />{{ t("users.adminOption") }})
+              </label>
+            </span>
+            <span v-if="!grantable.length" class="text-muted-foreground">{{ t("users.noRoles") }}</span>
+          </div>
 
-            <template v-if="!form.isRole">
-              <label :class="label" for="u-dr">{{ t("users.defaultRole") }}</label>
-              <select id="u-dr" v-model="form.defaultRole" :class="cn(input, 'font-mono')">
-                <option :value="null">{{ t("users.none") }}</option>
-                <option v-for="r in form.roles" :key="r" :value="r">{{ r }}</option>
-              </select>
-            </template>
+          <template v-if="!form.isRole">
+            <label :class="label" for="u-dr">{{ t("users.defaultRole") }}</label>
+            <select id="u-dr" v-model="form.defaultRole" :class="cn(input, 'font-mono')">
+              <option :value="null">{{ t("users.none") }}</option>
+              <option v-for="r in form.roles" :key="r" :value="r">{{ r }}</option>
+            </select>
           </template>
         </div>
+        <!-- PROXY: rarely used, folded until asked for. -->
+        <details v-if="!form.isRole" :open="proxyOpen" class="mt-4 max-w-2xl">
+          <summary class="cursor-pointer text-muted-foreground">{{ t("users.proxy", { n: form.proxies.length }) }}</summary>
+          <p class="mt-1 text-xs text-muted-foreground">{{ t("users.proxyHint") }}</p>
+          <ul class="mt-2 flex flex-col gap-1">
+            <li v-for="(p, i) in form.proxies" :key="p.join('@')" class="flex items-center gap-2 font-mono text-xs">
+              {{ p[0] || "''" }}@{{ p[1] || "''" }}
+              <button type="button" :class="cn(btn, 'px-1 hover:text-destructive')" :title="t('users.proxyRemove')" :aria-label="t('users.proxyRemove')" @click="form.proxies.splice(i, 1)">
+                <X class="size-3.5" />
+              </button>
+            </li>
+          </ul>
+          <div class="mt-2 flex items-center gap-2">
+            <input v-model="newProxy" :placeholder="t('users.proxyPlaceholder')" :aria-label="t('users.proxyPlaceholder')" :class="cn(input, 'w-64 font-mono')" @keydown.enter.prevent="addProxy" />
+            <button type="button" :class="btn" @click="addProxy"><Plus class="size-3.5" />{{ t("users.proxyAdd") }}</button>
+          </div>
+        </details>
         <ErrorLine v-if="formError" :error="formError" class="mt-3 max-w-2xl" />
         <button type="submit" class="mt-4 h-7 rounded-sm bg-primary px-3 font-semibold text-primary-foreground">{{ t("users.review") }}</button>
       </form>

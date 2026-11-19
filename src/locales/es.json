@@ -652,10 +652,18 @@
     "requireSsl": "Exigida (REQUIRE SSL)",
     "requireX509": "Certificado de cliente (REQUIRE X509)",
     "requireSpecified": "Personalizada (ISSUER / SUBJECT / CIPHER)",
-    "requireSpecifiedHint": "Definida en SQL; se mantiene tal cual.",
+    "requireSpecifiedHint": "Solo se exigen los campos rellenados (REQUIRE … AND …).",
     "requireHint": "Rechaza conexiones sin TLS, o sin un certificado de cliente válido.",
     "adminOption": "puede otorgarlo",
-    "adminOptionHint": "WITH ADMIN OPTION: esta cuenta puede otorgar el rol a otras"
+    "adminOptionHint": "WITH ADMIN OPTION: esta cuenta puede otorgar el rol a otras",
+    "issuer": "Emisor del certificado",
+    "subject": "Sujeto del certificado",
+    "cipher": "Cifrado",
+    "proxy": "Cuentas proxy (GRANT PROXY): {n}",
+    "proxyHint": "Esta cuenta puede iniciar sesión como estas cuentas (mediante un plugin que admita usuarios proxy, como PAM).",
+    "proxyRemove": "Quitar",
+    "proxyPlaceholder": "usuario{'@'}host",
+    "proxyAdd": "Añadir"
   },
   "transfer": {
     "export": "Exportar",

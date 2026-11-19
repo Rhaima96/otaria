@@ -1,6 +1,6 @@
 //! Users and roles: accounts (mysql.global_priv on MariaDB, mysql.user on MySQL), role membership,
-//! privileges at global / database / table / column level, and the SQL to change them.
-// ponytail: no PROXY, no REQUIRE ISSUER / SUBJECT / CIPHER (shown, kept as they are); the SQL editor covers them.
+//! privileges at global / database / table / column level, PROXY grants, and the SQL to change them.
+//! Roles: MariaDB roles (host ''), MySQL 8 roles (accounts, `name` for `name`@`%`, else `name@host`).
 
 use std::collections::{BTreeSet, HashSet};
 
@@ -35,14 +35,37 @@ pub struct Account {
     /// Of `roles`, those granted WITH ADMIN OPTION (the account may grant them on).
     #[serde(default)]
     pub admin_roles: Vec<String>,
-    /// TLS required to log in: "" (none), "SSL", "X509", or "SPECIFIED" (ISSUER / SUBJECT / CIPHER, left as is).
+    /// TLS required to log in: "" (none), "SSL", "X509", or "SPECIFIED" (ISSUER / SUBJECT / CIPHER below).
     #[serde(default)]
     pub require: String,
+    #[serde(default)]
+    pub issuer: String,
+    #[serde(default)]
+    pub subject: String,
+    #[serde(default)]
+    pub cipher: String,
+    /// Accounts this one may proxy as (GRANT PROXY ON user@host), as (user, host).
+    #[serde(default)]
+    pub proxies: Vec<(String, String)>,
 }
 
-/// `user`@`host`, or `role` alone.
+/// `user`@`host`, or `role` alone (MariaDB roles have no host; a MySQL role keeps its own).
 fn acct(user: &str, host: &str, is_role: bool) -> String {
-    if is_role { ident(user) } else { format!("{}@{}", ident(user), ident(host)) }
+    if is_role && host.is_empty() { ident(user) } else { format!("{}@{}", ident(user), ident(host)) }
+}
+
+/// How a role is named in `Account::roles`: MariaDB `name`; MySQL `name` for `name`@`%`, else `name@host`.
+fn role_key(user: &str, host: &str) -> String {
+    if host.is_empty() || host == "%" { user.to_string() } else { format!("{user}@{host}") }
+}
+
+/// A role key in SQL. On MySQL `name@host` is split at the last `@`.
+// ponytail: a MySQL role whose name holds '@' and host is '%' reads as name@host; rename it if that ever happens.
+fn role_ident(key: &str, mariadb: bool) -> String {
+    match key.rsplit_once('@') {
+        Some((u, h)) if !mariadb => format!("{}@{}", ident(u), ident(h)),
+        _ => ident(key),
+    }
 }
 
 pub async fn accounts(pool: &Pool, mariadb: bool) -> AppResult<Vec<Account>> {
@@ -55,17 +78,36 @@ pub async fn accounts(pool: &Pool, mariadb: bool) -> AppResult<Vec<Account>> {
                 IFNULL(JSON_VALUE(Priv, '$.max_questions'), 0) + 0, IFNULL(JSON_VALUE(Priv, '$.max_updates'), 0) + 0,
                 IFNULL(JSON_VALUE(Priv, '$.max_connections'), 0) + 0, IFNULL(JSON_VALUE(Priv, '$.max_user_connections'), 0) + 0,
                 IFNULL(JSON_VALUE(Priv, '$.max_statement_time'), 0) + 0e0, NULLIF(JSON_VALUE(Priv, '$.default_role'), ''),
-                CASE JSON_VALUE(Priv, '$.ssl_type') WHEN 1 THEN 'SSL' WHEN 2 THEN 'X509' WHEN 3 THEN 'SPECIFIED' ELSE '' END
+                CASE JSON_VALUE(Priv, '$.ssl_type') WHEN 1 THEN 'SSL' WHEN 2 THEN 'X509' WHEN 3 THEN 'SPECIFIED' ELSE '' END,
+                IFNULL(JSON_VALUE(Priv, '$.x509_issuer'), ''), IFNULL(JSON_VALUE(Priv, '$.x509_subject'), ''), IFNULL(JSON_VALUE(Priv, '$.ssl_cipher'), '')
          FROM mysql.global_priv ORDER BY 3, User, Host"
     } else {
-        "SELECT User, Host, 0, plugin, account_locked = 'Y', password_expired = 'Y', password_lifetime,
-                max_questions, max_updates, max_connections, max_user_connections, 0e0, NULL,
-                CASE ssl_type WHEN 'ANY' THEN 'SSL' WHEN 'X509' THEN 'X509' WHEN 'SPECIFIED' THEN 'SPECIFIED' ELSE '' END
-         FROM mysql.user ORDER BY User, Host"
+        // A MySQL role is an account CREATE ROLE made locked, expired and without password (or one granted as a role).
+        "SELECT User, Host, account_locked = 'Y' AND password_expired = 'Y' AND authentication_string = '', plugin, account_locked = 'Y',
+                password_expired = 'Y', password_lifetime, max_questions, max_updates, max_connections, max_user_connections, 0e0, NULL,
+                CASE ssl_type WHEN 'ANY' THEN 'SSL' WHEN 'X509' THEN 'X509' WHEN 'SPECIFIED' THEN 'SPECIFIED' ELSE '' END,
+                CONVERT(x509_issuer USING utf8mb4), CONVERT(x509_subject USING utf8mb4), CONVERT(ssl_cipher USING utf8mb4)
+         FROM mysql.user ORDER BY 3, User, Host"
     };
-    let rows: Vec<mysql_async::Row> = conn.query(sql).await?; // 14 columns: past the tuple limit
-    let mapping: Vec<(String, String, String, bool)> =
-        if mariadb { conn.query("SELECT User, Host, Role, Admin_option = 'Y' FROM mysql.roles_mapping ORDER BY Role").await? } else { vec![] };
+    let rows: Vec<mysql_async::Row> = conn.query(sql).await?; // 17 columns: past the tuple limit
+    // (user, host, role key, admin option). MySQL < 8 has no role tables: no roles then.
+    let mapping: Vec<(String, String, String, bool)> = if mariadb {
+        conn.query("SELECT User, Host, Role, Admin_option = 'Y' FROM mysql.roles_mapping ORDER BY Role").await?
+    } else {
+        let edges: Vec<(String, String, String, String, bool)> = conn
+            .query("SELECT TO_USER, TO_HOST, FROM_USER, FROM_HOST, WITH_ADMIN_OPTION = 'Y' FROM mysql.role_edges ORDER BY FROM_USER, FROM_HOST")
+            .await
+            .unwrap_or_default();
+        edges.into_iter().map(|(u, h, ru, rh, admin)| (u, h, role_key(&ru, &rh), admin)).collect()
+    };
+    // MySQL: default roles (one shown; several are possible there), MariaDB has it in global_priv.
+    let defaults: Vec<(String, String, String, String)> = if mariadb {
+        vec![]
+    } else {
+        conn.query("SELECT USER, HOST, DEFAULT_ROLE_USER, DEFAULT_ROLE_HOST FROM mysql.default_roles ORDER BY 3, 4").await.unwrap_or_default()
+    };
+    let proxies: Vec<(String, String, String, String)> =
+        conn.query("SELECT User, Host, Proxied_user, Proxied_host FROM mysql.proxies_priv ORDER BY 3, 4").await.unwrap_or_default();
     Ok(rows
         .into_iter()
         .map(|mut r| {
@@ -74,8 +116,12 @@ pub async fn accounts(pool: &Pool, mariadb: bool) -> AppResult<Vec<Account>> {
             let mine = || mapping.iter().filter(|(u, h, _, _)| *u == user && *h == host);
             let roles = mine().map(|m| m.2.clone()).collect();
             let admin_roles = mine().filter(|m| m.3).map(|m| m.2.clone()).collect();
+            let granted_as_role = !mariadb && mapping.iter().any(|m| m.2 == role_key(&user, &host));
+            let default_role: Option<String> = r.take(12).flatten();
+            let default_role = default_role.or_else(|| defaults.iter().find(|d| d.0 == user && d.1 == host).map(|d| role_key(&d.2, &d.3)));
+            let proxies = proxies.iter().filter(|p| p.0 == user && p.1 == host).map(|p| (p.2.clone(), p.3.clone())).collect();
             Account {
-                is_role: r.take(2).unwrap_or_default(),
+                is_role: r.take::<bool, _>(2).unwrap_or_default() || granted_as_role,
                 plugin: r.take(3).unwrap_or_default(),
                 locked: r.take(4).unwrap_or_default(),
                 expired: r.take(5).unwrap_or_default(),
@@ -85,8 +131,12 @@ pub async fn accounts(pool: &Pool, mariadb: bool) -> AppResult<Vec<Account>> {
                 max_connections: r.take(9).unwrap_or_default(),
                 max_user_connections: r.take(10).unwrap_or_default(),
                 max_statement_time: r.take(11).unwrap_or_default(),
-                default_role: r.take(12).flatten(),
+                default_role,
                 require: r.take(13).unwrap_or_default(),
+                issuer: r.take::<Option<String>, _>(14).flatten().unwrap_or_default(),
+                subject: r.take::<Option<String>, _>(15).flatten().unwrap_or_default(),
+                cipher: r.take::<Option<String>, _>(16).flatten().unwrap_or_default(),
+                proxies,
                 user,
                 host,
                 roles,
@@ -185,9 +235,9 @@ pub async fn grants(pool: &Pool, user: &str, host: &str, is_role: bool) -> AppRe
         out.push(Grant { target: Target::default(), privileges: global.into_iter().collect() });
     }
 
-    // Database, table, column: GRANTEE is 'user'@'host' ('role'@'' for a role).
+    // Database, table, column: GRANTEE is 'user'@'host' ('role'@'' for a MariaDB role).
     let grantee = "CONCAT(QUOTE(?), '@', QUOTE(?))";
-    let h = if is_role { "" } else { host };
+    let h = host;
     let mut add = |target: Target, privilege: String, grantable: bool| {
         let i = match out.iter().position(|g| g.target == target) {
             Some(i) => i,
@@ -277,6 +327,11 @@ fn lit(s: &str, secret: Secret) -> String {
     }
 }
 
+/// A literal that is not a secret: shown as is in the preview too.
+fn text(s: &str, secret: Secret) -> String {
+    lit(s, if let Secret::Plain { .. } = secret { secret } else { Secret::Plain { no_backslash_escapes: false } })
+}
+
 fn check_word(s: &str) -> AppResult<()> {
     if s.is_empty() || !s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         return Err(AppError::new("INVALID_NAME", s.to_string()));
@@ -323,11 +378,22 @@ pub fn account_sql(old: Option<&Account>, form: &AccountForm, mariadb: bool, sec
 
         let d = Account::default();
         let o = old.unwrap_or(&d);
-        // SPECIFIED (ISSUER / SUBJECT / CIPHER) is never written: left as the server has it.
-        if o.require != new.require && new.require != "SPECIFIED" {
+        let specified = |a: &Account| (a.issuer.clone(), a.subject.clone(), a.cipher.clone());
+        if o.require != new.require || new.require == "SPECIFIED" && specified(o) != specified(new) {
             clauses.push(match new.require.as_str() {
                 "" => "REQUIRE NONE".to_string(),
                 r @ ("SSL" | "X509") => format!("REQUIRE {r}"),
+                "SPECIFIED" => {
+                    let parts: Vec<String> = [("ISSUER", &new.issuer), ("SUBJECT", &new.subject), ("CIPHER", &new.cipher)]
+                        .iter()
+                        .filter(|(_, v)| !v.is_empty())
+                        .map(|(k, v)| format!("{k} {}", text(v, secret)))
+                        .collect();
+                    if parts.is_empty() {
+                        return Err(AppError::new("REQUIRED", "require"));
+                    }
+                    format!("REQUIRE {}", parts.join(" AND "))
+                }
                 r => return Err(AppError::new("INVALID_NAME", r.to_string())),
             });
         }
@@ -369,25 +435,43 @@ pub fn account_sql(old: Option<&Account>, form: &AccountForm, mariadb: bool, sec
         }
     }
 
-    // Roles (MariaDB): membership, then the default role, which must already be granted.
+    // Roles: membership, then the default role, which must already be granted.
     let had: HashSet<&String> = old.map(|o| o.roles.iter().collect()).unwrap_or_default();
     let has: HashSet<&String> = new.roles.iter().collect();
     let admin = |r: &String| new.admin_roles.contains(r);
     let was_admin = |r: &String| old.is_some_and(|o| o.admin_roles.contains(r));
+    let ri = |r: &String| role_ident(r, mariadb);
     for r in new.roles.iter().filter(|r| !had.contains(r) || admin(r) && !was_admin(r)) {
-        out.push(format!("GRANT {} TO {a}{}", ident(r), if admin(r) { " WITH ADMIN OPTION" } else { "" }));
+        out.push(format!("GRANT {} TO {a}{}", ri(r), if admin(r) { " WITH ADMIN OPTION" } else { "" }));
     }
     for r in new.roles.iter().filter(|r| had.contains(r) && !admin(r) && was_admin(r)) {
-        out.push(format!("REVOKE ADMIN OPTION FOR {} FROM {a}", ident(r)));
+        if mariadb {
+            out.push(format!("REVOKE ADMIN OPTION FOR {} FROM {a}", ri(r)));
+        } else {
+            // MySQL has no REVOKE ADMIN OPTION: revoke the role, grant it again without it.
+            out.extend([format!("REVOKE {} FROM {a}", ri(r)), format!("GRANT {} TO {a}", ri(r))]);
+        }
     }
     for r in old.map(|o| o.roles.as_slice()).unwrap_or_default().iter().filter(|r| !has.contains(r)) {
-        out.push(format!("REVOKE {} FROM {a}", ident(r)));
+        out.push(format!("REVOKE {} FROM {a}", ri(r)));
     }
-    if !new.is_role && mariadb && old.map(|o| &o.default_role) != Some(&new.default_role) && (old.is_some() || new.default_role.is_some()) {
+    if !new.is_role && old.map(|o| &o.default_role) != Some(&new.default_role) && (old.is_some() || new.default_role.is_some()) {
+        let to = if mariadb { "FOR" } else { "TO" };
         out.push(match &new.default_role {
-            Some(r) => format!("SET DEFAULT ROLE {} FOR {a}", ident(r)),
-            None => format!("SET DEFAULT ROLE NONE FOR {a}"),
+            Some(r) => format!("SET DEFAULT ROLE {} {to} {a}", ri(r)),
+            None => format!("SET DEFAULT ROLE NONE {to} {a}"),
         });
+    }
+
+    // PROXY: users only.
+    if !new.is_role {
+        let before = old.map(|o| o.proxies.as_slice()).unwrap_or_default();
+        for (u, h) in new.proxies.iter().filter(|p| !before.contains(p)) {
+            out.push(format!("GRANT PROXY ON {} TO {a}", acct(u, h, false)));
+        }
+        for (u, h) in before.iter().filter(|p| !new.proxies.contains(p)) {
+            out.push(format!("REVOKE PROXY ON {} FROM {a}", acct(u, h, false)));
+        }
     }
     Ok(out)
 }
@@ -567,10 +651,16 @@ mod tests {
                 "REVOKE ADMIN OPTION FOR `r2` FROM `u`@`%`",
             ]
         );
-        // SPECIFIED is never written; back to none.
+        // SPECIFIED: the non-empty conditions, joined by AND; shown as is in the preview; none at all is refused.
         let mut spec = old.clone();
         spec.require = "SPECIFIED".into();
-        assert!(account_sql(Some(&old), &AccountForm { account: spec, ..f.clone() }, true, plain).unwrap().is_empty());
+        assert_eq!(account_sql(Some(&old), &AccountForm { account: spec.clone(), ..f.clone() }, true, plain).unwrap_err().code, "REQUIRED");
+        spec.issuer = "/CN=it's CA".into();
+        spec.cipher = "AES256-SHA".into();
+        let want = ["ALTER USER `u`@`%` REQUIRE ISSUER '/CN=it''s CA' AND CIPHER 'AES256-SHA'"];
+        assert_eq!(account_sql(Some(&old), &AccountForm { account: spec.clone(), ..f.clone() }, true, plain).unwrap(), want);
+        assert_eq!(account_sql(Some(&old), &AccountForm { account: spec.clone(), ..f.clone() }, true, Secret::Masked).unwrap(), want);
+        assert!(account_sql(Some(&spec), &AccountForm { account: spec.clone(), ..f.clone() }, true, plain).unwrap().is_empty(), "unchanged");
         let mut none = new.clone();
         none.require = String::new();
         assert_eq!(account_sql(Some(&new), &AccountForm { account: none, ..f.clone() }, true, plain).unwrap(), ["ALTER USER `u`@`%` REQUIRE NONE"]);
@@ -586,6 +676,42 @@ mod tests {
         );
         let bad = PrivChange { target: r("TABLE"), grant: vec!["EXECUTE".into()], revoke: vec![] };
         assert_eq!(privileges_sql("u", "%", false, &[bad]).unwrap_err().code, "INVALID_NAME");
+    }
+
+    #[test]
+    fn mysql_roles_and_proxies() {
+        let plain = Secret::Plain { no_backslash_escapes: false };
+        // MySQL roles: `r` is `r`@`%`, others keep their host; TO for the default role; no REVOKE ADMIN OPTION.
+        assert_eq!((role_key("r", "%"), role_key("r", "10.%"), role_key("r", "")), ("r".into(), "r@10.%".into(), "r".into()));
+        assert_eq!((role_ident("r@10.%", false), role_ident("a@b", true)), ("`r`@`10.%`".into(), "`a@b`".into()));
+        let mut old = user("u");
+        old.roles = vec!["r1".into(), "r2@10.%".into()];
+        old.admin_roles = vec!["r1".into()];
+        let mut new = old.clone();
+        new.admin_roles = vec![];
+        new.roles = vec!["r1".into(), "r3".into()];
+        new.default_role = Some("r3".into());
+        let f = AccountForm { original: Some(("u".into(), "%".into())), account: new.clone(), password: None, expire_now: false };
+        assert_eq!(
+            account_sql(Some(&old), &f, false, plain).unwrap(),
+            ["GRANT `r3` TO `u`@`%`", "REVOKE `r1` FROM `u`@`%`", "GRANT `r1` TO `u`@`%`", "REVOKE `r2`@`10.%` FROM `u`@`%`", "SET DEFAULT ROLE `r3` TO `u`@`%`"]
+        );
+        // A MySQL role keeps its host; a MariaDB role has none.
+        let role = |host: &str| Account { user: "rr".into(), host: host.into(), is_role: true, ..Default::default() };
+        let create = |a: Account, mariadb| account_sql(None, &AccountForm { original: None, account: a, password: None, expire_now: false }, mariadb, plain).unwrap();
+        assert_eq!((create(role("%"), false), create(role(""), true)), (vec!["CREATE ROLE `rr`@`%`".to_string()], vec!["CREATE ROLE `rr`".to_string()]));
+        assert_eq!(drop_sql("rr", "%", true), "DROP ROLE `rr`@`%`");
+
+        // PROXY: added and removed by difference, users only.
+        let mut p_old = user("u");
+        p_old.proxies = vec![("a".into(), "b".into()), ("".into(), "%".into())];
+        let mut p_new = p_old.clone();
+        p_new.proxies = vec![("".into(), "%".into()), ("c'd".into(), "localhost".into())];
+        let f = AccountForm { account: p_new, ..f };
+        assert_eq!(
+            account_sql(Some(&p_old), &f, true, plain).unwrap(),
+            ["GRANT PROXY ON `c'd`@`localhost` TO `u`@`%`", "REVOKE PROXY ON `a`@`b` FROM `u`@`%`"]
+        );
     }
 
     #[test]
@@ -722,8 +848,75 @@ mod tests {
         assert_eq!(run(&pool, &bad, &bad).await.unwrap_err().detail.as_deref(), Some(bad[0].as_str()));
         assert!(privileges(&pool).await.unwrap().iter().any(|p| p.name == "EVENT" && p.schema && !p.table));
 
+        // REQUIRE ISSUER / CIPHER and PROXY, written then read back.
+        let mut sp = accounts(&pool, true).await.unwrap().into_iter().find(|a| a.user == "ot_u2").unwrap();
+        sp.require = "SPECIFIED".into();
+        sp.issuer = "/CN=it's CA".into();
+        sp.cipher = "AES256-SHA".into();
+        sp.proxies = vec![("ot_p".into(), "%".into())];
+        apply_account(&pool, true, &form(sp, Some(("ot_u2", "localhost")), None)).await.unwrap();
+        let back = accounts(&pool, true).await.unwrap().into_iter().find(|a| a.user == "ot_u2").unwrap();
+        assert_eq!((back.require.as_str(), back.issuer.as_str(), back.subject.as_str(), back.cipher.as_str()), ("SPECIFIED", "/CN=it's CA", "", "AES256-SHA"));
+        assert_eq!(back.proxies, [("ot_p".to_string(), "%".to_string())]);
+        let mut none = back.clone();
+        none.proxies.clear();
+        apply_account(&pool, true, &form(none, Some(("ot_u2", "localhost")), None)).await.unwrap();
+        assert!(accounts(&pool, true).await.unwrap().into_iter().find(|a| a.user == "ot_u2").unwrap().proxies.is_empty());
+
         conn.query_drop(drop_sql("ot_u2", "localhost", false)).await.unwrap();
         conn.query_drop(drop_sql("ot_r", "", true)).await.unwrap();
         conn.query_drop("DROP DATABASE ot_users").await.unwrap();
+    }
+
+    /// MySQL 8 roles: OTARIA_TEST_MYSQL="host:port:user:password" cargo test users_on_mysql -- --ignored
+    #[tokio::test]
+    #[ignore]
+    async fn users_on_mysql() {
+        let spec = std::env::var("OTARIA_TEST_MYSQL").expect("set OTARIA_TEST_MYSQL");
+        let p: Vec<&str> = spec.splitn(4, ':').collect();
+        let pool = Pool::new(
+            mysql_async::OptsBuilder::default().ip_or_hostname(p[0]).tcp_port(p[1].parse().unwrap()).user(Some(p[2])).pass(Some(p[3])).prefer_socket(false),
+        );
+        let mut conn = pool.get_conn().await.unwrap();
+        conn.query_drop("DROP USER IF EXISTS ot_mu@'%'; DROP ROLE IF EXISTS ot_mr, ot_mr2@'10.%'").await.unwrap();
+        let new = |user: &str, host: &str, is_role: bool| AccountForm {
+            original: None,
+            account: Account { user: user.into(), host: host.into(), is_role, plugin: "caching_sha2_password".into(), ..Default::default() },
+            password: Some("pw-Ot1".into()),
+            expire_now: false,
+        };
+        apply_account(&pool, false, &new("ot_mr", "%", true)).await.unwrap();
+        apply_account(&pool, false, &new("ot_mr2", "10.%", true)).await.unwrap();
+        apply_account(&pool, false, &new("ot_mu", "%", false)).await.unwrap();
+        let find = |all: &[Account], u: &str| all.iter().find(|a| a.user == u).cloned().unwrap();
+        let all = accounts(&pool, false).await.unwrap();
+        assert!(find(&all, "ot_mr").is_role && find(&all, "ot_mr2").is_role && !find(&all, "ot_mu").is_role);
+
+        // Both roles granted (one WITH ADMIN OPTION), one as default.
+        let mut u = find(&all, "ot_mu");
+        u.roles = vec!["ot_mr".into(), "ot_mr2@10.%".into()];
+        u.admin_roles = vec!["ot_mr".into()];
+        u.default_role = Some("ot_mr2@10.%".into());
+        apply_account(&pool, false, &AccountForm { original: Some(("ot_mu".into(), "%".into())), account: u, password: None, expire_now: false }).await.unwrap();
+        let u = find(&accounts(&pool, false).await.unwrap(), "ot_mu");
+        let mut roles = u.roles.clone();
+        roles.sort();
+        assert_eq!((roles, u.admin_roles.clone(), u.default_role.clone()), (vec!["ot_mr".to_string(), "ot_mr2@10.%".to_string()], vec!["ot_mr".to_string()], Some("ot_mr2@10.%".to_string())));
+
+        // Admin option dropped (revoke + grant), one role revoked, default role none.
+        let mut v = u.clone();
+        v.admin_roles.clear();
+        v.roles = vec!["ot_mr".into()];
+        v.default_role = None;
+        apply_account(&pool, false, &AccountForm { original: Some(("ot_mu".into(), "%".into())), account: v, password: None, expire_now: false }).await.unwrap();
+        let v = find(&accounts(&pool, false).await.unwrap(), "ot_mu");
+        assert_eq!((v.roles.clone(), v.admin_roles.clone(), v.default_role.clone()), (vec!["ot_mr".to_string()], vec![], None));
+
+        // A role's own privileges are read under its host.
+        let sql = privileges_sql("ot_mr", "%", true, &[PrivChange { target: Target::default(), grant: vec!["PROCESS".into()], revoke: vec![] }]).unwrap();
+        run(&pool, &sql, &sql).await.unwrap();
+        assert_eq!(grants(&pool, "ot_mr", "%", true).await.unwrap()[0].privileges, ["PROCESS"]);
+
+        conn.query_drop(format!("{}; {}; {}", drop_sql("ot_mu", "%", false), drop_sql("ot_mr", "%", true), drop_sql("ot_mr2", "10.%", true))).await.unwrap();
     }
 }

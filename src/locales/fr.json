@@ -652,10 +652,18 @@
     "requireSsl": "Exigée (REQUIRE SSL)",
     "requireX509": "Certificat client (REQUIRE X509)",
     "requireSpecified": "Personnalisée (ISSUER / SUBJECT / CIPHER)",
-    "requireSpecifiedHint": "Définie en SQL ; laissée telle quelle.",
+    "requireSpecifiedHint": "Seuls les champs remplis sont exigés (REQUIRE … AND …).",
     "requireHint": "Refuse les connexions sans TLS, ou sans certificat client valide.",
     "adminOption": "peut l'attribuer",
-    "adminOptionHint": "WITH ADMIN OPTION : ce compte peut attribuer le rôle à d'autres"
+    "adminOptionHint": "WITH ADMIN OPTION : ce compte peut attribuer le rôle à d'autres",
+    "issuer": "Émetteur du certificat",
+    "subject": "Sujet du certificat",
+    "cipher": "Algorithme de chiffrement",
+    "proxy": "Comptes mandatés (GRANT PROXY) : {n}",
+    "proxyHint": "Ce compte peut se connecter en tant que ces comptes (via un plugin qui gère les utilisateurs mandatés, comme PAM).",
+    "proxyRemove": "Retirer",
+    "proxyPlaceholder": "utilisateur{'@'}hôte",
+    "proxyAdd": "Ajouter"
   },
   "transfer": {
     "export": "Exporter",

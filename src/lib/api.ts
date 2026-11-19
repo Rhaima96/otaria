@@ -448,8 +448,13 @@ export interface Account {
   roles: string[];
   /** Of `roles`, those granted WITH ADMIN OPTION. */
   adminRoles: string[];
-  /** "" | "SSL" | "X509" | "SPECIFIED" (ISSUER / SUBJECT / CIPHER, kept as is). */
+  /** "" | "SSL" | "X509" | "SPECIFIED" (the non-empty ones of issuer / subject / cipher). */
   require: string;
+  issuer: string;
+  subject: string;
+  cipher: string;
+  /** Accounts this one may proxy as (GRANT PROXY), as [user, host]. */
+  proxies: [string, string][];
 }
 
 /** What the account editor sends: original = [user, host] being edited, null to create. password null = unchanged. */

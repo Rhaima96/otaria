@@ -652,10 +652,18 @@
     "requireSsl": "Required (REQUIRE SSL)",
     "requireX509": "Client certificate (REQUIRE X509)",
     "requireSpecified": "Custom (ISSUER / SUBJECT / CIPHER)",
-    "requireSpecifiedHint": "Set in SQL; kept as it is.",
+    "requireSpecifiedHint": "Only the filled fields are required (REQUIRE … AND …).",
     "requireHint": "Refuses logins without TLS, or without a valid client certificate.",
     "adminOption": "can grant it",
-    "adminOptionHint": "WITH ADMIN OPTION: this account may grant the role to others"
+    "adminOptionHint": "WITH ADMIN OPTION: this account may grant the role to others",
+    "issuer": "Certificate issuer",
+    "subject": "Certificate subject",
+    "cipher": "Cipher",
+    "proxy": "Proxy accounts (GRANT PROXY): {n}",
+    "proxyHint": "This account may log in as these accounts (through a plugin that supports proxy users, such as PAM).",
+    "proxyRemove": "Remove",
+    "proxyPlaceholder": "user{'@'}host",
+    "proxyAdd": "Add"
   },
   "transfer": {
     "export": "Export",
