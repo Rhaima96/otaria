@@ -205,6 +205,7 @@
   "grid": {
     "default": "(défaut)",
     "cutHint": "Valeur longue coupée à 1024 caractères : ouvrez-la avec le bouton JSON pour la lire ou la modifier en entier.",
+    "noKeyCellSql": "Pas de clé primaire : la ligne est retrouvée par ses autres valeurs (première correspondance).",
     "filter": "Filtre",
     "filterPlaceholder": "Condition WHERE, ex. id > 100",
     "reload": "Recharger",
@@ -242,6 +243,9 @@
     "rows": "{n} lignes",
     "capped": "affichage plafonné, le serveur en a envoyé {total}",
     "cappedStopped": "affichage plafonné, la suite n'a pas été lue (le serveur a été arrêté)",
+    "count": "Compter",
+    "countHint": "Compter toutes les lignes de cette lecture : elle est relancée sur le serveur et peut prendre du temps.",
+    "cappedTotal": "affichage plafonné, {total} lignes au total",
     "rowsAtLeast": "au moins {n} lignes",
     "elapsed": "{ms} ms",
     "affected": "{n} lignes touchées",

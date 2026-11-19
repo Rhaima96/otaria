@@ -29,12 +29,28 @@ const NOT_ALIAS = new Set("where on using join inner left right cross natural st
 
 /**
  * Tables named after FROM / JOIN / UPDATE / INTO in a script, with their alias if any
- * (`FROM shop.users u`, `JOIN orders AS o`). Lower-cased alias, unquoted names.
+ * (`FROM shop.users u`, `JOIN orders AS o`, `FROM a x, b y`). Lower-cased alias, unquoted names.
  */
 export function namedTables(sql: string): { schema?: string; table: string; alias?: string }[] {
-  const re = new RegExp(`\\b(?:from|join|update|into)\\s+(?:(${ID})\\.)?(${ID})(?:\\s+(?:as\\s+)?(${ID}))?`, "gi");
-  return [...sql.matchAll(re)].map(([, s, tb, a]) => {
-    const alias = a && !NOT_ALIAS.has(a.toLowerCase()) ? unquote(a).toLowerCase() : undefined;
-    return { schema: s ? unquote(s) : undefined, table: unquote(tb), alias };
-  });
+  const item = `(?:(${ID})\\.)?(${ID})(?:\\s+(?:as\\s+)?(${ID}))?`;
+  const start = new RegExp(`\\b(from|join|update|into)\\s+`, "gi");
+  // After FROM and UPDATE, a comma-separated list: one table, then ", table" as long as one follows.
+  const next = new RegExp(`\\s*,\\s*${item}`, "iy");
+  const out: { schema?: string; table: string; alias?: string }[] = [];
+  for (const m of sql.matchAll(start)) {
+    let at = m.index! + m[0].length;
+    let found = new RegExp(item, "iy");
+    for (;;) {
+      found.lastIndex = at;
+      const r = found.exec(sql);
+      if (!r) break;
+      const [, s, tb, a] = r;
+      const keyword = !!a && NOT_ALIAS.has(a.toLowerCase());
+      out.push({ schema: s ? unquote(s) : undefined, table: unquote(tb), alias: a && !keyword ? unquote(a).toLowerCase() : undefined });
+      if (keyword || !/^(from|update)$/i.test(m[1])) break;
+      at = found.lastIndex;
+      found = next;
+    }
+  }
+  return out;
 }

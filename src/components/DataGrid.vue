@@ -55,10 +55,15 @@ const readOnlyCol = (name: string) => {
   return !c || BINARY.test(c.dataType) || /GENERATED|PERSISTENT/i.test(c.extra);
 };
 
-/** Last row loaded: on a sort by the primary key alone, the next page starts after it (keyset). */
+/** Last row loaded: the next page starts after it (keyset), the primary key breaking ties. */
 let lastRow: (string | null)[] | null = null;
-// Keys shown as text that would not compare back exactly (hex bytes, rounded floats): offset instead.
-const INEXACT = /blob|binary|bit|float|double|real|vector|geometry/i;
+// Values shown as text that would not compare back exactly: hex bytes, rounded floats, cells cut to
+// CELL_CUT, ENUM/SET (sorted by their index, compared as text). Such a sort pages by offset.
+const INEXACT = /blob|binary|bit|float|double|real|vector|geometry|^(text|mediumtext|longtext|json|enum|set)$/i;
+const exact = (column: string) => {
+  const c = props.info.columns.find((c) => c.name === column);
+  return !!c && !INEXACT.test(c.dataType);
+};
 
 async function load(append = false) {
   busy.value = true;
@@ -67,18 +72,14 @@ async function load(append = false) {
     // Server-side sort, with the primary key as tie-breaker so pages are stable.
     const pk = props.info.primaryKey.filter((k) => !order.value.some((s) => s.column === k)).map((column) => ({ column, desc: false }));
     const sort = [...order.value, ...pk];
-    const keyset =
-      append &&
-      lastRow !== null &&
-      sort.every((s) => props.info.primaryKey.includes(s.column)) &&
-      !props.info.columns.some((c) => props.info.primaryKey.includes(c.name) && INEXACT.test(c.dataType));
+    const keyset = append && lastRow !== null && hasKey.value && sort.every((s) => exact(s.column));
     const res = await api.tableData(props.sessionId, props.schema, props.table, {
       filter: filter.value,
       order: sort,
       offset: append ? rows.value.filter((r) => r.orig).length : 0,
       limit: PAGE,
       asOf: asOf.value,
-      after: keyset ? sort.map((s) => lastRow![columns.value.indexOf(s.column)] ?? "") : null,
+      after: keyset ? sort.map((s) => lastRow![columns.value.indexOf(s.column)] ?? null) : null,
     });
     lastRow = res.rows.at(-1) ?? (append ? lastRow : null);
     columns.value = res.columns;
@@ -196,6 +197,11 @@ async function openJson() {
   const i = Number(cell.column.getColId());
   jsonCell = { row: cell.rowIndex, col: cell.column.getColId() };
   const row = node.data;
+  // No primary key to read a cut value by: the SQL editor gets a query finding the row by its other values.
+  if (row.cut.includes(i) && !hasKey.value && row.orig) {
+    emit("editSql", cellSql(row, i));
+    return;
+  }
   // A cut value: read it whole first (it becomes the row's original value, so not a change).
   if (row.cut.includes(i) && hasKey.value && row.orig) {
     try {
@@ -212,6 +218,25 @@ async function openJson() {
   const v = row.v[i];
   json.value?.open({ column: columns.value[i], value: v ?? null, editable: editable.value && !readOnlyCol(columns.value[i]) && !row.deleted && !row.cut.includes(i) });
 }
+const quoteName = (n: string) => "`" + n.replace(/`/g, "``") + "`";
+/** Text literal that reads the same with or without NO_BACKSLASH_ESCAPES: hex when it holds a backslash. */
+function literal(v: string) {
+  if (!v.includes("\\")) return "'" + v.replace(/'/g, "''") + "'";
+  return "_utf8mb4 X'" + [...new TextEncoder().encode(v)].map((b) => b.toString(16).padStart(2, "0")).join("") + "'";
+}
+/** SELECT of one cut cell of a table without a primary key: the row is matched on its other exact values. */
+function cellSql(row: GridRow, i: number) {
+  const conds = columns.value.flatMap((name, k) => {
+    const v = row.orig![k];
+    if (k === i || row.cut.includes(k) || /float|double|real|vector|geometry/i.test(props.info.columns.find((c) => c.name === name)?.dataType ?? "")) return [];
+    // Binary values that are not UTF-8 come as 0x… hex, which SQL reads back as the same bytes.
+    const lit = v === null ? "NULL" : readOnlyCol(name) && /^0x[0-9A-F]*$/.test(v) ? v : literal(v);
+    return [`${quoteName(name)} <=> ${lit}`];
+  });
+  const where = conds.length ? `\nWHERE ${conds.join("\n  AND ")}` : "";
+  return `-- ${t("grid.noKeyCellSql")}\nSELECT ${quoteName(columns.value[i])}\nFROM ${quoteName(props.schema)}.${quoteName(props.table)}${where}\nLIMIT 1;`;
+}
+
 function applyJson(text: string) {
   const node = jsonCell && grid?.getDisplayedRowAtIndex(jsonCell.row);
   if (jsonCell && node) node.setDataValue(jsonCell.col, text);

@@ -547,7 +547,7 @@ export const api = {
   tableInfo: (sessionId: string, schema: string, table: string) => invoke<TableInfo>("table_info", { sessionId, schema, table }),
   objectDdl: (sessionId: string, schema: string, name: string, kind: ObjectKind) =>
     invoke<string>("object_ddl", { sessionId, schema, name, kind }),
-  tableData: (sessionId: string, schema: string, table: string, q: { filter: string; order: Sort[]; offset: number; limit: number; asOf: string | null; after: string[] | null }) =>
+  tableData: (sessionId: string, schema: string, table: string, q: { filter: string; order: Sort[]; offset: number; limit: number; asOf: string | null; after: (string | null)[] | null }) =>
     invoke<Rows>("table_data", { sessionId, schema, table, ...q }),
   cellValue: (sessionId: string, schema: string, table: string, key: Pairs, column: string) =>
     invoke<string | null>("cell_value", { sessionId, schema, table, key, column }),
@@ -630,6 +630,7 @@ export const api = {
   jsonTableSql: (schema: string, table: string, column: string, path: (string | number)[], sample: unknown) =>
     invoke<string>("json_table_sql", { schema, table, column, path, sample }),
   cancelSql: (sessionId: string, editorId: string) => invoke<void>("cancel_sql", { sessionId, editorId }),
+  countSqlRows: (sessionId: string, editorId: string, schema: string | null, sql: string) => invoke<number>("count_sql_rows", { sessionId, editorId, schema, sql }),
   closeEditor: (sessionId: string, editorId: string) => invoke<void>("close_editor", { sessionId, editorId }),
 };
 

@@ -375,6 +375,21 @@ fn first_word(sql: &str) -> String {
     s.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect::<String>().to_ascii_uppercase()
 }
 
+/// Full row count of a read the display cap stopped: the statement as a derived table. The line
+/// break before `)` keeps a trailing `-- comment` from swallowing it.
+pub fn count_sql(sql: &str) -> String {
+    format!("SELECT COUNT(*) FROM (\n{}\n) AS otaria_count", sql.trim().trim_end_matches(';'))
+}
+
+/// Runs `count_sql` for a read the cap can stop (the same statements `run` stops); anything else is refused.
+pub async fn count(conn: &mut Conn, sql: &str) -> AppResult<u64> {
+    if !matches!(first_word(sql).as_str(), "SELECT" | "WITH" | "VALUES" | "TABLE") {
+        return Err(AppError::new("UNKNOWN", "not a read"));
+    }
+    let n: Option<u64> = conn.query_first(count_sql(sql)).await?;
+    Ok(n.unwrap_or(0))
+}
+
 /// `ANALYZE` runs the statement for real: only a single SELECT (or WITH … SELECT) is wrapped.
 pub fn analyze_sql(stmts: &[String]) -> AppResult<String> {
     match stmts {
@@ -584,6 +599,9 @@ LIMIT 100;"
         assert!(r.stopped && r.rows.len() == 10 && r.total_rows < 100_000_000, "{} rows read", r.total_rows);
         assert_eq!(out.results[1].rows[0][0].as_deref(), Some("7"));
         assert!(t.elapsed().as_secs() < 10, "{:?}", t.elapsed());
+        // Its exact count, on the same connection (USE kept); a write is refused.
+        assert_eq!(count(&mut conn, "SELECT seq FROM seq_1_to_250000 -- all").await.unwrap(), 250_000);
+        assert!(count(&mut conn, "DELETE FROM t").await.is_err());
 
         let id = ed.conn_id;
         let p2 = pool.clone();
@@ -616,5 +634,10 @@ LIMIT 100;"
         assert_eq!(r.origins[0].as_ref().map(|o| (o.table.as_str(), o.column.as_str())), Some(("t", "id")));
         assert!(r.origins[3].is_none());
         run(&mut conn, &["DROP DATABASE otaria_vec_q".into()], 1, None).await;
+    }
+
+    #[test]
+    fn wraps_a_read_to_count_it() {
+        assert_eq!(count_sql(" SELECT a FROM t -- note\n;"), "SELECT COUNT(*) FROM (\nSELECT a FROM t -- note\n\n) AS otaria_count");
     }
 }

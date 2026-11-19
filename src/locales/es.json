@@ -205,6 +205,7 @@
   "grid": {
     "default": "(predeterminado)",
     "cutHint": "Valor largo cortado a 1024 caracteres: ábralo con el botón JSON para leerlo o editarlo completo.",
+    "noKeyCellSql": "Sin clave primaria: la fila se busca por sus demás valores (primera coincidencia).",
     "filter": "Filtro",
     "filterPlaceholder": "Condición WHERE, p. ej. id > 100",
     "reload": "Recargar",
@@ -242,6 +243,9 @@
     "rows": "{n} filas",
     "capped": "visualización limitada, el servidor envió {total}",
     "cappedStopped": "visualización limitada, el resto no se leyó (se detuvo el servidor)",
+    "count": "Contar",
+    "countHint": "Contar todas las filas de esta lectura: se vuelve a ejecutar en el servidor y puede tardar.",
+    "cappedTotal": "visualización limitada, {total} filas en total",
     "rowsAtLeast": "al menos {n} filas",
     "elapsed": "{ms} ms",
     "affected": "{n} filas afectadas",

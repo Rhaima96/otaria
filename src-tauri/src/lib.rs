@@ -227,7 +227,7 @@ async fn table_data(
     limit: u64,
     as_of: Option<String>,
     // Sort values of the last row shown (one per `order` column): read the next page by keyset.
-    after: Option<Vec<String>>,
+    after: Option<Vec<Option<String>>>,
 ) -> AppResult<browse::Rows> {
     let after = after.filter(|a| a.len() == order.len());
     let page = if after.is_some() { browse::Page::After } else { browse::Page::Offset(offset) };
@@ -235,7 +235,7 @@ async fn table_data(
     let select = browse::select_list(&browse::grid_columns(&pool, &schema, &table).await?);
     let sql = browse::data_sql(&schema, &table, &select, filter.as_deref(), &order, page, limit, as_of.is_some());
     let names: Vec<String> = (0..order.len()).map(|i| format!("{}{i}", browse::AFTER_VAR)).collect();
-    let mut vars: Vec<(&str, Option<String>)> = after.into_iter().flatten().zip(&names).map(|(v, n)| (n.as_str(), Some(v))).collect();
+    let mut vars: Vec<(&str, Option<String>)> = after.into_iter().flatten().zip(&names).map(|(v, n)| (n.as_str(), v)).collect();
     let utc = as_of.is_some();
     if let Some(t) = as_of {
         vars.push((browse::AS_OF_VAR, Some(t)));
@@ -755,6 +755,14 @@ async fn run_sql(
     Ok(out)
 }
 
+/// Exact row count of a read stopped at the display cap, run in the editor's connection (its `USE`,
+/// variables and temporary tables apply). Only the reads the cap can stop are accepted.
+#[tauri::command]
+async fn count_sql_rows(state: State<'_, AppState>, session_id: String, editor_id: String, schema: Option<String>, sql: String) -> AppResult<u64> {
+    let (_, _, conn) = editor(&state, &session_id, &editor_id, schema.as_deref()).await?;
+    query::count(&mut *conn.lock().await, &sql).await
+}
+
 #[tauri::command]
 fn json_table_sql(schema: String, table: String, column: String, path: Vec<query::PathStep>, sample: serde_json::Value) -> String {
     query::json_table_sql(&schema, &table, &column, &path, &sample)
@@ -831,6 +839,7 @@ pub fn run() {
             preview_changes,
             apply_changes,
             run_sql,
+            count_sql_rows,
             cancel_sql,
             close_editor,
             row_history,

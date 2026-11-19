@@ -106,6 +106,7 @@ async function send(req: RunRequest) {
   try {
     const out = await api.runSql(props.sessionId, props.editorId, req);
     output.value = out;
+    counts.value = {};
     if (out.schema !== schema.value) memo.clear();
     schema.value = out.schema;
     const firstSet = out.results.findIndex((r) => r.columns.length);
@@ -117,6 +118,23 @@ async function send(req: RunRequest) {
       pending.value = { req: { ...req, confirmed: true }, statements: err.detail ?? "" };
       confirmDialog.value?.showModal();
     } else error.value = err;
+  } finally {
+    running.value = false;
+  }
+}
+
+/** Exact row counts of capped reads, by result tab, asked for with the Count button. */
+const counts = ref<Record<number, number>>({});
+async function countRows() {
+  const i = resultTab.value;
+  const r = shown.value;
+  if (typeof i !== "number" || !r || running.value) return;
+  running.value = true;
+  error.value = null;
+  try {
+    counts.value = { ...counts.value, [i]: await api.countSqlRows(props.sessionId, props.editorId, schema.value, r.sql) };
+  } catch (e) {
+    error.value = toAppError(e);
   } finally {
     running.value = false;
   }
@@ -269,7 +287,13 @@ const tabBtn = "flex h-full shrink-0 items-center gap-1 border-r px-3 hover:bg-s
             />
             <div class="flex h-7 shrink-0 items-center gap-2 border-t px-2 text-muted-foreground">
               <span>{{ t("editor.rows", { n: shown.rows.length }) }}</span>
-              <span v-if="shown.stopped" class="text-warning">{{ t("editor.cappedStopped") }}</span>
+              <template v-if="shown.stopped && typeof resultTab === 'number'">
+                <span v-if="counts[resultTab] !== undefined" class="text-warning">{{ t("editor.cappedTotal", { total: counts[resultTab] }) }}</span>
+                <template v-else>
+                  <span class="text-warning">{{ t("editor.cappedStopped") }}</span>
+                  <button :class="btn" class="text-foreground" :disabled="running" :title="t('editor.countHint')" @click="countRows">{{ t("editor.count") }}</button>
+                </template>
+              </template>
               <span v-else-if="shown.totalRows > shown.rows.length" class="text-warning">{{ t("editor.capped", { total: shown.totalRows }) }}</span>
               <button v-if="!(plan && planView)" :class="btn" class="text-foreground" :title="t('json.openHint')" @click="openJson"><Braces class="size-3.5" />{{ t("json.open") }}</button>
               <button v-if="plan" :class="btn" class="text-foreground" @click="planView = !planView">{{ planView ? t("plan.showGrid") : t("plan.showTree") }}</button>

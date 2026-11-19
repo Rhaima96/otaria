@@ -205,6 +205,7 @@
   "grid": {
     "default": "(predefinito)",
     "cutHint": "Valore lungo tagliato a 1024 caratteri: aprilo con il pulsante JSON per leggerlo o modificarlo per intero.",
+    "noKeyCellSql": "Nessuna chiave primaria: la riga è cercata tramite gli altri valori (prima corrispondenza).",
     "filter": "Filtro",
     "filterPlaceholder": "Condizione WHERE, es. id > 100",
     "reload": "Ricarica",
@@ -242,6 +243,9 @@
     "rows": "{n} righe",
     "capped": "visualizzazione limitata, il server ne ha inviate {total}",
     "cappedStopped": "visualizzazione limitata, il resto non è stato letto (il server è stato fermato)",
+    "count": "Conta",
+    "countHint": "Conta tutte le righe di questa lettura: viene rieseguita sul server e può richiedere tempo.",
+    "cappedTotal": "visualizzazione limitata, {total} righe in totale",
     "rowsAtLeast": "almeno {n} righe",
     "elapsed": "{ms} ms",
     "affected": "{n} righe interessate",

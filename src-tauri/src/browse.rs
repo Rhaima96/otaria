@@ -281,7 +281,8 @@ pub enum Page {
     /// Skip this many rows (any sort; slower the deeper it goes).
     Offset(u64),
     /// Rows after the ones whose sort values are held in `AFTER_VAR`0…n (keyset: as fast at any
-    /// depth). Only for a sort on NOT NULL columns, which the grid uses on the primary key.
+    /// depth). The sort must end with the primary key, so that it is total. NULL values are placed
+    /// as MariaDB sorts them: first in ascending order, last in descending order.
     After,
 }
 
@@ -300,11 +301,17 @@ pub fn data_sql(schema: &str, table: &str, select: &str, filter: Option<&str>, o
         conds.push(format!("({f}\n)"));
     }
     if page == Page::After && !order.is_empty() {
-        // (a > @0) OR (a = @0 AND b > @1) …, `<` for a descending column.
+        // (a after @0) OR (a <=> @0 AND b after @1) …; "after" also places NULL, which sorts first
+        // ascending and last descending. On a NOT NULL column the NULL tests are constant and drop out.
         let parts: Vec<String> = (0..order.len())
             .map(|i| {
-                let mut p: Vec<String> = order[..i].iter().enumerate().map(|(j, s)| format!("{} = {AFTER_VAR}{j}", ident(&s.column))).collect();
-                p.push(format!("{} {} {AFTER_VAR}{i}", ident(&order[i].column), if order[i].desc { "<" } else { ">" }));
+                let mut p: Vec<String> = order[..i].iter().enumerate().map(|(j, s)| format!("{} <=> {AFTER_VAR}{j}", ident(&s.column))).collect();
+                let c = ident(&order[i].column);
+                p.push(if order[i].desc {
+                    format!("({c} < {AFTER_VAR}{i} OR {AFTER_VAR}{i} IS NOT NULL AND {c} IS NULL)")
+                } else {
+                    format!("({c} > {AFTER_VAR}{i} OR {AFTER_VAR}{i} IS NULL AND {c} IS NOT NULL)")
+                });
                 format!("({})", p.join(" AND "))
             })
             .collect();
@@ -335,7 +342,6 @@ pub fn cell(v: Value) -> Option<String> {
     }
 }
 
-// ponytail: whole cells are loaded (no BLOB truncation), heavy for big BLOB columns × 1000 rows.
 /// `vars`: user values bound as session variables first (prepared), so the query itself stays on the
 /// text protocol. `utc`: timestamps in UTC (`time_zone = '+00:00'`), for "as of" reads. The pool
 /// resets the connection when it is returned, so neither leaks into other queries.
@@ -520,7 +526,7 @@ mod tests {
         let pk = [Sort { column: "a".into(), desc: false }, Sort { column: "b".into(), desc: true }];
         assert_eq!(
             data_sql("s", "t", "*", Some("x = 1"), &pk, Page::After, 10, false),
-            "SELECT * FROM `s`.`t` WHERE (x = 1\n) AND ((`a` > @otaria_after0) OR (`a` = @otaria_after0 AND `b` < @otaria_after1)) ORDER BY `t`.`a`, `t`.`b` DESC LIMIT 10"
+            "SELECT * FROM `s`.`t` WHERE (x = 1\n) AND (((`a` > @otaria_after0 OR @otaria_after0 IS NULL AND `a` IS NOT NULL)) OR (`a` <=> @otaria_after0 AND (`b` < @otaria_after1 OR @otaria_after1 IS NOT NULL AND `b` IS NULL))) ORDER BY `t`.`a`, `t`.`b` DESC LIMIT 10"
         );
     }
 
@@ -608,21 +614,39 @@ mod tests {
             )
             .await
             .unwrap();
-        let order = [Sort { column: "a".into(), desc: false }, Sort { column: "b".into(), desc: true }, Sort { column: "d".into(), desc: false }];
-        let all = data(&pool, &data_sql("otaria_ks", "t", "*", None, &order, Page::Offset(0), 100, false), &[], false).await.unwrap().rows;
-        let names: Vec<String> = (0..3).map(|i| format!("{AFTER_VAR}{i}")).collect();
-        let mut pages = data(&pool, &data_sql("otaria_ks", "t", "*", None, &order, Page::Offset(0), 5, false), &[], false).await.unwrap().rows;
-        loop {
-            let last = pages.last().unwrap().clone();
-            let vars: Vec<(&str, Option<String>)> = names.iter().map(String::as_str).zip(last).collect();
-            let next = data(&pool, &data_sql("otaria_ks", "t", "*", None, &order, Page::After, 5, false), &vars, false).await.unwrap().rows;
-            if next.is_empty() {
-                break;
+        // Keyset pages of 5 rows, against one offset read. `cols`: where each sort column is in a row.
+        async fn same_rows(pool: &Pool, table: &str, order: &[Sort], cols: &[usize]) -> usize {
+            let all = data(pool, &data_sql("otaria_ks", table, "*", None, order, Page::Offset(0), 100, false), &[], false).await.unwrap().rows;
+            let names: Vec<String> = (0..order.len()).map(|i| format!("{AFTER_VAR}{i}")).collect();
+            let mut pages = data(pool, &data_sql("otaria_ks", table, "*", None, order, Page::Offset(0), 5, false), &[], false).await.unwrap().rows;
+            loop {
+                let last = pages.last().unwrap();
+                let vars: Vec<(&str, Option<String>)> = names.iter().map(String::as_str).zip(cols.iter().map(|&c| last[c].clone())).collect();
+                let next = data(pool, &data_sql("otaria_ks", table, "*", None, order, Page::After, 5, false), &vars, false).await.unwrap().rows;
+                if next.is_empty() {
+                    break;
+                }
+                pages.extend(next);
             }
-            pages.extend(next);
+            assert_eq!(pages, all, "{table} {order:?}");
+            all.len()
         }
-        assert_eq!(all.len(), 23);
-        assert_eq!(pages, all);
+        let order = [Sort { column: "a".into(), desc: false }, Sort { column: "b".into(), desc: true }, Sort { column: "d".into(), desc: false }];
+        assert_eq!(same_rows(&pool, "t", &order, &[0, 1, 2]).await, 23);
+
+        // Sort on a nullable, non-unique column, the primary key breaking ties; NULLs on both sides of a page.
+        pool.get_conn()
+            .await
+            .unwrap()
+            .query_drop("CREATE TABLE otaria_ks.n (id INT PRIMARY KEY, n INT, s VARCHAR(3)); INSERT INTO otaria_ks.n SELECT seq, IF(seq % 3 = 0, NULL, seq % 4), IF(seq % 5 = 0, NULL, CHAR(65 + seq % 2)) FROM mysql.seq_1_to_17;")
+            .await
+            .unwrap();
+        for desc in [false, true] {
+            let by_n = [Sort { column: "n".into(), desc }, Sort { column: "id".into(), desc: false }];
+            assert_eq!(same_rows(&pool, "n", &by_n, &[1, 0]).await, 17);
+            let by_s_n = [Sort { column: "s".into(), desc: !desc }, Sort { column: "n".into(), desc }, Sort { column: "id".into(), desc: true }];
+            assert_eq!(same_rows(&pool, "n", &by_s_n, &[2, 1, 0]).await, 17);
+        }
 
         // Long cells come cut and flagged; the whole value is read by key.
         pool.get_conn()

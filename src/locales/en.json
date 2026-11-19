@@ -205,6 +205,7 @@
   "grid": {
     "default": "(default)",
     "cutHint": "Long value cut at 1024 characters: open it with the JSON button to read or edit it whole.",
+    "noKeyCellSql": "No primary key: the row is found by its other values (first match).",
     "filter": "Filter",
     "filterPlaceholder": "WHERE condition, e.g. id > 100",
     "reload": "Reload",
@@ -242,6 +243,9 @@
     "rows": "{n} rows",
     "capped": "display capped, the server sent {total}",
     "cappedStopped": "display capped, the rest was not read (the server was stopped)",
+    "count": "Count",
+    "countHint": "Count every row of this read: it runs again on the server and can take a while.",
+    "cappedTotal": "display capped, {total} rows in all",
     "rowsAtLeast": "at least {n} rows",
     "elapsed": "{ms} ms",
     "affected": "{n} rows affected",
