@@ -235,6 +235,27 @@ mod tests {
         assert_eq!(err.code, "DB_ACCESS_DENIED");
     }
 
+    /// TLS checks against a server whose certificate, signed by the CA in `ca_path`, names only
+    /// `localhost`: OTARIA_TEST_TLS_DB="127.0.0.1:port:user:ca_path" (passwordless user).
+    /// "Verify CA" must ignore the name (patched mysql_async), "verify identity" must not.
+    #[tokio::test]
+    #[ignore]
+    async fn verify_ca_ignores_host_name() {
+        let spec = std::env::var("OTARIA_TEST_TLS_DB").expect("set OTARIA_TEST_TLS_DB");
+        let parts: Vec<&str> = spec.splitn(4, ':').collect();
+        let mut p = profile(TlsMode::VerifyCa);
+        p.host = parts[0].into();
+        p.port = parts[1].parse().unwrap();
+        p.user = parts[2].into();
+        p.tls.ca = Some(parts[3].into());
+        open(&p, None, None).await.expect("verify-ca by IP").close().await;
+        p.tls.mode = TlsMode::VerifyIdentity;
+        let e = open(&p, None, None).await.err().expect("name mismatch must fail");
+        assert_eq!(e.code, "TLS", "{e:?}");
+        p.host = "localhost".into();
+        open(&p, None, None).await.expect("verify-identity by name").close().await;
+    }
+
     /// SSH tunnel: OTARIA_TEST_SSH="ssh_host:ssh_port:user:password:db_host" plus OTARIA_TEST_DB for the DB login.
     #[tokio::test]
     #[ignore]
