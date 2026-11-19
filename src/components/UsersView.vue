@@ -356,7 +356,7 @@ const tabBtn = "h-8 border-b-2 px-3";
         <div class="border-b px-4 py-2 font-semibold">{{ t("users.drop") }}</div>
         <pre class="p-4 font-mono text-xs select-text">{{ dropSql }}</pre>
         <label class="block px-4 text-muted-foreground" for="u-confirm">{{ t("users.dropConfirm", { name: form.original[0] }) }}</label>
-        <input id="u-confirm" v-model="typed" autocomplete="off" :class="cn(input, 'mx-4 mt-1 w-[calc(100%-2rem)] font-mono')" />
+        <input id="u-confirm" v-model="typed" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" :class="cn(input, 'mx-4 mt-1 w-[calc(100%-2rem)] font-mono')" />
         <ErrorLine v-if="applyError" :error="applyError" class="mx-4 mt-2" />
         <div class="flex justify-end gap-2 px-4 py-3">
           <button type="button" class="h-7 rounded-sm border px-3 font-medium hover:bg-secondary" @click="dropDialog?.close()">{{ t("grid.cancel") }}</button>

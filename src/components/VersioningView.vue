@@ -301,7 +301,7 @@ const cell = "border-b px-2 py-1 text-left align-top";
       <p class="px-4 text-muted-foreground">{{ destructive ? t("versioning.destructiveHint") : t("versioning.previewHint") }}</p>
       <label v-if="destructive" class="mx-4 mt-2 flex flex-col gap-1">
         {{ t("object.typeName", { name: table }) }}
-        <input v-model="typed" spellcheck="false" class="h-7 rounded-sm border bg-background px-2 font-mono" />
+        <input v-model="typed" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" class="h-7 rounded-sm border bg-background px-2 font-mono" />
       </label>
       <ErrorLine v-if="actionError" :error="actionError" class="mx-4 mt-2" />
       <div class="flex justify-end gap-2 px-4 py-3">

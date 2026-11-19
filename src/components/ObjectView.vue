@@ -210,7 +210,7 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
         <p class="px-4">{{ truncate ? t("object.truncateText") : t("object.dropText") }}</p>
         <label class="flex flex-col gap-1 px-4 pt-3">
           <span class="text-muted-foreground">{{ t("object.typeName", { name: obj.name }) }}</span>
-          <input v-model="typed" autocomplete="off" class="h-7 rounded-sm border bg-background px-2 font-mono text-xs" />
+          <input v-model="typed" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" class="h-7 rounded-sm border bg-background px-2 font-mono text-xs" />
         </label>
         <ErrorLine v-if="dropError" :error="dropError" class="mx-4 mt-2" />
         <div class="flex justify-end gap-2 px-4 py-3">
