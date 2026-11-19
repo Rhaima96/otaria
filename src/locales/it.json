@@ -297,7 +297,7 @@
     "asDefaultHint": "Incolla questo nella definizione di una colonna perché le nuove righe prendano il valore successivo.",
     "copy": "Copia",
     "copied": "Copiato",
-    "ddlHint": "Questa istruzione ha effetto immediato e non può essere annullata."
+    "ddlHint": "Una volta completata, questa istruzione non può più essere annullata."
   },
   "newObject": {
     "menu": "Nuovo…",

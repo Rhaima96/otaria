@@ -297,7 +297,7 @@
     "asDefaultHint": "Collez ceci dans la définition d'une colonne pour que les nouvelles lignes prennent la valeur suivante.",
     "copy": "Copier",
     "copied": "Copié",
-    "ddlHint": "Cette instruction prend effet immédiatement et ne peut pas être annulée."
+    "ddlHint": "Une fois terminée, cette instruction ne peut plus être annulée."
   },
   "newObject": {
     "menu": "Nouveau…",

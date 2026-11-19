@@ -297,7 +297,7 @@
     "asDefaultHint": "Pegue esto en la definición de una columna para que las filas nuevas tomen el siguiente valor.",
     "copy": "Copiar",
     "copied": "Copiado",
-    "ddlHint": "Esta sentencia surte efecto de inmediato y no se puede deshacer."
+    "ddlHint": "Una vez terminada, esta sentencia ya no se puede deshacer."
   },
   "newObject": {
     "menu": "Nuevo…",

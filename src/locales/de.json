@@ -297,7 +297,7 @@
     "asDefaultHint": "In eine Spaltendefinition einfügen, damit neue Zeilen den nächsten Wert erhalten.",
     "copy": "Kopieren",
     "copied": "Kopiert",
-    "ddlHint": "Diese Anweisung wirkt sofort und kann nicht rückgängig gemacht werden."
+    "ddlHint": "Nach Abschluss kann diese Anweisung nicht mehr rückgängig gemacht werden."
   },
   "newObject": {
     "menu": "Neu…",

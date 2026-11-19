@@ -297,7 +297,7 @@
     "asDefaultHint": "Paste this into a column definition so new rows take the next value.",
     "copy": "Copy",
     "copied": "Copied",
-    "ddlHint": "This statement takes effect immediately and cannot be rolled back."
+    "ddlHint": "Once it has finished, this statement cannot be rolled back."
   },
   "newObject": {
     "menu": "New…",
