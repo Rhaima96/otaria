@@ -47,7 +47,9 @@
     "delete": "Delete",
     "confirmDelete": "Delete the connection “{name}” and its saved passwords?",
     "showPassword": "Show password",
-    "hidePassword": "Hide password"
+    "hidePassword": "Hide password",
+    "sshCert": "SSH certificate",
+    "sshCertPlaceholder": "Optional: <key>-cert.pub is used when it exists"
   },
   "colors": {
     "none": "No colour",
@@ -138,7 +140,9 @@
     "BINLOG_OFF": "Binary logging is off on this server (log_bin).",
     "BINLOG_TOOL_MISSING": "mariadb-binlog was not found. Install the MariaDB client (Homebrew: brew install mariadb; Linux: mariadb-client package; Windows: MariaDB installer).",
     "BINLOG_TOOL": "mariadb-binlog failed.",
-    "INVALID_RANGE": "Invalid range."
+    "INVALID_RANGE": "Invalid range.",
+    "BINLOG_POSITION": "No event starts at this position: use a value from the Pos column.",
+    "SSH_CERT": "Cannot read the SSH certificate (OpenSSH -cert.pub file)."
   },
   "tree": {
     "title": "Databases",
@@ -350,7 +354,28 @@
     "try_online": "Run online",
     "try_default": "Run anyway (may block writes)",
     "ignored": "Ignored",
-    "ignoredHint": "Kept up to date but not used by the optimizer: a safe way to test dropping an index. Switched without rebuilding."
+    "ignoredHint": "Kept up to date but not used by the optimizer: a safe way to test dropping an index. Switched without rebuilding.",
+    "versioned": "System versioning",
+    "versionedHint": "WITH SYSTEM VERSIONING: every change keeps the previous row",
+    "unversioned": "Without versioning",
+    "unversionedHint": "WITHOUT SYSTEM VERSIONING: changing only this column adds no history row",
+    "periods": "Application periods",
+    "periodStart": "Start column",
+    "periodEnd": "End column",
+    "periodName": "Period name",
+    "addPeriod": "Add a period",
+    "periodsNeedDates": "A period needs two DATE, DATETIME or TIMESTAMP columns.",
+    "overlaps": "Without overlaps on a period",
+    "noOverlaps": "Overlaps allowed",
+    "overlapsOn": "{name} WITHOUT OVERLAPS",
+    "lockWait": "Wait for the table lock",
+    "lockWaitDefault": "Server default",
+    "lockNoWait": "Do not wait (NOWAIT)",
+    "lockWaitSeconds": "{n} s at most (WAIT {n})",
+    "progress": "{pct} % · stage {stage} of {stages}",
+    "stop": "Stop",
+    "partitions": "Partitioning",
+    "partitionsHint": "PARTITION BY clause, as SQL. Empty = not partitioned; clearing it runs REMOVE PARTITIONING (the rows stay)."
   },
   "plugins": {
     "tab": "Plugins",
@@ -415,7 +440,13 @@
     "conflicts": "Certification failures / brute-force aborts",
     "provider": "Provider",
     "address": "Address",
-    "noMembership": "Node names need the SUPER privilege and the wsrep_info plugin: only the addresses (wsrep_incoming_addresses) are shown."
+    "noMembership": "Node names need the SUPER privilege and the wsrep_info plugin: only the addresses (wsrep_incoming_addresses) are shown.",
+    "start": "Start the channel",
+    "stop": "Stop the channel",
+    "skip": "Skip",
+    "skipHint": "Skip the failing event and restart the SQL thread",
+    "skipCount": "Events to skip",
+    "skipWarning": "Skipped events are never applied on this replica: its data may then differ from the source."
   },
   "binlog": {
     "tab": "Binlog",
@@ -436,7 +467,17 @@
     "undo": "Undo selection ({n})",
     "undoHint": "Generates the undo SQL of the transactions holding the selected events (from Gtid to Xid) with mariadb-binlog --flashback, and opens it in the SQL editor without running it. Only row changes (INSERT, UPDATE, DELETE) are reversed, and only with binlog_row_image = FULL.",
     "undoNeedsRow": "Undo needs binlog_format = ROW.",
-    "undoHeader": "Undo of events {start} to {stop} in {file} (mariadb-binlog --flashback). Read it before running it: the BINLOG statements need the BINLOG REPLAY privilege."
+    "undoHeader": "Undo of events {start} to {stop} in {file} (mariadb-binlog --flashback). Read it before running it: the BINLOG statements need the BINLOG REPLAY privilege.",
+    "byTxn": "By transaction",
+    "jump": "Go",
+    "jumpPlaceholder": "Position",
+    "jumpHint": "Read from this byte position: it must be where an event starts (the Pos column).",
+    "gtidCol": "GTID",
+    "events": "Events",
+    "tables": "Tables",
+    "statements": "Statements",
+    "fromPos": "from {pos}",
+    "txnCount": "{n} transactions"
   },
   "vector": {
     "loading": "Loading vector columns…",
@@ -572,7 +613,8 @@
       "global": "global",
       "schema": "database",
       "table": "table",
-      "column": "column"
+      "column": "column",
+      "routine": "routine"
     },
     "levelLabel": "Level",
     "pickSchema": "Database…",
@@ -580,7 +622,17 @@
     "pickColumn": "Column…",
     "addTarget": "Add",
     "removeTarget": "Remove all privileges here",
-    "privilegesHint": "Tick or untick privileges, then review the GRANT and REVOKE statements."
+    "privilegesHint": "Tick or untick privileges, then review the GRANT and REVOKE statements.",
+    "pickRoutine": "Routine…",
+    "require": "Encrypted connection",
+    "requireNone": "Not required",
+    "requireSsl": "Required (REQUIRE SSL)",
+    "requireX509": "Client certificate (REQUIRE X509)",
+    "requireSpecified": "Custom (ISSUER / SUBJECT / CIPHER)",
+    "requireSpecifiedHint": "Set in SQL; kept as it is.",
+    "requireHint": "Refuses logins without TLS, or without a valid client certificate.",
+    "adminOption": "can grant it",
+    "adminOptionHint": "WITH ADMIN OPTION: this account may grant the role to others"
   },
   "transfer": {
     "export": "Export",

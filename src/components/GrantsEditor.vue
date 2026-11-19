@@ -14,8 +14,8 @@ interface Row {
   target: GrantTarget;
   privs: string[];
 }
-const GLOBAL: GrantTarget = { schema: null, table: null, column: null };
-const keyOf = (t: GrantTarget) => JSON.stringify([t.schema, t.table, t.column]);
+const GLOBAL: GrantTarget = { schema: null, table: null, column: null, routine: null };
+const keyOf = (t: GrantTarget) => JSON.stringify([t.schema, t.table, t.column, t.routine ?? null]);
 
 const loaded = ref<Map<string, Set<string>>>(new Map());
 const rows = ref<Row[]>([]);
@@ -35,12 +35,13 @@ async function load() {
 onMounted(load);
 watch(() => [props.user, props.host], load);
 
-type Level = "global" | "schema" | "table" | "column";
-const levelOf = (t: GrantTarget): Level => (t.column ? "column" : t.table ? "table" : t.schema ? "schema" : "global");
+type Level = "global" | "schema" | "table" | "column" | "routine";
+const levelOf = (t: GrantTarget): Level => (t.routine ? "routine" : t.column ? "column" : t.table ? "table" : t.schema ? "schema" : "global");
 const choices = (t: GrantTarget) => props.privileges.filter((p) => p[levelOf(t)]).map((p) => p.name);
 function label(g: GrantTarget) {
   if (!g.schema) return t("users.global");
   const q = (s: string) => `\`${s}\``;
+  if (g.routine) return `${g.routine} ${q(g.schema)}.${q(g.table!)}`;
   return g.column ? `${q(g.schema)}.${q(g.table!)} (${q(g.column)})` : g.table ? `${q(g.schema)}.${q(g.table)}` : `${q(g.schema)}.*`;
 }
 
@@ -50,6 +51,7 @@ const schemas = ref<string[]>([]);
 const tables = ref<DbObject[]>([]);
 const columns = ref<Column[]>([]);
 const pick = ref<GrantTarget>({ schema: null, table: null, column: null });
+const routines = ref<DbObject[]>([]);
 
 onMounted(async () => {
   try {
@@ -62,14 +64,17 @@ watch(
   () => pick.value.schema,
   async (s) => {
     pick.value.table = null;
-    tables.value = s ? (await api.listObjects(props.sessionId, s)).filter((o) => o.kind === "table" || o.kind === "view") : [];
+    const objs = s ? await api.listObjects(props.sessionId, s) : [];
+    tables.value = objs.filter((o) => o.kind === "table" || o.kind === "view");
+    routines.value = objs.filter((o) => o.kind === "procedure" || o.kind === "function");
   },
 );
+watch(level, () => (pick.value.table = null));
 watch(
   () => pick.value.table,
   async (tb) => {
     pick.value.column = null;
-    columns.value = tb && pick.value.schema ? (await api.tableInfo(props.sessionId, pick.value.schema, tb)).columns : [];
+    columns.value = tb && pick.value.schema && level.value !== "routine" ? (await api.tableInfo(props.sessionId, pick.value.schema, tb)).columns : [];
   },
 );
 
@@ -80,6 +85,11 @@ const canAdd = computed(() => {
 });
 function target(): GrantTarget {
   const p = pick.value;
+  if (level.value === "routine") {
+    // The routine select's value is "kind:name" (a procedure and a function may share a name).
+    const [kind, ...name] = (p.table ?? "").split(":");
+    return { schema: p.schema, table: name.join(":"), column: null, routine: kind.toUpperCase() as "PROCEDURE" | "FUNCTION" };
+  }
   return { schema: p.schema, table: level.value === "schema" ? null : p.table, column: level.value === "column" ? p.column : null };
 }
 function add() {
@@ -97,7 +107,10 @@ const changes = computed<PrivChange[]>(() => {
     if (grant.length || revoke.length) out.push({ target: r.target, grant, revoke });
   }
   for (const [k, had] of loaded.value) {
-    if (!now.has(k)) out.push({ target: { schema: JSON.parse(k)[0], table: JSON.parse(k)[1], column: JSON.parse(k)[2] }, grant: [], revoke: [...had] });
+    if (!now.has(k)) {
+      const [schema, table, column, routine] = JSON.parse(k);
+      out.push({ target: { schema, table, column, routine }, grant: [], revoke: [...had] });
+    }
   }
   return out;
 });
@@ -161,12 +174,17 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
           <option value="schema">{{ t("users.level.schema") }}</option>
           <option value="table">{{ t("users.level.table") }}</option>
           <option value="column">{{ t("users.level.column") }}</option>
+          <option value="routine">{{ t("users.level.routine") }}</option>
         </select>
         <select v-model="pick.schema" :aria-label="t('users.level.schema')" :class="cn(input, 'font-mono')">
           <option :value="null" disabled>{{ t("users.pickSchema") }}</option>
           <option v-for="s in schemas" :key="s" :value="s">{{ s }}</option>
         </select>
-        <select v-if="level !== 'schema'" v-model="pick.table" :aria-label="t('users.level.table')" :class="cn(input, 'font-mono')">
+        <select v-if="level === 'routine'" v-model="pick.table" :aria-label="t('users.level.routine')" :class="cn(input, 'font-mono')">
+          <option :value="null" disabled>{{ t("users.pickRoutine") }}</option>
+          <option v-for="o in routines" :key="o.kind + o.name" :value="`${o.kind}:${o.name}`">{{ o.name }} ({{ t(`kinds.${o.kind}`) }})</option>
+        </select>
+        <select v-if="level === 'table' || level === 'column'" v-model="pick.table" :aria-label="t('users.level.table')" :class="cn(input, 'font-mono')">
           <option :value="null" disabled>{{ t("users.pickTable") }}</option>
           <option v-for="o in tables" :key="o.name" :value="o.name">{{ o.name }}</option>
         </select>

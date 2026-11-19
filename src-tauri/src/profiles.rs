@@ -70,6 +70,10 @@ pub struct Ssh {
     /// Private key file; when empty, password authentication is used.
     #[serde(default)]
     pub key_path: Option<String>,
+    /// OpenSSH user certificate signed by a CA (`…-cert.pub`), sent with the key. Empty: `<key>-cert.pub`
+    /// is used when it exists, as OpenSSH does.
+    #[serde(default)]
+    pub cert_path: Option<String>,
     /// SHA256 fingerprint the user accepted (trust on first use), besides ~/.ssh/known_hosts.
     #[serde(default)]
     pub host_key: Option<String>,

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { Network, Share2 } from "lucide-vue-next";
+import { Network, Play, Share2, SkipForward, Square } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
-import { api, toAppError, type AppError, type ReplicationChannel, type ReplicationState } from "@/lib/api";
+import { api, toAppError, type AppError, type ReplicationAction, type ReplicationChannel, type ReplicationState } from "@/lib/api";
 import { INTERVALS, usePolling } from "@/lib/poll";
 import { cn } from "@/lib/utils";
 
@@ -14,7 +14,7 @@ const { t, locale } = useI18n();
 const st = ref<ReplicationState | null>(null);
 const error = ref<AppError | null>(null);
 
-const { every } = usePolling(
+const { every, tick } = usePolling(
   async () => {
     try {
       st.value = await api.replicationState(props.sessionId);
@@ -39,6 +39,37 @@ const paused = computed(() => {
   return Number.isFinite(v) ? new Intl.NumberFormat(locale.value, { style: "percent", maximumFractionDigits: 1 }).format(v) : "—";
 });
 const galeraOk = computed(() => gs("cluster_status") === "Primary" && gs("local_state_comment") === "Synced" && gs("ready") === "ON");
+
+// Channel actions: preview of the exact SQL, then run (MariaDB rebuilds it from the same inputs).
+const actDialog = ref<HTMLDialogElement | null>(null);
+const pending = ref<{ name: string; action: ReplicationAction; sql: string[] } | null>(null);
+const skipCount = ref(1);
+const actError = ref<AppError | null>(null);
+const busy = ref(false);
+async function ask(name: string, action: ReplicationAction) {
+  actError.value = null;
+  try {
+    pending.value = { name, action, sql: await api.replicationSql(name, action) };
+    actDialog.value?.showModal();
+  } catch (e) {
+    error.value = toAppError(e);
+  }
+}
+async function act() {
+  const p = pending.value!;
+  busy.value = true;
+  actError.value = null;
+  try {
+    await api.replicationApply(props.sessionId, p.name, p.action);
+    actDialog.value?.close();
+    await tick();
+  } catch (e) {
+    actError.value = toAppError(e);
+  } finally {
+    busy.value = false;
+  }
+}
+const btn = "flex h-6 items-center gap-1 rounded-sm px-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground";
 
 const h = "mb-2 flex items-center gap-1.5 font-semibold";
 const card = "rounded-md border p-3";
@@ -73,6 +104,7 @@ const label = "text-muted-foreground";
               <th :class="cell">{{ t("replication.sql") }}</th>
               <th :class="cell">{{ t("replication.lag") }}</th>
               <th :class="cell">{{ t("replication.position") }}</th>
+              <th :class="cell"><span class="sr-only">{{ t("processes.actions") }}</span></th>
             </tr>
           </thead>
           <tbody>
@@ -87,9 +119,22 @@ const label = "text-muted-foreground";
                   <template v-if="c.usingGtid !== 'No'">{{ t("replication.gtid") }} {{ c.gtidIoPos || "—" }}</template>
                   <template v-else>{{ c.masterLogFile || "—" }} · {{ c.readPos }} / {{ c.execPos }}</template>
                 </td>
+                <td :class="cn(cell, 'whitespace-nowrap')">
+                  <div class="flex gap-0.5">
+                    <button v-if="!healthy(c)" :class="btn" :title="t('replication.start')" @click="ask(c.name, { kind: 'start' })">
+                      <Play class="size-3.5" /><span class="sr-only">{{ t("replication.start") }}</span>
+                    </button>
+                    <button v-if="c.ioRunning !== 'No' || c.sqlRunning !== 'No'" :class="btn" :title="t('replication.stop')" @click="ask(c.name, { kind: 'stop' })">
+                      <Square class="size-3.5" /><span class="sr-only">{{ t("replication.stop") }}</span>
+                    </button>
+                    <button v-if="c.sqlRunning === 'No' && c.lastSqlError" :class="btn" :title="t('replication.skipHint')" @click="ask(c.name, { kind: 'skip', count: skipCount })">
+                      <SkipForward class="size-3.5" />{{ t("replication.skip") }}
+                    </button>
+                  </div>
+                </td>
               </tr>
               <tr v-if="c.lastIoError || c.lastSqlError">
-                <td colspan="6" :class="cn(cell, 'font-mono text-xs text-destructive')">
+                <td colspan="7" :class="cn(cell, 'font-mono text-xs text-destructive')">
                   <p v-if="c.lastIoError">{{ t("replication.io") }} · {{ c.lastIoError }}</p>
                   <p v-if="c.lastSqlError">{{ t("replication.sql") }} · {{ c.lastSqlError }}</p>
                 </td>
@@ -98,6 +143,28 @@ const label = "text-muted-foreground";
           </tbody>
         </table>
       </section>
+
+      <dialog ref="actDialog" class="m-auto w-[min(36rem,90vw)] rounded-lg border bg-popover p-0 text-popover-foreground backdrop:bg-black/40">
+        <div class="border-b px-4 py-2 font-semibold">{{ t("grid.previewTitle") }}</div>
+        <label v-if="pending?.action.kind === 'skip'" class="flex items-center gap-2 px-4 pt-3">
+          {{ t("replication.skipCount") }}
+          <input
+            v-model.number="skipCount"
+            type="number"
+            min="1"
+            max="1000"
+            class="h-7 w-20 rounded-sm border bg-background px-2"
+            @change="ask(pending!.name, { kind: 'skip', count: skipCount })"
+          />
+        </label>
+        <pre v-if="pending" class="max-h-[40vh] overflow-auto p-4 font-mono text-xs whitespace-pre-wrap select-text">{{ pending.sql.join(";\n") + ";" }}</pre>
+        <p v-if="pending?.action.kind === 'skip'" class="px-4 text-warning">{{ t("replication.skipWarning") }}</p>
+        <ErrorLine v-if="actError" :error="actError" class="mx-4 mt-2" />
+        <div class="flex justify-end gap-2 px-4 py-3">
+          <button class="h-7 rounded-sm border px-3 font-medium hover:bg-secondary" @click="actDialog?.close()">{{ t("grid.cancel") }}</button>
+          <button :disabled="busy" class="h-7 rounded-sm bg-primary px-3 font-semibold text-primary-foreground disabled:opacity-50" @click="act">{{ t("grid.apply") }}</button>
+        </div>
+      </dialog>
 
       <!-- Galera -->
       <section :class="card">

@@ -95,6 +95,10 @@ pub fn compare(target_schema: &str, src: &Schema, tgt: &Schema, mariadb: bool) -
                         c.col_type = o.col_type.clone();
                     }
                 }
+                // SYSTEM_TIME … AUTO: STARTS and the partition count move on their own.
+                if comparable_partitions(&s.partitions) == comparable_partitions(&t.partitions) {
+                    s.partitions = t.partitions.clone();
+                }
                 // Both tables on their schema's default collation (each server's own): not a difference.
                 if s.collation == src.collation && t.collation == tgt.collation {
                     s.collation = t.collation.clone();
@@ -178,6 +182,21 @@ fn int_width_free(ty: &str) -> String {
         Some((open, close)) if is_int && !lower.starts_with("tinyint(1)") => format!("{}{}", &lower[..open], &lower[close + 1..]),
         _ => lower,
     }
+}
+
+/// Partition clause as compared: for `SYSTEM_TIME … AUTO`, without STARTS and PARTITIONS n (the server
+/// sets the first from the creation date and adds partitions as time passes).
+fn comparable_partitions(p: &str) -> String {
+    let p = p.trim();
+    if !(p.starts_with("PARTITION BY SYSTEM_TIME") && p.contains(" AUTO")) {
+        return p.to_string();
+    }
+    let mut out = p.to_string();
+    if let Some(i) = out.find(" STARTS TIMESTAMP'") {
+        let end = out[i + 18..].find('\'').map_or(out.len(), |e| i + 18 + e + 1);
+        out.replace_range(i..end, "");
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ").split(" PARTITIONS ").next().unwrap_or_default().to_string()
 }
 
 /// Text compared for code objects. An event's STARTS / ENDS hold the moment it was created on each
@@ -324,6 +343,7 @@ mod tests {
             collation: None,
             check: None,
             comment: String::new(),
+            unversioned: false,
         }
     }
 
@@ -343,9 +363,13 @@ mod tests {
                 ignored: false,
                 m: None,
                 distance: None,
+                overlaps: None,
             }],
             fks: vec![],
             checks: vec![],
+            versioned: false,
+            periods: vec![],
+            partitions: String::new(),
         }
     }
 
@@ -515,5 +539,61 @@ mod tests {
         let next: Option<i64> = conn.query_first("SELECT NEXTVAL(cmp_tgt.seq_a)").await.unwrap();
         assert!(next.unwrap() > 3, "{next:?}");
         conn.query_drop("DROP DATABASE cmp_src; DROP DATABASE cmp_tgt").await.unwrap();
+    }
+
+    /// Versioned tables (implicit and explicit columns), application periods with WITHOUT OVERLAPS,
+    /// unversioned columns: created, switched on, altered (needs KEEP); then nothing left to change.
+    #[test]
+    fn auto_partitions_compare_without_starts() {
+        let a = "PARTITION BY SYSTEM_TIME INTERVAL 1 DAY STARTS TIMESTAMP'2026-11-19 00:00:00' AUTO\nPARTITIONS 2";
+        let b = "PARTITION BY SYSTEM_TIME INTERVAL 1 DAY STARTS TIMESTAMP'2026-10-01 00:00:00' AUTO\nPARTITIONS 7";
+        assert_eq!(comparable_partitions(a), comparable_partitions(b));
+        assert_ne!(comparable_partitions(a), comparable_partitions("PARTITION BY SYSTEM_TIME INTERVAL 1 WEEK AUTO\nPARTITIONS 2"));
+        assert_ne!(comparable_partitions("PARTITION BY HASH (`id`)\nPARTITIONS 4"), comparable_partitions("PARTITION BY HASH (`id`)\nPARTITIONS 8"));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn compare_temporal_on_test_server() {
+        use mysql_async::prelude::Queryable;
+        let v = std::env::var("OTARIA_TEST_DB").expect("OTARIA_TEST_DB");
+        let p: Vec<&str> = v.splitn(4, ':').collect();
+        let opts = mysql_async::OptsBuilder::default().ip_or_hostname(p[0]).tcp_port(p[1].parse().unwrap()).user(Some(p[2])).pass(Some(p[3])).prefer_socket(false);
+        let pool = Pool::new(opts);
+        let mut conn = pool.get_conn().await.unwrap();
+        conn.query_drop(
+            "DROP DATABASE IF EXISTS tmp_src; DROP DATABASE IF EXISTS tmp_tgt; CREATE DATABASE tmp_src; CREATE DATABASE tmp_tgt;
+             CREATE TABLE tmp_src.vi (id INT PRIMARY KEY, a INT WITHOUT SYSTEM VERSIONING) WITH SYSTEM VERSIONING;
+             CREATE TABLE tmp_src.ve (id INT PRIMARY KEY, rs TIMESTAMP(6) GENERATED ALWAYS AS ROW START INVISIBLE,
+               re TIMESTAMP(6) GENERATED ALWAYS AS ROW END INVISIBLE, PERIOD FOR SYSTEM_TIME(rs, re)) WITH SYSTEM VERSIONING;
+             CREATE TABLE tmp_src.ap (id INT, d1 DATE NOT NULL, d2 DATE NOT NULL, PERIOD FOR valid(d1, d2),
+               PRIMARY KEY (id, valid WITHOUT OVERLAPS));
+             CREATE TABLE tmp_src.vk (id INT PRIMARY KEY, b INT) WITH SYSTEM VERSIONING;
+             CREATE TABLE tmp_tgt.vi (id INT PRIMARY KEY, a INT);
+             CREATE TABLE tmp_tgt.ap (id INT PRIMARY KEY, d1 DATE NOT NULL, d2 DATE NOT NULL);
+             CREATE TABLE tmp_tgt.vk (id INT PRIMARY KEY) WITH SYSTEM VERSIONING;
+             CREATE TABLE tmp_src.pr (id INT PRIMARY KEY) PARTITION BY RANGE (id) (PARTITION p0 VALUES LESS THAN (10), PARTITION p1 VALUES LESS THAN MAXVALUE);
+             CREATE TABLE tmp_tgt.pr (id INT PRIMARY KEY);
+             CREATE TABLE tmp_src.ph (id INT PRIMARY KEY);
+             CREATE TABLE tmp_tgt.ph (id INT PRIMARY KEY) PARTITION BY HASH (id) PARTITIONS 4;
+             CREATE TABLE tmp_src.ps (id INT) WITH SYSTEM VERSIONING PARTITION BY SYSTEM_TIME INTERVAL 1 DAY AUTO;",
+        )
+        .await
+        .unwrap();
+        let src = load(&pool, "tmp_src", true).await.unwrap();
+        let ve = src.tables.iter().find(|t| t.name == "ve").unwrap();
+        assert_eq!(ve.indexes[0].columns.len(), 1, "{ve:?}");
+        let ap = src.tables.iter().find(|t| t.name == "ap").unwrap();
+        assert!(ap.checks.is_empty() && ap.indexes[0].overlaps.as_deref() == Some("valid"), "{ap:?}");
+        let tgt = load(&pool, "tmp_tgt", true).await.unwrap();
+        let c = compare("tmp_tgt", &src, &tgt, true).unwrap();
+        assert!(c.sql.contains("SET SESSION system_versioning_alter_history = KEEP;"), "{}", c.sql);
+        for stmt in crate::query::pick(&c.sql, None) {
+            conn.query_drop(&stmt).await.unwrap_or_else(|e| panic!("{stmt}: {e}\n{}", c.sql));
+        }
+        let after = load(&pool, "tmp_tgt", true).await.unwrap();
+        let again = compare("tmp_tgt", &src, &after, true).unwrap();
+        assert!(again.diffs.is_empty(), "{:?}\n{}", again.diffs, again.sql);
+        conn.query_drop("DROP DATABASE tmp_src; DROP DATABASE tmp_tgt").await.unwrap();
     }
 }

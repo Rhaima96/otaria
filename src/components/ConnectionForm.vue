@@ -35,7 +35,7 @@ watch(
 const hasSavedSecret = computed(() => !!props.profile.id && props.profile.savePassword);
 const sshEnabled = computed({
   get: () => form.value.ssh !== null,
-  set: (on) => (form.value.ssh = on ? { host: "", port: 22, user: "", keyPath: null, hostKey: null } : null),
+  set: (on) => (form.value.ssh = on ? { host: "", port: 22, user: "", keyPath: null, certPath: null, hostKey: null } : null),
 });
 const tlsModes: TlsMode[] = ["disabled", "preferred", "required", "verify-ca", "verify-identity"];
 const canSubmit = computed(() => form.value.name.trim() && (form.value.host.trim() || form.value.socket?.trim()));
@@ -188,6 +188,17 @@ const label = "pt-1.5 text-right text-muted-foreground";
         <input id="f-ssh-user" v-model="form.ssh.user" :class="input" spellcheck="false" autocomplete="off" />
         <label :class="label" for="f-ssh-key">{{ t("connection.sshKey") }}</label>
         <input id="f-ssh-key" v-model="form.ssh.keyPath" :class="cn(input, 'font-mono')" spellcheck="false" :placeholder="t('connection.sshKeyPlaceholder')" />
+        <template v-if="form.ssh.keyPath">
+          <label :class="label" for="f-ssh-cert">{{ t("connection.sshCert") }}</label>
+          <input
+            id="f-ssh-cert"
+            :value="form.ssh.certPath ?? ''"
+            :class="cn(input, 'font-mono')"
+            spellcheck="false"
+            :placeholder="t('connection.sshCertPlaceholder')"
+            @input="form.ssh.certPath = ($event.target as HTMLInputElement).value || null"
+          />
+        </template>
         <label :class="label" for="f-ssh-secret">{{ form.ssh.keyPath ? t("connection.sshPassphrase") : t("connection.password") }}</label>
         <div class="relative">
           <input

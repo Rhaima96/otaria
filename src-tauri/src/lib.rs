@@ -274,11 +274,13 @@ fn designer_stmts(
     old: Option<&designer::TableDef>,
     new: &designer::TableDef,
     algorithm: designer::Algorithm,
+    wait: Option<u32>,
     mariadb: bool,
 ) -> AppResult<Vec<String>> {
     match old {
         None => Ok(vec![designer::create_sql(schema, new, mariadb)?]),
-        Some(old) => designer::alter_sql(schema, old, new, algorithm, mariadb),
+        // WAIT / NOWAIT: MariaDB syntax only.
+        Some(old) => Ok(designer::with_wait(designer::alter_sql(schema, old, new, algorithm, mariadb)?, schema, &new.name, wait.filter(|_| mariadb))),
     }
 }
 
@@ -290,8 +292,9 @@ async fn designer_sql(
     old: Option<designer::TableDef>,
     new: designer::TableDef,
     algorithm: designer::Algorithm,
+    wait: Option<u32>,
 ) -> AppResult<Vec<String>> {
-    designer_stmts(&schema, old.as_ref(), &new, algorithm, is_mariadb(&state, &session_id).await?)
+    designer_stmts(&schema, old.as_ref(), &new, algorithm, wait, is_mariadb(&state, &session_id).await?)
 }
 
 /// Collation names for the designer's suggestions.
@@ -302,6 +305,7 @@ async fn list_collations(state: State<'_, AppState>, session_id: String) -> AppR
 
 /// Rebuilt from the same inputs as the preview, so what runs is what was shown.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // one per field the UI sends
 async fn designer_apply(
     state: State<'_, AppState>,
     session_id: String,
@@ -309,9 +313,24 @@ async fn designer_apply(
     old: Option<designer::TableDef>,
     new: designer::TableDef,
     algorithm: designer::Algorithm,
+    wait: Option<u32>,
+    job_id: String,
 ) -> AppResult<()> {
-    let stmts = designer_stmts(&schema, old.as_ref(), &new, algorithm, is_mariadb(&state, &session_id).await?)?;
-    designer::run(&pool(&state, &session_id).await?, &stmts).await
+    let stmts = designer_stmts(&schema, old.as_ref(), &new, algorithm, wait, is_mariadb(&state, &session_id).await?)?;
+    let mut conn = pool(&state, &session_id).await?.get_conn().await?;
+    // A job: `alter_progress` reads its connection's progress, `cancel_job` sends KILL QUERY to it.
+    let _job = Job::new(&state, &job_id, conn.id());
+    designer::run_on(&mut conn, &stmts).await
+}
+
+/// Progress of a running `designer_apply` (MariaDB): (percent, stage, stages); None when not running.
+#[tauri::command]
+async fn alter_progress(state: State<'_, AppState>, session_id: String, job_id: String) -> AppResult<Option<(f64, u32, u32)>> {
+    let id = state.jobs.lock().unwrap().get(&job_id).map(|(_, id)| *id);
+    match id {
+        Some(id) if is_mariadb(&state, &session_id).await? => designer::progress(&pool(&state, &session_id).await?, id).await,
+        _ => Ok(None),
+    }
 }
 
 #[tauri::command]
@@ -356,8 +375,8 @@ async fn binlog_state(state: State<'_, AppState>, session_id: String) -> AppResu
 }
 
 #[tauri::command]
-async fn binlog_events(state: State<'_, AppState>, session_id: String, file: String, offset: u64, limit: u64) -> AppResult<Vec<binlog::Event>> {
-    binlog::events(&pool(&state, &session_id).await?, &file, offset, limit).await
+async fn binlog_events(state: State<'_, AppState>, session_id: String, file: String, from: Option<u64>, offset: u64, limit: u64) -> AppResult<Vec<binlog::Event>> {
+    binlog::events(&pool(&state, &session_id).await?, &file, from, offset, limit).await
 }
 
 #[tauri::command]
@@ -372,6 +391,17 @@ async fn binlog_flashback(state: State<'_, AppState>, session_id: String, file: 
 #[tauri::command]
 async fn replication_state(state: State<'_, AppState>, session_id: String) -> AppResult<replication::State> {
     replication::state(&pool(&state, &session_id).await?).await
+}
+
+#[tauri::command]
+fn replication_sql(name: String, action: replication::Action) -> AppResult<Vec<String>> {
+    replication::statements(&name, &action)
+}
+
+/// Rebuilt from the same inputs as the preview.
+#[tauri::command]
+async fn replication_apply(state: State<'_, AppState>, session_id: String, name: String, action: replication::Action) -> AppResult<()> {
+    designer::run(&pool(&state, &session_id).await?, &replication::statements(&name, &action)?).await
 }
 
 #[tauri::command]
@@ -808,6 +838,8 @@ pub fn run() {
             vector_search,
             engine_list,
             replication_state,
+            replication_sql,
+            replication_apply,
             binlog_state,
             binlog_events,
             binlog_flashback,
@@ -825,6 +857,7 @@ pub fn run() {
             list_collations,
             designer_sql,
             designer_apply,
+            alter_progress,
             drop_sql,
             drop_object,
             json_table_sql,

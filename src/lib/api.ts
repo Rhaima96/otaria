@@ -21,7 +21,8 @@ export interface Profile {
   socket: string | null;
   savePassword: boolean;
   tls: { mode: TlsMode; ca: string | null; cert: string | null; key: string | null };
-  ssh: { host: string; port: number; user: string; keyPath: string | null; hostKey: string | null } | null;
+  /** certPath: OpenSSH user certificate; null = `<key>-cert.pub` when it exists. */
+  ssh: { host: string; port: number; user: string; keyPath: string | null; certPath: string | null; hostKey: string | null } | null;
 }
 
 export interface ServerInfo {
@@ -211,6 +212,8 @@ export interface ColumnDef {
   collation: string | null;
   check: string | null;
   comment: string;
+  /** WITHOUT SYSTEM VERSIONING (versioned tables). */
+  unversioned: boolean;
 }
 
 export interface IndexDef {
@@ -225,6 +228,8 @@ export interface IndexDef {
   /** VECTOR only: graph neighbours (3–200) and metric; null = server default. */
   m?: number | null;
   distance?: "euclidean" | "cosine" | null;
+  /** PRIMARY / UNIQUE: `period WITHOUT OVERLAPS` after the columns. */
+  overlaps?: string | null;
 }
 
 export interface FkDef {
@@ -253,6 +258,12 @@ export interface TableDef {
   indexes: IndexDef[];
   fks: FkDef[];
   checks: CheckDef[];
+  /** WITH SYSTEM VERSIONING (MariaDB). */
+  versioned: boolean;
+  /** Application periods, and SYSTEM_TIME when its row columns are explicit. */
+  periods: Period[];
+  /** `PARTITION BY …` clause (SQL); "" = not partitioned. */
+  partitions: string;
 }
 
 /** instant → online (INPLACE, LOCK=NONE) → default (server's choice, may copy). */
@@ -354,6 +365,9 @@ export interface BinlogEvent {
   info: string;
 }
 
+/** On one replication channel; skip = the next `count` events (transactions with GTID) of the SQL thread. */
+export type ReplicationAction = { kind: "start" } | { kind: "stop" } | { kind: "skip"; count: number };
+
 export interface Engine {
   name: string;
   /** YES | NO | DEFAULT | DISABLED */
@@ -420,6 +434,10 @@ export interface Account {
   maxStatementTime: number;
   defaultRole: string | null;
   roles: string[];
+  /** Of `roles`, those granted WITH ADMIN OPTION. */
+  adminRoles: string[];
+  /** "" | "SSL" | "X509" | "SPECIFIED" (ISSUER / SUBJECT / CIPHER, kept as is). */
+  require: string;
 }
 
 /** What the account editor sends: original = [user, host] being edited, null to create. password null = unchanged. */
@@ -432,8 +450,11 @@ export interface AccountForm extends Account {
 /** All null = global; then database, table, column. */
 export interface GrantTarget {
   schema: string | null;
+  /** Table, or the routine's name when `routine` is set. */
   table: string | null;
   column: string | null;
+  /** PROCEDURE | FUNCTION: routine-level grant. */
+  routine?: "PROCEDURE" | "FUNCTION" | null;
 }
 
 export interface Grant {
@@ -447,6 +468,7 @@ export interface Privilege {
   schema: boolean;
   table: boolean;
   column: boolean;
+  routine: boolean;
 }
 
 export interface PrivChange {
@@ -548,10 +570,13 @@ export const api = {
   tableDef: (sessionId: string, schema: string, table: string) => invoke<TableDef>("table_def", { sessionId, schema, table }),
   listEngines: (sessionId: string) => invoke<string[]>("list_engines", { sessionId }),
   listCollations: (sessionId: string) => invoke<string[]>("list_collations", { sessionId }),
-  designerSql: (sessionId: string, schema: string, old: TableDef | null, next: TableDef, algorithm: Algorithm) =>
-    invoke<string[]>("designer_sql", { sessionId, schema, old, new: next, algorithm }),
-  designerApply: (sessionId: string, schema: string, old: TableDef | null, next: TableDef, algorithm: Algorithm) =>
-    invoke<void>("designer_apply", { sessionId, schema, old, new: next, algorithm }),
+  /** `wait`: lock wait of the ALTERs (MariaDB), null = server default, 0 = NOWAIT. */
+  designerSql: (sessionId: string, schema: string, old: TableDef | null, next: TableDef, algorithm: Algorithm, wait: number | null) =>
+    invoke<string[]>("designer_sql", { sessionId, schema, old, new: next, algorithm, wait }),
+  designerApply: (sessionId: string, schema: string, old: TableDef | null, next: TableDef, algorithm: Algorithm, wait: number | null, jobId: string) =>
+    invoke<void>("designer_apply", { sessionId, schema, old, new: next, algorithm, wait, jobId }),
+  /** [percent, stage, stages] of a running designer_apply (MariaDB, copying ALTER); null otherwise. */
+  alterProgress: (sessionId: string, jobId: string) => invoke<[number, number, number] | null>("alter_progress", { sessionId, jobId }),
   dropSql: (schema: string, name: string, kind: ObjectKind, truncate: boolean) => invoke<string>("drop_sql", { schema, name, kind, truncate }),
   dropObject: (sessionId: string, schema: string, name: string, kind: ObjectKind, truncate: boolean) =>
     invoke<void>("drop_object", { sessionId, schema, name, kind, truncate }),
@@ -565,7 +590,11 @@ export const api = {
     invoke<Rows>("vector_search", { sessionId, schema, table, column, distance, probe, k }),
   replicationState: (sessionId: string) => invoke<ReplicationState>("replication_state", { sessionId }),
   binlogState: (sessionId: string) => invoke<BinlogState>("binlog_state", { sessionId }),
-  binlogEvents: (sessionId: string, file: string, offset: number, limit: number) => invoke<BinlogEvent[]>("binlog_events", { sessionId, file, offset, limit }),
+  /** `from`: byte position to start at (an event start), null = start of the file; `offset` counts events from there. */
+  binlogEvents: (sessionId: string, file: string, from: number | null, offset: number, limit: number) =>
+    invoke<BinlogEvent[]>("binlog_events", { sessionId, file, from, offset, limit }),
+  replicationSql: (name: string, action: ReplicationAction) => invoke<string[]>("replication_sql", { name, action }),
+  replicationApply: (sessionId: string, name: string, action: ReplicationAction) => invoke<void>("replication_apply", { sessionId, name, action }),
   binlogFlashback: (sessionId: string, file: string, start: number, stop: number) => invoke<string>("binlog_flashback", { sessionId, file, start, stop }),
   engineList: (sessionId: string) => invoke<Engine[]>("engine_list", { sessionId }),
   listPlugins: (sessionId: string) => invoke<Plugin[]>("list_plugins", { sessionId }),

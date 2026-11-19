@@ -84,14 +84,21 @@ pub async fn open(ssh: &Ssh, secret: Option<&str>, db_host: &str, db_port: u16) 
     };
 
     let ssh_err = |e: russh::Error| AppError::new("SSH", e.to_string());
-    let auth = match ssh.key_path.as_deref().filter(|p| !p.is_empty()) {
+    let key_path = ssh.key_path.as_deref().filter(|p| !p.trim().is_empty()).map(home);
+    let auth = match key_path.as_deref() {
         Some(path) => {
             let key = russh::keys::load_secret_key(path, secret)
                 .map_err(|e| AppError::new("SSH_KEY", e.to_string()))?;
-            let hash = session.best_supported_rsa_hash().await.map_err(ssh_err)?.flatten();
-            session
-                .authenticate_publickey(&ssh.user, PrivateKeyWithHashAlg::new(Arc::new(key), hash))
-                .await
+            match cert_file(path, ssh.cert_path.as_deref().map(home).as_deref()) {
+                Some(cert) => {
+                    let cert = russh::keys::load_openssh_certificate(&cert).map_err(|e| AppError { detail: Some(cert.clone()), ..AppError::new("SSH_CERT", e.to_string()) })?;
+                    session.authenticate_openssh_cert(&ssh.user, Arc::new(key), cert).await
+                }
+                None => {
+                    let hash = session.best_supported_rsa_hash().await.map_err(ssh_err)?.flatten();
+                    session.authenticate_publickey(&ssh.user, PrivateKeyWithHashAlg::new(Arc::new(key), hash)).await
+                }
+            }
         }
         None => session.authenticate_password(&ssh.user, secret.unwrap_or_default()).await,
     }
@@ -119,4 +126,35 @@ pub async fn open(ssh: &Ssh, secret: Option<&str>, db_host: &str, db_port: u16) 
         }
     });
     Ok(Tunnel { port, task })
+}
+
+/// The certificate to send with key `key`: the one chosen, else `<key>-cert.pub` when it exists.
+fn cert_file(key: &str, chosen: Option<&str>) -> Option<String> {
+    match chosen.map(str::trim).filter(|c| !c.is_empty()) {
+        Some(c) => Some(c.to_string()),
+        None => Some(format!("{key}-cert.pub")).filter(|c| std::path::Path::new(c).is_file()),
+    }
+}
+
+/// `~/…` → the home directory (paths typed by hand, as in a shell).
+fn home(path: &str) -> String {
+    let path = path.trim();
+    match (path.strip_prefix("~/"), std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })) {
+        (Some(rest), Some(h)) => std::path::Path::new(&h).join(rest).to_string_lossy().into_owned(),
+        _ => path.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn key_and_certificate_paths() {
+        let h = std::env::var("HOME").unwrap();
+        assert_eq!(home("~/.ssh/id_ed25519"), format!("{h}/.ssh/id_ed25519"));
+        assert_eq!(home(" /abs/key "), "/abs/key");
+        assert_eq!(cert_file("/k", Some(" /c-cert.pub ")).as_deref(), Some("/c-cert.pub"));
+        assert_eq!(cert_file("/nonexistent/k", None), None);
+    }
 }

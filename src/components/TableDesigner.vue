@@ -11,7 +11,7 @@ const props = defineProps<{ sessionId: string; schema: string; table: string | n
 const emit = defineEmits<{ saved: [name: string] }>();
 const { t } = useI18n();
 
-const EMPTY: TableDef = { name: "", engine: "", collation: "", comment: "", columns: [], indexes: [], fks: [], checks: [] };
+const EMPTY: TableDef = { name: "", engine: "", collation: "", comment: "", columns: [], indexes: [], fks: [], checks: [], versioned: false, periods: [], partitions: "" };
 /** As loaded (null while creating): the diff base. */
 const old = ref<TableDef | null>(null);
 const def = ref<TableDef>(structuredClone(EMPTY));
@@ -67,7 +67,7 @@ async function loadCols(schema: string, table: string) {
 }
 
 function newColumn(name = "", colType = "varchar(255)"): ColumnDef {
-  return { original: null, name, colType, nullable: !name, default: { kind: "none" }, generated: null, autoIncrement: false, onUpdate: null, invisible: false, collation: null, check: null, comment: "" };
+  return { original: null, name, colType, nullable: !name, default: { kind: "none" }, generated: null, autoIncrement: false, onUpdate: null, invisible: false, collation: null, check: null, comment: "", unversioned: false };
 }
 
 function move<T>(list: T[], i: number, by: number) {
@@ -78,6 +78,20 @@ function move<T>(list: T[], i: number, by: number) {
 }
 
 const col = computed(() => def.value.columns[selected.value]);
+/** Application periods (SYSTEM_TIME is the versioning's, edited in the Versioning tab). */
+const appPeriods = computed(() => def.value.periods.filter((p) => p.name !== "SYSTEM_TIME"));
+const dateCols = computed(() => def.value.columns.filter((c) => /^(date|datetime|timestamp)/i.test(c.colType)).map((c) => c.name));
+const periodName = ref("");
+function addPeriod() {
+  const name = periodName.value.trim();
+  if (!name || name.toLowerCase() === "system_time" || def.value.periods.some((p) => p.name.toLowerCase() === name.toLowerCase())) return;
+  def.value.periods.push({ name, start: dateCols.value[0], end: dateCols.value[1] });
+  periodName.value = "";
+}
+function removePeriod(name: string) {
+  def.value.periods = def.value.periods.filter((p) => p.name !== name);
+  def.value.indexes.forEach((i) => i.overlaps === name && (i.overlaps = null));
+}
 function setDefaultKind(c: ColumnDef, kind: string) {
   c.default = kind === "none" || kind === "null" ? { kind } : { kind: kind as "literal" | "expr", value: "value" in c.default ? c.default.value : "" };
 }
@@ -114,7 +128,7 @@ async function openPreview(algo: Algorithm = "instant") {
   applyError.value = null;
   algorithm.value = algo;
   try {
-    preview.value = await api.designerSql(props.sessionId, props.schema, old.value, def.value, algo);
+    preview.value = await api.designerSql(props.sessionId, props.schema, old.value, def.value, algo, wait.value);
     if (!preview.value.length) return;
     if (!dialog.value?.open) dialog.value?.showModal();
   } catch (e) {
@@ -123,11 +137,23 @@ async function openPreview(algo: Algorithm = "instant") {
   }
 }
 
+// MariaDB: lock wait of the ALTER (null = server's lock_wait_timeout, 0 = NOWAIT), and progress
+// while a copying ALTER runs, with a Stop button (KILL QUERY on its connection).
+const WAITS = [null, 0, 5, 30, 300] as const;
+const wait = ref<number | null>(null);
+const progress = ref<[number, number, number] | null>(null);
+let jobId = "";
+
 async function apply() {
   busy.value = true;
   applyError.value = null;
+  jobId = crypto.randomUUID();
+  progress.value = null;
+  const timer = window.setInterval(async () => {
+    progress.value = (await api.alterProgress(props.sessionId, jobId).catch(() => null)) ?? progress.value;
+  }, 700);
   try {
-    await api.designerApply(props.sessionId, props.schema, old.value, def.value, algorithm.value);
+    await api.designerApply(props.sessionId, props.schema, old.value, def.value, algorithm.value, wait.value, jobId);
     dialog.value?.close();
     const name = def.value.name.trim();
     await load(name);
@@ -135,7 +161,9 @@ async function apply() {
   } catch (e) {
     applyError.value = toAppError(e);
   } finally {
+    clearInterval(timer);
     busy.value = false;
+    progress.value = null;
   }
 }
 
@@ -245,6 +273,10 @@ const subtab = "h-full border-b-2 px-3 font-medium";
           <input id="d-chk" :value="col.check ?? ''" :class="input" @input="col.check = ($event.target as HTMLInputElement).value || null" />
           <label class="text-muted-foreground" for="d-inv">{{ t("designer.invisible") }}</label>
           <input id="d-inv" v-model="col.invisible" type="checkbox" class="justify-self-start" />
+          <template v-if="def.versioned">
+            <label class="text-muted-foreground" for="d-unv" :title="t('designer.unversionedHint')">{{ t("designer.unversioned") }}</label>
+            <input id="d-unv" v-model="col.unversioned" type="checkbox" class="justify-self-start" :title="t('designer.unversionedHint')" />
+          </template>
         </fieldset>
       </template>
 
@@ -270,6 +302,16 @@ const subtab = "h-full border-b-2 px-3 font-medium";
               <td :class="cell"><input v-model="x.name" :disabled="x.kind === 'PRIMARY'" :placeholder="t('designer.autoName')" :aria-label="t('structure.name')" :class="input" /></td>
               <td :class="cell">
                 <input :value="indexCols(x)" placeholder="a, b(10) DESC" :aria-label="t('designer.indexColumns')" :class="input" @change="setIndexCols(x, ($event.target as HTMLInputElement).value)" />
+                <select
+                  v-if="(x.kind === 'PRIMARY' || x.kind === 'UNIQUE') && appPeriods.length"
+                  :value="x.overlaps ?? ''"
+                  :aria-label="t('designer.overlaps')"
+                  :class="cn(input, 'mt-1 w-56 font-sans')"
+                  @change="x.overlaps = ($event.target as HTMLSelectElement).value || null"
+                >
+                  <option value="">{{ t("designer.noOverlaps") }}</option>
+                  <option v-for="p in appPeriods" :key="p.name" :value="p.name">{{ t("designer.overlapsOn", { name: p.name }) }}</option>
+                </select>
                 <!-- VECTOR options: empty = server default (mhnsw_default_m / mhnsw_default_distance). -->
                 <div v-if="x.kind === 'VECTOR'" class="mt-1 flex items-center gap-2 font-sans">
                   <select v-model="x.distance" :aria-label="t('vector.distance')" :class="cn(input, 'w-32')">
@@ -385,6 +427,40 @@ const subtab = "h-full border-b-2 px-3 font-medium";
         <input id="d-tcoll" v-model="def.collation" list="designer-collations" :placeholder="t('designer.serverDefault')" :class="input" />
         <label class="text-muted-foreground" for="d-tcomment">{{ t("structure.comment") }}</label>
         <input id="d-tcomment" v-model="def.comment" :class="cn(input, 'font-sans')" />
+        <label class="self-start pt-1 text-muted-foreground" for="d-part">{{ t("designer.partitions") }}</label>
+        <div class="flex flex-col gap-1">
+          <textarea
+            id="d-part"
+            v-model="def.partitions"
+            rows="4"
+            spellcheck="false"
+            placeholder="PARTITION BY HASH (`id`) PARTITIONS 4"
+            :class="cn(input, 'h-auto py-1 font-mono text-xs')"
+          />
+          <p class="text-muted-foreground">{{ t("designer.partitionsHint") }}</p>
+        </div>
+        <template v-if="mariadb">
+          <label class="text-muted-foreground" for="d-vers">{{ t("designer.versioned") }}</label>
+          <label class="flex items-center gap-2"><input id="d-vers" v-model="def.versioned" type="checkbox" /><span class="text-muted-foreground">{{ t("designer.versionedHint") }}</span></label>
+          <span class="self-start pt-1 text-muted-foreground">{{ t("designer.periods") }}</span>
+          <div class="flex flex-col gap-1">
+            <div v-for="p in appPeriods" :key="p.name" class="flex items-center gap-1">
+              <span class="w-32 truncate font-mono text-xs">{{ p.name }}</span>
+              <select v-model="p.start" :aria-label="t('designer.periodStart')" :class="cn(input, 'w-36')">
+                <option v-for="c in dateCols" :key="c">{{ c }}</option>
+              </select>
+              <select v-model="p.end" :aria-label="t('designer.periodEnd')" :class="cn(input, 'w-36')">
+                <option v-for="c in dateCols" :key="c">{{ c }}</option>
+              </select>
+              <button :class="icon" :title="t('designer.remove')" @click="removePeriod(p.name)"><Trash2 class="size-3.5" /><span class="sr-only">{{ t("designer.remove") }}</span></button>
+            </div>
+            <form v-if="dateCols.length >= 2" class="flex items-center gap-1" @submit.prevent="addPeriod">
+              <input v-model="periodName" required :placeholder="t('designer.periodName')" :aria-label="t('designer.periodName')" :class="cn(input, 'w-32')" />
+              <button type="submit" :class="btn"><Plus class="size-3.5" />{{ t("designer.addPeriod") }}</button>
+            </form>
+            <p v-else class="text-muted-foreground">{{ t("designer.periodsNeedDates") }}</p>
+          </div>
+        </template>
       </div>
     </div>
 
@@ -396,10 +472,21 @@ const subtab = "h-full border-b-2 px-3 font-medium";
       <div class="border-b px-4 py-2 font-semibold">{{ t("grid.previewTitle") }}</div>
       <pre class="max-h-[50vh] overflow-auto p-4 font-mono text-xs whitespace-pre-wrap select-text">{{ preview.join(";\n\n") }};</pre>
       <p v-if="old" class="px-4 text-muted-foreground">{{ t(`designer.algo_${algorithm}`) }}</p>
+      <label v-if="old && mariadb" class="flex items-center gap-2 px-4 pt-2 text-muted-foreground">
+        {{ t("designer.lockWait") }}
+        <select :value="wait ?? ''" :disabled="busy" :class="cn(input, 'w-48 font-sans')" @change="(wait = ($event.target as HTMLSelectElement).value === '' ? null : Number(($event.target as HTMLSelectElement).value)), openPreview(algorithm)">
+          <option v-for="w in WAITS" :key="String(w)" :value="w ?? ''">{{ w === null ? t("designer.lockWaitDefault") : w === 0 ? t("designer.lockNoWait") : t("designer.lockWaitSeconds", { n: w }) }}</option>
+        </select>
+      </label>
+      <div v-if="busy && progress" class="flex items-center gap-2 px-4 pt-2">
+        <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-secondary"><div class="h-full bg-primary" :style="{ width: `${progress[0]}%` }" /></div>
+        <span class="shrink-0 text-muted-foreground">{{ t("designer.progress", { pct: progress[0].toFixed(1), stage: progress[1], stages: progress[2] }) }}</span>
+      </div>
       <p class="px-4 text-muted-foreground">{{ t("sequence.ddlHint") }}</p>
       <ErrorLine v-if="applyError" :error="applyError" class="mx-4 mt-2" />
       <div class="flex justify-end gap-2 px-4 py-3">
-        <button class="h-7 rounded-sm border px-3 font-medium hover:bg-secondary" @click="dialog?.close()">{{ t("grid.cancel") }}</button>
+        <button v-if="busy" class="h-7 rounded-sm border px-3 font-medium hover:bg-secondary" @click="api.cancelJob(sessionId, jobId)">{{ t("designer.stop") }}</button>
+        <button v-else class="h-7 rounded-sm border px-3 font-medium hover:bg-secondary" @click="dialog?.close()">{{ t("grid.cancel") }}</button>
         <!-- The server refused this algorithm: offer the next, slower one. -->
         <button
           v-if="applyError?.code === 'ALTER_ALGORITHM' && NEXT[algorithm]"

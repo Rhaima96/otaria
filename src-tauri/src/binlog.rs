@@ -153,18 +153,26 @@ pub struct Event {
 }
 
 /// SHOW BINLOG EVENTS takes no parameters: the file name is checked against SHOW BINARY LOGS first,
-/// then quoted. `offset` counts events, not bytes (a byte position must be an event start).
-pub fn events_sql(file: &str, offset: u64, limit: u64) -> String {
-    format!("SHOW BINLOG EVENTS IN {} LIMIT {offset}, {limit}", literal(file))
+/// then quoted. `from`: byte position to start at (must be an event start); `offset` then counts events.
+pub fn events_sql(file: &str, from: Option<u64>, offset: u64, limit: u64) -> String {
+    let from = from.map(|p| format!(" FROM {p}")).unwrap_or_default();
+    format!("SHOW BINLOG EVENTS IN {}{from} LIMIT {offset}, {limit}", literal(file))
 }
 
-pub async fn events(pool: &Pool, file: &str, offset: u64, limit: u64) -> AppResult<Vec<Event>> {
+pub async fn events(pool: &Pool, file: &str, from: Option<u64>, offset: u64, limit: u64) -> AppResult<Vec<Event>> {
     let mut conn = pool.get_conn().await?;
     let names: Vec<String> = conn.query_map("SHOW BINARY LOGS", |r: mysql_async::Row| r.get::<String, _>(0).unwrap_or_default()).await?;
     if !names.iter().any(|n| n == file) {
         return Err(AppError::new("NOT_FOUND", file.to_string()));
     }
-    let rows: Vec<mysql_async::Row> = conn.query(events_sql(file, offset, limit.clamp(1, 5000))).await?;
+    let rows: Vec<mysql_async::Row> = match conn.query(events_sql(file, from, offset, limit.clamp(1, 5000))).await {
+        Ok(rows) => rows,
+        // 1220 "Wrong offset": the position is not where an event starts.
+        Err(mysql_async::Error::Server(e)) if e.code == 1220 && from.is_some() => {
+            return Err(AppError { detail: Some(file.to_string()), ..AppError::new("BINLOG_POSITION", from.unwrap_or(0).to_string()) });
+        }
+        Err(e) => return Err(e.into()),
+    };
     Ok(rows
         .into_iter()
         .map(|mut r| Event {
@@ -207,8 +215,9 @@ mod tests {
 
     #[test]
     fn quotes_file_name() {
-        assert_eq!(events_sql("mysql-bin.000002", 1000, 500), "SHOW BINLOG EVENTS IN 'mysql-bin.000002' LIMIT 1000, 500");
-        assert_eq!(events_sql("a'b", 0, 1), "SHOW BINLOG EVENTS IN 'a''b' LIMIT 0, 1");
+        assert_eq!(events_sql("mysql-bin.000002", None, 1000, 500), "SHOW BINLOG EVENTS IN 'mysql-bin.000002' LIMIT 1000, 500");
+        assert_eq!(events_sql("a'b", None, 0, 1), "SHOW BINLOG EVENTS IN 'a''b' LIMIT 0, 1");
+        assert_eq!(events_sql("b.1", Some(842), 0, 100), "SHOW BINLOG EVENTS IN 'b.1' FROM 842 LIMIT 0, 100");
     }
 
     /// Needs a server with log_bin: OTARIA_TEST_BINLOG_DB="host:port:user:password" cargo test -- --ignored
@@ -231,14 +240,18 @@ mod tests {
         assert_eq!(st.format, "ROW");
         assert!(!st.gtid.is_empty());
         let last = &st.files.last().unwrap().name;
-        let all = events(&pool, last, 0, 5000).await.unwrap();
+        let all = events(&pool, last, None, 0, 5000).await.unwrap();
         assert_eq!(all[0].kind, "Format_desc");
         assert!(all.iter().any(|e| e.kind == "Query" && e.info.contains("CREATE TABLE otaria_bl.t")));
         assert!(all.iter().any(|e| e.kind == "Annotate_rows" && e.info.contains("INSERT INTO otaria_bl.t")));
         // Paging: the second page starts where the first ended.
-        let page = events(&pool, last, 2, 2).await.unwrap();
+        let page = events(&pool, last, None, 2, 2).await.unwrap();
         assert_eq!((page.len(), page[0].pos), (2, all[2].pos));
-        assert_eq!(events(&pool, "nope.000001", 0, 10).await.unwrap_err().code, "NOT_FOUND");
+        assert_eq!(events(&pool, "nope.000001", None, 0, 10).await.unwrap_err().code, "NOT_FOUND");
+        // From a byte position: an event start works, the middle of an event says so.
+        let from = events(&pool, last, Some(all[3].pos), 0, 2).await.unwrap();
+        assert_eq!(from[0].pos, all[3].pos);
+        assert_eq!(events(&pool, last, Some(all[3].pos + 1), 0, 2).await.unwrap_err().code, "BINLOG_POSITION");
 
         // Flashback: undo one UPDATE transaction, then replay the script the way the SQL editor splits it.
         async fn at(conn: &mut mysql_async::Conn) -> u64 {

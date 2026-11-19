@@ -240,6 +240,7 @@ mod tests {
             port: ssh[1].parse().unwrap(),
             user: ssh[2].clone(),
             key_path: None,
+            cert_path: None,
             host_key: None,
         });
 
@@ -257,5 +258,40 @@ mod tests {
 
         let bad = open(&p, Some(&dbs[3]), Some("wrong")).await.err().expect("bad ssh password");
         assert_eq!(bad.code, "SSH_AUTH");
+    }
+
+    /// SSH user certificate: OTARIA_TEST_SSH as above (its password unused) and OTARIA_TEST_SSH_KEY, a private key
+    /// whose `<key>-cert.pub` is signed by a CA the bastion trusts (TrustedUserCAKeys); the key alone is not authorized.
+    #[tokio::test]
+    #[ignore]
+    async fn connects_with_ssh_certificate() {
+        let ssh: Vec<String> = std::env::var("OTARIA_TEST_SSH").expect("set OTARIA_TEST_SSH").splitn(5, ':').map(String::from).collect();
+        let key = std::env::var("OTARIA_TEST_SSH_KEY").expect("set OTARIA_TEST_SSH_KEY");
+        let dbs: Vec<String> = std::env::var("OTARIA_TEST_DB").expect("set OTARIA_TEST_DB").splitn(4, ':').map(String::from).collect();
+        let mut p = profile(TlsMode::Preferred);
+        p.host = ssh[4].clone();
+        p.port = 3306;
+        p.user = dbs[2].clone();
+        let mut tunnel = crate::profiles::Ssh { host: ssh[0].clone(), port: ssh[1].parse().unwrap(), user: ssh[2].clone(), key_path: Some(key.clone()), cert_path: None, host_key: None };
+        p.ssh = Some(tunnel.clone());
+        let fingerprint = open(&p, Some(&dbs[3]), None).await.err().expect("unknown host").detail.expect("fingerprint");
+        tunnel.host_key = Some(fingerprint);
+
+        // <key>-cert.pub found next to the key, then the same file chosen explicitly.
+        p.ssh = Some(tunnel.clone());
+        open(&p, Some(&dbs[3]), None).await.expect("certificate found next to the key").close().await;
+        p.ssh = Some(crate::profiles::Ssh { cert_path: Some(format!("{key}-cert.pub")), ..tunnel.clone() });
+        open(&p, Some(&dbs[3]), None).await.expect("certificate chosen").close().await;
+
+        // Without the certificate (a copy of the key elsewhere), the key alone is refused.
+        let dir = std::env::temp_dir().join(format!("otaria-ssh-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let lone = dir.join("id");
+        std::fs::copy(&key, &lone).unwrap();
+        p.ssh = Some(crate::profiles::Ssh { key_path: Some(lone.to_string_lossy().into_owned()), ..tunnel.clone() });
+        assert_eq!(open(&p, Some(&dbs[3]), None).await.err().expect("key alone refused").code, "SSH_AUTH");
+        p.ssh = Some(crate::profiles::Ssh { cert_path: Some("/nonexistent-cert.pub".into()), ..tunnel });
+        assert_eq!(open(&p, Some(&dbs[3]), None).await.err().expect("missing certificate").code, "SSH_CERT");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

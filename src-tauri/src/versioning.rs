@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::browse::{self, ident, Rows};
 use crate::error::{AppError, AppResult};
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Period {
     pub name: String,
     pub start: String,

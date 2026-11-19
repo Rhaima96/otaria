@@ -1,6 +1,6 @@
 //! Users and roles: accounts (mysql.global_priv on MariaDB, mysql.user on MySQL), role membership,
 //! privileges at global / database / table / column level, and the SQL to change them.
-// ponytail: no routine-level grants (EXECUTE ON PROCEDURE), no PROXY, no REQUIRE SSL/X509; the SQL editor covers them.
+// ponytail: no PROXY, no REQUIRE ISSUER / SUBJECT / CIPHER (shown, kept as they are); the SQL editor covers them.
 
 use std::collections::{BTreeSet, HashSet};
 
@@ -32,6 +32,12 @@ pub struct Account {
     pub default_role: Option<String>,
     /// Roles granted to this account (MariaDB).
     pub roles: Vec<String>,
+    /// Of `roles`, those granted WITH ADMIN OPTION (the account may grant them on).
+    #[serde(default)]
+    pub admin_roles: Vec<String>,
+    /// TLS required to log in: "" (none), "SSL", "X509", or "SPECIFIED" (ISSUER / SUBJECT / CIPHER, left as is).
+    #[serde(default)]
+    pub require: String,
 }
 
 /// `user`@`host`, or `role` alone.
@@ -48,21 +54,26 @@ pub async fn accounts(pool: &Pool, mariadb: bool) -> AppResult<Vec<Account>> {
                 JSON_VALUE(Priv, '$.password_lifetime') + 0,
                 IFNULL(JSON_VALUE(Priv, '$.max_questions'), 0) + 0, IFNULL(JSON_VALUE(Priv, '$.max_updates'), 0) + 0,
                 IFNULL(JSON_VALUE(Priv, '$.max_connections'), 0) + 0, IFNULL(JSON_VALUE(Priv, '$.max_user_connections'), 0) + 0,
-                IFNULL(JSON_VALUE(Priv, '$.max_statement_time'), 0) + 0e0, NULLIF(JSON_VALUE(Priv, '$.default_role'), '')
+                IFNULL(JSON_VALUE(Priv, '$.max_statement_time'), 0) + 0e0, NULLIF(JSON_VALUE(Priv, '$.default_role'), ''),
+                CASE JSON_VALUE(Priv, '$.ssl_type') WHEN 1 THEN 'SSL' WHEN 2 THEN 'X509' WHEN 3 THEN 'SPECIFIED' ELSE '' END
          FROM mysql.global_priv ORDER BY 3, User, Host"
     } else {
         "SELECT User, Host, 0, plugin, account_locked = 'Y', password_expired = 'Y', password_lifetime,
-                max_questions, max_updates, max_connections, max_user_connections, 0e0, NULL
+                max_questions, max_updates, max_connections, max_user_connections, 0e0, NULL,
+                CASE ssl_type WHEN 'ANY' THEN 'SSL' WHEN 'X509' THEN 'X509' WHEN 'SPECIFIED' THEN 'SPECIFIED' ELSE '' END
          FROM mysql.user ORDER BY User, Host"
     };
-    let rows: Vec<mysql_async::Row> = conn.query(sql).await?; // 13 columns: past the tuple limit
-    let mapping: Vec<(String, String, String)> = if mariadb { conn.query("SELECT User, Host, Role FROM mysql.roles_mapping ORDER BY Role").await? } else { vec![] };
+    let rows: Vec<mysql_async::Row> = conn.query(sql).await?; // 14 columns: past the tuple limit
+    let mapping: Vec<(String, String, String, bool)> =
+        if mariadb { conn.query("SELECT User, Host, Role, Admin_option = 'Y' FROM mysql.roles_mapping ORDER BY Role").await? } else { vec![] };
     Ok(rows
         .into_iter()
         .map(|mut r| {
             let user: String = r.take(0).unwrap_or_default();
             let host: String = r.take(1).unwrap_or_default();
-            let roles = mapping.iter().filter(|(u, h, _)| *u == user && *h == host).map(|m| m.2.clone()).collect();
+            let mine = || mapping.iter().filter(|(u, h, _, _)| *u == user && *h == host);
+            let roles = mine().map(|m| m.2.clone()).collect();
+            let admin_roles = mine().filter(|m| m.3).map(|m| m.2.clone()).collect();
             Account {
                 is_role: r.take(2).unwrap_or_default(),
                 plugin: r.take(3).unwrap_or_default(),
@@ -75,9 +86,11 @@ pub async fn accounts(pool: &Pool, mariadb: bool) -> AppResult<Vec<Account>> {
                 max_user_connections: r.take(10).unwrap_or_default(),
                 max_statement_time: r.take(11).unwrap_or_default(),
                 default_role: r.take(12).flatten(),
+                require: r.take(13).unwrap_or_default(),
                 user,
                 host,
                 roles,
+                admin_roles,
             }
         })
         .collect())
@@ -88,8 +101,12 @@ pub async fn accounts(pool: &Pool, mariadb: bool) -> AppResult<Vec<Account>> {
 #[serde(rename_all = "camelCase")]
 pub struct Target {
     pub schema: Option<String>,
+    /// Table, or routine name when `routine` is set.
     pub table: Option<String>,
     pub column: Option<String>,
+    /// PROCEDURE | FUNCTION: a routine-level grant (`ON PROCEDURE db.name`).
+    #[serde(default)]
+    pub routine: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -109,6 +126,8 @@ pub struct Privilege {
     pub schema: bool,
     pub table: bool,
     pub column: bool,
+    /// Grantable ON PROCEDURE / FUNCTION (EXECUTE, ALTER ROUTINE, SHOW CREATE ROUTINE, GRANT OPTION).
+    pub routine: bool,
 }
 
 pub async fn privileges(pool: &Pool) -> AppResult<Vec<Privilege>> {
@@ -125,6 +144,7 @@ pub async fn privileges(pool: &Pool) -> AppResult<Vec<Privilege>> {
                 schema: objects || name == "EVENT",
                 table: c.contains("Tables"),
                 column: ["SELECT", "INSERT", "UPDATE", "REFERENCES"].contains(&name.as_str()),
+                routine: c.contains("Functions") || c.contains("Procedures"),
                 global: true,
                 name,
             }
@@ -190,13 +210,28 @@ pub async fn grants(pool: &Pool, user: &str, host: &str, is_role: bool) -> AppRe
         .exec(format!("SELECT TABLE_SCHEMA, TABLE_NAME, PRIVILEGE_TYPE, IS_GRANTABLE FROM information_schema.TABLE_PRIVILEGES WHERE GRANTEE = {grantee} ORDER BY 1, 2"), (user, h))
         .await?;
     for (s, t, p, g) in rows {
-        add(Target { schema: Some(s), table: Some(t), column: None }, p, g == "YES");
+        add(Target { schema: Some(s), table: Some(t), column: None, routine: None }, p, g == "YES");
     }
     let rows: Vec<(String, String, String, String)> = conn
         .exec(format!("SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, PRIVILEGE_TYPE FROM information_schema.COLUMN_PRIVILEGES WHERE GRANTEE = {grantee} ORDER BY 1, 2, 3"), (user, h))
         .await?;
     for (s, t, c, p) in rows {
-        add(Target { schema: Some(s), table: Some(t), column: Some(c) }, p, false);
+        add(Target { schema: Some(s), table: Some(t), column: Some(c), routine: None }, p, false);
+    }
+    // Routines: no information_schema view for them in MariaDB; mysql.procs_priv (readable by whoever reads the accounts).
+    let rows: Vec<(String, String, String, String)> = conn
+        .exec(
+            "SELECT Db, Routine_name, Routine_type, Proc_priv FROM mysql.procs_priv
+              WHERE User = ? AND Host = ? AND Routine_type IN ('PROCEDURE', 'FUNCTION') ORDER BY 1, 3, 2",
+            (user, h),
+        )
+        .await?;
+    for (s, r, kind, privs) in rows {
+        let target = Target { schema: Some(s), table: Some(r), column: None, routine: Some(kind) };
+        for p in privs.split(',').filter(|p| !p.is_empty()) {
+            let name = if p == "Grant" { "GRANT OPTION".to_string() } else { p.to_uppercase() };
+            add(target.clone(), name, false);
+        }
     }
     Ok(out)
 }
@@ -210,7 +245,7 @@ pub async fn auth_plugins(pool: &Pool) -> AppResult<Vec<String>> {
 }
 
 /// The account editor's content. `original` = (user, host) of the account being edited, None to create.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountForm {
     pub original: Option<(String, String)>,
@@ -288,6 +323,14 @@ pub fn account_sql(old: Option<&Account>, form: &AccountForm, mariadb: bool, sec
 
         let d = Account::default();
         let o = old.unwrap_or(&d);
+        // SPECIFIED (ISSUER / SUBJECT / CIPHER) is never written: left as the server has it.
+        if o.require != new.require && new.require != "SPECIFIED" {
+            clauses.push(match new.require.as_str() {
+                "" => "REQUIRE NONE".to_string(),
+                r @ ("SSL" | "X509") => format!("REQUIRE {r}"),
+                r => return Err(AppError::new("INVALID_NAME", r.to_string())),
+            });
+        }
         let mut limits: Vec<String> = [
             ("MAX_QUERIES_PER_HOUR", o.max_questions, new.max_questions),
             ("MAX_UPDATES_PER_HOUR", o.max_updates, new.max_updates),
@@ -329,8 +372,13 @@ pub fn account_sql(old: Option<&Account>, form: &AccountForm, mariadb: bool, sec
     // Roles (MariaDB): membership, then the default role, which must already be granted.
     let had: HashSet<&String> = old.map(|o| o.roles.iter().collect()).unwrap_or_default();
     let has: HashSet<&String> = new.roles.iter().collect();
-    for r in new.roles.iter().filter(|r| !had.contains(r)) {
-        out.push(format!("GRANT {} TO {a}", ident(r)));
+    let admin = |r: &String| new.admin_roles.contains(r);
+    let was_admin = |r: &String| old.is_some_and(|o| o.admin_roles.contains(r));
+    for r in new.roles.iter().filter(|r| !had.contains(r) || admin(r) && !was_admin(r)) {
+        out.push(format!("GRANT {} TO {a}{}", ident(r), if admin(r) { " WITH ADMIN OPTION" } else { "" }));
+    }
+    for r in new.roles.iter().filter(|r| had.contains(r) && !admin(r) && was_admin(r)) {
+        out.push(format!("REVOKE ADMIN OPTION FOR {} FROM {a}", ident(r)));
     }
     for r in old.map(|o| o.roles.as_slice()).unwrap_or_default().iter().filter(|r| !has.contains(r)) {
         out.push(format!("REVOKE {} FROM {a}", ident(r)));
@@ -360,6 +408,10 @@ pub fn privileges_sql(user: &str, host: &str, is_role: bool, changes: &[PrivChan
     for ch in changes {
         let t = &ch.target;
         let on = match (&t.schema, &t.table) {
+            (Some(s), Some(r)) if t.routine.is_some() => {
+                let kind = t.routine.as_deref().filter(|k| *k == "PROCEDURE" || *k == "FUNCTION").ok_or_else(|| AppError::new("INVALID_NAME", format!("{:?}", t.routine)))?;
+                format!("{kind} {}.{}", ident(s), ident(r))
+            }
             (None, _) => "*.*".to_string(),
             (Some(s), None) => format!("{}.*", ident(s)),
             (Some(s), Some(tb)) => format!("{}.{}", ident(s), ident(tb)),
@@ -495,8 +547,50 @@ mod tests {
     }
 
     #[test]
+    fn require_admin_option_and_routine_grants() {
+        let plain = Secret::Plain { no_backslash_escapes: false };
+        let mut old = user("u");
+        old.roles = vec!["r1".into(), "r2".into()];
+        old.admin_roles = vec!["r2".into()];
+        let mut new = old.clone();
+        new.require = "X509".into();
+        new.admin_roles = vec!["r1".into()];
+        new.roles.push("r3".into());
+        new.admin_roles.push("r3".into());
+        let f = AccountForm { original: Some(("u".into(), "%".into())), account: new.clone(), password: None, expire_now: false };
+        assert_eq!(
+            account_sql(Some(&old), &f, true, plain).unwrap(),
+            [
+                "ALTER USER `u`@`%` REQUIRE X509",
+                "GRANT `r1` TO `u`@`%` WITH ADMIN OPTION",
+                "GRANT `r3` TO `u`@`%` WITH ADMIN OPTION",
+                "REVOKE ADMIN OPTION FOR `r2` FROM `u`@`%`",
+            ]
+        );
+        // SPECIFIED is never written; back to none.
+        let mut spec = old.clone();
+        spec.require = "SPECIFIED".into();
+        assert!(account_sql(Some(&old), &AccountForm { account: spec, ..f.clone() }, true, plain).unwrap().is_empty());
+        let mut none = new.clone();
+        none.require = String::new();
+        assert_eq!(account_sql(Some(&new), &AccountForm { account: none, ..f.clone() }, true, plain).unwrap(), ["ALTER USER `u`@`%` REQUIRE NONE"]);
+        let mut bad = new.clone();
+        bad.require = "SSL; DROP".into();
+        assert_eq!(account_sql(Some(&new), &AccountForm { account: bad, ..f }, true, plain).unwrap_err().code, "INVALID_NAME");
+
+        let r = |kind: &str| Target { schema: Some("db".into()), table: Some("p".into()), column: None, routine: Some(kind.into()) };
+        let ch = PrivChange { target: r("PROCEDURE"), grant: vec!["EXECUTE".into(), "GRANT OPTION".into()], revoke: vec!["ALTER ROUTINE".into()] };
+        assert_eq!(
+            privileges_sql("u", "%", false, &[ch]).unwrap(),
+            ["REVOKE ALTER ROUTINE ON PROCEDURE `db`.`p` FROM `u`@`%`", "GRANT EXECUTE ON PROCEDURE `db`.`p` TO `u`@`%` WITH GRANT OPTION"]
+        );
+        let bad = PrivChange { target: r("TABLE"), grant: vec!["EXECUTE".into()], revoke: vec![] };
+        assert_eq!(privileges_sql("u", "%", false, &[bad]).unwrap_err().code, "INVALID_NAME");
+    }
+
+    #[test]
     fn privileges_sql_by_level() {
-        let t = |s: Option<&str>, tb: Option<&str>, c: Option<&str>| Target { schema: s.map(String::from), table: tb.map(String::from), column: c.map(String::from) };
+        let t = |s: Option<&str>, tb: Option<&str>, c: Option<&str>| Target { schema: s.map(String::from), table: tb.map(String::from), column: c.map(String::from), routine: None };
         let ch = |target, grant: &[&str], revoke: &[&str]| PrivChange { target, grant: grant.iter().map(|s| s.to_string()).collect(), revoke: revoke.iter().map(|s| s.to_string()).collect() };
         assert_eq!(
             privileges_sql(
@@ -571,7 +665,7 @@ mod tests {
         login.disconnect().await.unwrap();
 
         // Privileges at every level, for the user and the role.
-        let t = |s: Option<&str>, tb: Option<&str>, c: Option<&str>| Target { schema: s.map(String::from), table: tb.map(String::from), column: c.map(String::from) };
+        let t = |s: Option<&str>, tb: Option<&str>, c: Option<&str>| Target { schema: s.map(String::from), table: tb.map(String::from), column: c.map(String::from), routine: None };
         let ch = |target, grant: &[&str]| PrivChange { target, grant: grant.iter().map(|s| s.to_string()).collect(), revoke: vec![] };
         let sql = privileges_sql(
             "ot_u",
@@ -597,6 +691,23 @@ mod tests {
         assert_eq!(find(t(Some("ot_users"), Some("t"), Some("v"))), ["UPDATE"]);
         let rg = grants(&pool, "ot_r", "", true).await.unwrap();
         assert_eq!(rg[0].privileges, ["SELECT", "SLAVE MONITOR"], "role global privileges from SHOW GRANTS");
+
+        // Routine grants, REQUIRE SSL and a role WITH ADMIN OPTION, read back.
+        conn.query_drop("CREATE PROCEDURE ot_users.pr() SELECT 1").await.unwrap();
+        let pr = Target { schema: Some("ot_users".into()), table: Some("pr".into()), column: None, routine: Some("PROCEDURE".into()) };
+        let sql = privileges_sql("ot_u", "%", false, &[ch(pr.clone(), &["EXECUTE", "ALTER ROUTINE", "GRANT OPTION"])]).unwrap();
+        run(&pool, &sql, &sql).await.unwrap();
+        let g = grants(&pool, "ot_u", "%", false).await.unwrap();
+        let mut got_pr = g.iter().find(|x| x.target == pr).map(|x| x.privileges.clone()).unwrap_or_default();
+        got_pr.sort();
+        assert_eq!(got_pr, ["ALTER ROUTINE", "EXECUTE", "GRANT OPTION"]);
+        assert!(privileges(&pool).await.unwrap().iter().any(|p| p.name == "EXECUTE" && p.routine));
+        let mut sec = accounts(&pool, true).await.unwrap().into_iter().find(|a| a.user == "ot_u").unwrap();
+        sec.require = "SSL".into();
+        sec.admin_roles = vec!["ot_r".into()];
+        apply_account(&pool, true, &form(sec, Some(("ot_u", "%")), None)).await.unwrap();
+        let sec = accounts(&pool, true).await.unwrap().into_iter().find(|a| a.user == "ot_u").unwrap();
+        assert_eq!((sec.require.as_str(), sec.admin_roles.clone()), ("SSL", vec!["ot_r".to_string()]));
 
         // Revoke, rename; a failing statement reports itself.
         let rv = PrivChange { target: t(Some("ot_users"), None, None), grant: vec![], revoke: vec!["SELECT".into(), "GRANT OPTION".into()] };

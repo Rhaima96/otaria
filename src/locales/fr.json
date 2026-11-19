@@ -47,7 +47,9 @@
     "delete": "Supprimer",
     "confirmDelete": "Supprimer la connexion « {name} » et ses mots de passe enregistrés ?",
     "showPassword": "Afficher le mot de passe",
-    "hidePassword": "Masquer le mot de passe"
+    "hidePassword": "Masquer le mot de passe",
+    "sshCert": "Certificat SSH",
+    "sshCertPlaceholder": "Facultatif : <clé>-cert.pub est utilisé s'il existe"
   },
   "colors": {
     "none": "Aucune couleur",
@@ -138,7 +140,9 @@
     "BINLOG_OFF": "Le journal binaire est désactivé sur ce serveur (log_bin).",
     "BINLOG_TOOL_MISSING": "mariadb-binlog est introuvable. Installez le client MariaDB (Homebrew : brew install mariadb ; Linux : paquet mariadb-client ; Windows : installeur MariaDB).",
     "BINLOG_TOOL": "mariadb-binlog a échoué.",
-    "INVALID_RANGE": "Plage invalide."
+    "INVALID_RANGE": "Plage invalide.",
+    "BINLOG_POSITION": "Aucun événement ne commence à cette position : prenez une valeur de la colonne Pos.",
+    "SSH_CERT": "Impossible de lire le certificat SSH (fichier -cert.pub d'OpenSSH)."
   },
   "tree": {
     "title": "Bases de données",
@@ -350,7 +354,28 @@
     "try_online": "Exécuter en ligne",
     "try_default": "Exécuter quand même (peut bloquer les écritures)",
     "ignored": "Ignoré",
-    "ignoredHint": "Tenu à jour mais pas utilisé par l'optimiseur : pour tester sans risque la suppression d'un index. Changé sans reconstruction."
+    "ignoredHint": "Tenu à jour mais pas utilisé par l'optimiseur : pour tester sans risque la suppression d'un index. Changé sans reconstruction.",
+    "versioned": "Versionnement système",
+    "versionedHint": "WITH SYSTEM VERSIONING : chaque modification garde la ligne précédente",
+    "unversioned": "Sans versionnement",
+    "unversionedHint": "WITHOUT SYSTEM VERSIONING : modifier seulement cette colonne n'ajoute pas de ligne d'historique",
+    "periods": "Périodes applicatives",
+    "periodStart": "Colonne de début",
+    "periodEnd": "Colonne de fin",
+    "periodName": "Nom de la période",
+    "addPeriod": "Ajouter une période",
+    "periodsNeedDates": "Une période demande deux colonnes DATE, DATETIME ou TIMESTAMP.",
+    "overlaps": "Sans chevauchement sur une période",
+    "noOverlaps": "Chevauchements permis",
+    "overlapsOn": "{name} WITHOUT OVERLAPS",
+    "lockWait": "Attente du verrou de la table",
+    "lockWaitDefault": "Réglage du serveur",
+    "lockNoWait": "Sans attendre (NOWAIT)",
+    "lockWaitSeconds": "{n} s au plus (WAIT {n})",
+    "progress": "{pct} % · étape {stage} sur {stages}",
+    "stop": "Arrêter",
+    "partitions": "Partitionnement",
+    "partitionsHint": "Clause PARTITION BY, en SQL. Vide = pas de partitions ; la vider lance REMOVE PARTITIONING (les lignes restent)."
   },
   "plugins": {
     "tab": "Plugins",
@@ -415,7 +440,13 @@
     "conflicts": "Échecs de certification / abandons forcés",
     "provider": "Fournisseur",
     "address": "Adresse",
-    "noMembership": "Les noms des nœuds demandent le droit SUPER et le plugin wsrep_info : seules les adresses (wsrep_incoming_addresses) sont affichées."
+    "noMembership": "Les noms des nœuds demandent le droit SUPER et le plugin wsrep_info : seules les adresses (wsrep_incoming_addresses) sont affichées.",
+    "start": "Démarrer le canal",
+    "stop": "Arrêter le canal",
+    "skip": "Passer",
+    "skipHint": "Passer l'événement en erreur et relancer le thread SQL",
+    "skipCount": "Événements à passer",
+    "skipWarning": "Les événements passés ne seront jamais appliqués sur ce réplica : ses données peuvent alors différer de la source."
   },
   "binlog": {
     "tab": "Binlog",
@@ -436,7 +467,17 @@
     "undo": "Annuler la sélection ({n})",
     "undoHint": "Génère avec mariadb-binlog --flashback le SQL d'annulation des transactions qui contiennent les événements sélectionnés (du Gtid au Xid), et l'ouvre dans l'éditeur SQL sans l'exécuter. Seules les modifications de lignes (INSERT, UPDATE, DELETE) sont annulées, et seulement avec binlog_row_image = FULL.",
     "undoNeedsRow": "L'annulation demande binlog_format = ROW.",
-    "undoHeader": "Annulation des événements {start} à {stop} de {file} (mariadb-binlog --flashback). Relisez-la avant de l'exécuter : les instructions BINLOG demandent le privilège BINLOG REPLAY."
+    "undoHeader": "Annulation des événements {start} à {stop} de {file} (mariadb-binlog --flashback). Relisez-la avant de l'exécuter : les instructions BINLOG demandent le privilège BINLOG REPLAY.",
+    "byTxn": "Par transaction",
+    "jump": "Aller",
+    "jumpPlaceholder": "Position",
+    "jumpHint": "Lire à partir de cette position en octets : ce doit être le début d'un événement (colonne Pos).",
+    "gtidCol": "GTID",
+    "events": "Événements",
+    "tables": "Tables",
+    "statements": "Instructions",
+    "fromPos": "depuis {pos}",
+    "txnCount": "{n} transactions"
   },
   "vector": {
     "loading": "Chargement des colonnes vecteur…",
@@ -572,7 +613,8 @@
       "global": "global",
       "schema": "base",
       "table": "table",
-      "column": "colonne"
+      "column": "colonne",
+      "routine": "routine"
     },
     "levelLabel": "Niveau",
     "pickSchema": "Base…",
@@ -580,7 +622,17 @@
     "pickColumn": "Colonne…",
     "addTarget": "Ajouter",
     "removeTarget": "Retirer tous les droits ici",
-    "privilegesHint": "Cochez ou décochez des droits, puis vérifiez les instructions GRANT et REVOKE."
+    "privilegesHint": "Cochez ou décochez des droits, puis vérifiez les instructions GRANT et REVOKE.",
+    "pickRoutine": "Routine…",
+    "require": "Connexion chiffrée",
+    "requireNone": "Non exigée",
+    "requireSsl": "Exigée (REQUIRE SSL)",
+    "requireX509": "Certificat client (REQUIRE X509)",
+    "requireSpecified": "Personnalisée (ISSUER / SUBJECT / CIPHER)",
+    "requireSpecifiedHint": "Définie en SQL ; laissée telle quelle.",
+    "requireHint": "Refuse les connexions sans TLS, ou sans certificat client valide.",
+    "adminOption": "peut l'attribuer",
+    "adminOptionHint": "WITH ADMIN OPTION : ce compte peut attribuer le rôle à d'autres"
   },
   "transfer": {
     "export": "Exporter",

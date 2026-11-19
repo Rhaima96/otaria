@@ -6,6 +6,7 @@ import type { ColDef, SelectionChangedEvent } from "ag-grid-community";
 import { Loader2, RefreshCw, Undo2 } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
 import { api, toAppError, type AppError, type BinlogEvent, type BinlogState } from "@/lib/api";
+import { transactions, type Txn } from "@/lib/binlog";
 import { theme } from "@/lib/grid";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,11 @@ const filter = ref("");
 const error = ref<AppError | null>(null);
 const selected = ref<BinlogEvent[]>([]);
 const undoing = ref(false);
+/** Byte position the page starts at (null = start of the file), and its input. */
+const from = ref<number | null>(null);
+const jumpTo = ref("");
+/** One row per transaction (GTID) instead of one per event. */
+const byTxn = ref(false);
 
 async function load() {
   error.value = null;
@@ -32,7 +38,9 @@ async function load() {
     st.value = await api.binlogState(props.sessionId);
     // Start on the file being written (the last one), or stay on the chosen one if it still exists.
     const names = st.value.files.map((f) => f.name);
-    await open(names.includes(file.value) ? file.value : (names.at(-1) ?? ""));
+    const keep = names.includes(file.value);
+    if (!keep) from.value = null;
+    await open(keep ? file.value : (names.at(-1) ?? ""));
   } catch (e) {
     error.value = toAppError(e);
   }
@@ -44,7 +52,7 @@ async function open(name: string, append = false) {
   busy.value = true;
   error.value = null;
   try {
-    const page = await api.binlogEvents(props.sessionId, name, append ? events.value.length : 0, PAGE);
+    const page = await api.binlogEvents(props.sessionId, name, from.value, append ? events.value.length : 0, PAGE);
     file.value = name;
     events.value = append ? [...events.value, ...page] : page;
     more.value = page.length === PAGE;
@@ -53,6 +61,17 @@ async function open(name: string, append = false) {
   } finally {
     busy.value = false;
   }
+}
+
+function pickFile(name: string) {
+  from.value = null;
+  jumpTo.value = "";
+  open(name);
+}
+function jump() {
+  const n = Number(jumpTo.value);
+  from.value = jumpTo.value.trim() && Number.isInteger(n) && n >= 4 ? n : null;
+  open(file.value);
 }
 
 /**
@@ -92,6 +111,19 @@ const shown = computed(() => {
   return f ? events.value.filter((e) => `${e.kind} ${e.info}`.toLowerCase().includes(f)) : events.value;
 });
 
+const txns = computed(() => {
+  const f = filter.value.trim().toLowerCase();
+  const all = transactions(events.value);
+  return f ? all.filter((x) => `${x.gtid} ${x.tables.join(" ")} ${x.statements.join(" ")}`.toLowerCase().includes(f)) : all;
+});
+const txnDefs = computed<ColDef<Txn>[]>(() => [
+  { field: "gtid", headerName: t("binlog.gtidCol"), width: 120 },
+  { field: "pos", headerName: t("binlog.pos"), width: 100 },
+  { headerName: t("binlog.events"), width: 90, valueGetter: (p) => p.data?.events.length },
+  { headerName: t("binlog.tables"), width: 180, valueGetter: (p) => p.data?.tables.join(", ") },
+  { headerName: t("binlog.statements"), flex: 1, valueGetter: (p) => p.data?.statements.join(" · "), tooltipValueGetter: (p) => p.data?.statements.join("\n") },
+]);
+
 const colDefs = computed<ColDef<BinlogEvent>[]>(() => [
   { field: "pos", headerName: t("binlog.pos"), width: 100 },
   { field: "endPos", headerName: t("binlog.endPos"), width: 100 },
@@ -113,6 +145,13 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
       <input v-model="filter" :placeholder="t('binlog.filter')" :aria-label="t('binlog.filter')" class="h-6 w-64 rounded-sm border bg-background px-2" />
       <span v-if="st" class="text-muted-foreground">{{ t("binlog.format") }} <span class="font-mono text-foreground">{{ st.format }}</span></span>
       <span v-if="st?.gtid" class="text-muted-foreground">{{ t("binlog.gtid") }} <span class="font-mono text-foreground">{{ st.gtid }}</span></span>
+      <label class="flex items-center gap-1.5 text-muted-foreground">
+        <input :checked="byTxn" type="checkbox" class="size-3.5" @change="(byTxn = ($event.target as HTMLInputElement).checked), (selected = [])" />{{ t("binlog.byTxn") }}
+      </label>
+      <form class="flex items-center gap-1" @submit.prevent="jump">
+        <input v-model="jumpTo" inputmode="numeric" :placeholder="t('binlog.jumpPlaceholder')" :aria-label="t('binlog.jumpPlaceholder')" class="h-6 w-28 rounded-sm border bg-background px-2 font-mono text-xs" />
+        <button type="submit" :class="btn" :title="t('binlog.jumpHint')">{{ t("binlog.jump") }}</button>
+      </form>
       <button
         :class="cn(btn, 'ml-auto')"
         :disabled="!selected.length || st?.format !== 'ROW' || undoing"
@@ -132,7 +171,7 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
           <button
             :class="cn('flex w-full items-center justify-between gap-2 px-3 py-1 text-left hover:bg-secondary', f.name === file && 'bg-selection')"
             :title="i === st.files.length - 1 ? t('binlog.current') : undefined"
-            @click="open(f.name)"
+            @click="pickFile(f.name)"
           >
             <span :class="cn('truncate font-mono', i === st.files.length - 1 && 'text-primary')">{{ f.name }}</span>
             <span class="shrink-0 text-muted-foreground">{{ size(f.size) }}</span>
@@ -142,6 +181,20 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
 
       <div class="flex min-w-0 flex-1 flex-col">
         <AgGridVue
+          v-if="byTxn"
+          class="min-h-0 flex-1"
+          :theme="theme"
+          :row-data="txns"
+          :column-defs="txnDefs"
+          :default-col-def="{ resizable: true, sortable: true }"
+          :locale-text="{ noRowsToShow: t('grid.noRows') }"
+          :enable-cell-text-selection="true"
+          :tooltip-show-delay="300"
+          :row-selection="{ mode: 'multiRow', checkboxes: false, headerCheckbox: false, enableClickSelection: true }"
+          @selection-changed="(e: SelectionChangedEvent<Txn>) => (selected = e.api.getSelectedRows().flatMap((x) => x.events))"
+        />
+        <AgGridVue
+          v-else
           class="min-h-0 flex-1"
           :theme="theme"
           :row-data="shown"
@@ -155,6 +208,8 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
         />
         <div class="flex h-7 shrink-0 items-center gap-2 border-t px-2 text-muted-foreground">
           <Loader2 v-if="busy" class="size-3.5 animate-spin" />
+          <span v-if="from !== null" class="shrink-0 font-mono">{{ t("binlog.fromPos", { pos: from }) }}</span>
+          <span v-if="byTxn" class="shrink-0">{{ t("binlog.txnCount", { n: txns.length }) }}</span>
           <span class="shrink-0">{{ shown.length < events.length ? t("binlog.matching", { n: shown.length, total: events.length }) : t("binlog.loaded", { n: events.length }) }}</span>
           <button v-if="more" :disabled="busy" :class="btn" class="text-foreground" @click="open(file, true)">{{ t("binlog.more") }}</button>
           <span class="ml-auto min-w-0 truncate" :title="t('binlog.hint')">{{ t("binlog.hint") }}</span>

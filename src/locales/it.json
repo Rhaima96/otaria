@@ -47,7 +47,9 @@
     "delete": "Elimina",
     "confirmDelete": "Eliminare la connessione «{name}» e le password salvate?",
     "showPassword": "Mostra la password",
-    "hidePassword": "Nascondi la password"
+    "hidePassword": "Nascondi la password",
+    "sshCert": "Certificato SSH",
+    "sshCertPlaceholder": "Facoltativo: si usa <chiave>-cert.pub se esiste"
   },
   "colors": {
     "none": "Nessun colore",
@@ -138,7 +140,9 @@
     "BINLOG_OFF": "Il log binario è disattivato su questo server (log_bin).",
     "BINLOG_TOOL_MISSING": "mariadb-binlog non trovato. Installa il client MariaDB (Homebrew: brew install mariadb; Linux: pacchetto mariadb-client; Windows: installer MariaDB).",
     "BINLOG_TOOL": "mariadb-binlog non è riuscito.",
-    "INVALID_RANGE": "Intervallo non valido."
+    "INVALID_RANGE": "Intervallo non valido.",
+    "BINLOG_POSITION": "Nessun evento inizia in questa posizione: usa un valore della colonna Pos.",
+    "SSH_CERT": "Impossibile leggere il certificato SSH (file -cert.pub di OpenSSH)."
   },
   "tree": {
     "title": "Database",
@@ -350,7 +354,28 @@
     "try_online": "Esegui online",
     "try_default": "Esegui comunque (può bloccare le scritture)",
     "ignored": "Ignorato",
-    "ignoredHint": "Tenuto aggiornato ma non usato dall'ottimizzatore: un modo sicuro per provare a togliere un indice. Cambiato senza ricostruzione."
+    "ignoredHint": "Tenuto aggiornato ma non usato dall'ottimizzatore: un modo sicuro per provare a togliere un indice. Cambiato senza ricostruzione.",
+    "versioned": "Versionamento di sistema",
+    "versionedHint": "WITH SYSTEM VERSIONING: ogni modifica conserva la riga precedente",
+    "unversioned": "Senza versionamento",
+    "unversionedHint": "WITHOUT SYSTEM VERSIONING: modificare solo questa colonna non aggiunge righe di cronologia",
+    "periods": "Periodi applicativi",
+    "periodStart": "Colonna di inizio",
+    "periodEnd": "Colonna di fine",
+    "periodName": "Nome del periodo",
+    "addPeriod": "Aggiungi un periodo",
+    "periodsNeedDates": "Un periodo richiede due colonne DATE, DATETIME o TIMESTAMP.",
+    "overlaps": "Senza sovrapposizioni su un periodo",
+    "noOverlaps": "Sovrapposizioni consentite",
+    "overlapsOn": "{name} WITHOUT OVERLAPS",
+    "lockWait": "Attesa del lock della tabella",
+    "lockWaitDefault": "Impostazione del server",
+    "lockNoWait": "Senza attendere (NOWAIT)",
+    "lockWaitSeconds": "{n} s al massimo (WAIT {n})",
+    "progress": "{pct} % · fase {stage} di {stages}",
+    "stop": "Ferma",
+    "partitions": "Partizionamento",
+    "partitionsHint": "Clausola PARTITION BY, in SQL. Vuota = nessuna partizione; svuotarla esegue REMOVE PARTITIONING (le righe restano)."
   },
   "plugins": {
     "tab": "Plugin",
@@ -415,7 +440,13 @@
     "conflicts": "Errori di certificazione / abort forzati",
     "provider": "Provider",
     "address": "Indirizzo",
-    "noMembership": "I nomi dei nodi richiedono il privilegio SUPER e il plugin wsrep_info: sono mostrati solo gli indirizzi (wsrep_incoming_addresses)."
+    "noMembership": "I nomi dei nodi richiedono il privilegio SUPER e il plugin wsrep_info: sono mostrati solo gli indirizzi (wsrep_incoming_addresses).",
+    "start": "Avvia il canale",
+    "stop": "Ferma il canale",
+    "skip": "Salta",
+    "skipHint": "Salta l'evento in errore e riavvia il thread SQL",
+    "skipCount": "Eventi da saltare",
+    "skipWarning": "Gli eventi saltati non verranno mai applicati su questa replica: i suoi dati potrebbero differire dalla sorgente."
   },
   "binlog": {
     "tab": "Binlog",
@@ -436,7 +467,17 @@
     "undo": "Annulla selezione ({n})",
     "undoHint": "Genera con mariadb-binlog --flashback l'SQL di annullamento delle transazioni che contengono gli eventi selezionati (da Gtid a Xid) e lo apre nell'editor SQL senza eseguirlo. Vengono annullate solo le modifiche alle righe (INSERT, UPDATE, DELETE), e solo con binlog_row_image = FULL.",
     "undoNeedsRow": "L'annullamento richiede binlog_format = ROW.",
-    "undoHeader": "Annullamento degli eventi da {start} a {stop} di {file} (mariadb-binlog --flashback). Rileggilo prima di eseguirlo: le istruzioni BINLOG richiedono il privilegio BINLOG REPLAY."
+    "undoHeader": "Annullamento degli eventi da {start} a {stop} di {file} (mariadb-binlog --flashback). Rileggilo prima di eseguirlo: le istruzioni BINLOG richiedono il privilegio BINLOG REPLAY.",
+    "byTxn": "Per transazione",
+    "jump": "Vai",
+    "jumpPlaceholder": "Posizione",
+    "jumpHint": "Leggi da questa posizione in byte: deve essere l'inizio di un evento (colonna Pos).",
+    "gtidCol": "GTID",
+    "events": "Eventi",
+    "tables": "Tabelle",
+    "statements": "Istruzioni",
+    "fromPos": "da {pos}",
+    "txnCount": "{n} transazioni"
   },
   "vector": {
     "loading": "Caricamento delle colonne vettoriali…",
@@ -572,7 +613,8 @@
       "global": "globale",
       "schema": "database",
       "table": "tabella",
-      "column": "colonna"
+      "column": "colonna",
+      "routine": "routine"
     },
     "levelLabel": "Livello",
     "pickSchema": "Database…",
@@ -580,7 +622,17 @@
     "pickColumn": "Colonna…",
     "addTarget": "Aggiungi",
     "removeTarget": "Rimuovi tutti i privilegi qui",
-    "privilegesHint": "Seleziona o deseleziona i privilegi, poi verifica le istruzioni GRANT e REVOKE."
+    "privilegesHint": "Seleziona o deseleziona i privilegi, poi verifica le istruzioni GRANT e REVOKE.",
+    "pickRoutine": "Routine…",
+    "require": "Connessione cifrata",
+    "requireNone": "Non richiesta",
+    "requireSsl": "Richiesta (REQUIRE SSL)",
+    "requireX509": "Certificato client (REQUIRE X509)",
+    "requireSpecified": "Personalizzata (ISSUER / SUBJECT / CIPHER)",
+    "requireSpecifiedHint": "Definita in SQL; lasciata così com'è.",
+    "requireHint": "Rifiuta gli accessi senza TLS, o senza un certificato client valido.",
+    "adminOption": "può concederlo",
+    "adminOptionHint": "WITH ADMIN OPTION: questo account può concedere il ruolo ad altri"
   },
   "transfer": {
     "export": "Esporta",

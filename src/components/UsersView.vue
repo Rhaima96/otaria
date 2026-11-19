@@ -42,7 +42,7 @@ const tab = ref<"account" | "privileges">("account");
 const pluginChoices = computed(() => [...new Set([...plugins.value, form.value?.plugin ?? ""].filter(Boolean))]);
 
 function select(a: Account) {
-  form.value = { ...a, roles: [...a.roles], original: [a.user, a.host], password: null, expireNow: false };
+  form.value = { ...a, roles: [...a.roles], adminRoles: [...a.adminRoles], original: [a.user, a.host], password: null, expireNow: false };
   lifetimeMode.value = a.lifetime === null ? "default" : a.lifetime === 0 ? "never" : "days";
   days.value = a.lifetime || 90;
   tab.value = "account";
@@ -65,6 +65,8 @@ function create(isRole: boolean) {
     maxStatementTime: 0,
     defaultRole: null,
     roles: [],
+    adminRoles: [],
+    require: "",
   };
   select(a);
   form.value!.original = null;
@@ -79,7 +81,8 @@ function payload(): AccountForm {
   const f = form.value!;
   // A default role must be one of the granted roles.
   const defaultRole = f.defaultRole && f.roles.includes(f.defaultRole) ? f.defaultRole : null;
-  return { ...f, defaultRole, password: f.password || null, lifetime: lifetimeMode.value === "default" ? null : lifetimeMode.value === "never" ? 0 : days.value };
+  const adminRoles = f.adminRoles.filter((r) => f.roles.includes(r));
+  return { ...f, defaultRole, adminRoles, password: f.password || null, lifetime: lifetimeMode.value === "default" ? null : lifetimeMode.value === "never" ? 0 : days.value };
 }
 
 // Preview, then apply.
@@ -232,6 +235,17 @@ const tabBtn = "h-8 border-b-2 px-3";
               <span v-if="form.expired" class="text-warning">{{ t("users.expired") }}</span>
             </div>
 
+            <label :class="label" for="u-req">{{ t("users.require") }}</label>
+            <div class="flex items-center gap-2">
+              <select id="u-req" v-model="form.require" :disabled="form.require === 'SPECIFIED'" :class="input">
+                <option value="">{{ t("users.requireNone") }}</option>
+                <option value="SSL">{{ t("users.requireSsl") }}</option>
+                <option value="X509">{{ t("users.requireX509") }}</option>
+                <option v-if="form.require === 'SPECIFIED'" value="SPECIFIED">{{ t("users.requireSpecified") }}</option>
+              </select>
+              <span class="text-xs text-muted-foreground">{{ form.require === "SPECIFIED" ? t("users.requireSpecifiedHint") : t("users.requireHint") }}</span>
+            </div>
+
             <span :class="cn(label, 'self-start pt-1.5')">{{ t("users.limits") }}</span>
             <div class="grid grid-cols-[auto_6rem] items-center gap-x-2 gap-y-1">
               <label for="u-mq">{{ t("users.maxQuestions") }}</label><input id="u-mq" v-model.number="form.maxQuestions" type="number" min="0" :class="input" />
@@ -248,9 +262,12 @@ const tabBtn = "h-8 border-b-2 px-3";
           <template v-if="mariadb">
             <span :class="cn(label, 'self-start pt-1')">{{ t("users.roles") }}</span>
             <div class="flex flex-wrap gap-x-4 gap-y-1">
-              <label v-for="r in grantable" :key="r" class="flex items-center gap-1.5 font-mono text-xs">
-                <input v-model="form.roles" type="checkbox" :value="r" class="size-3.5" />{{ r }}
-              </label>
+              <span v-for="r in grantable" :key="r" class="flex items-center gap-1.5 font-mono text-xs">
+                <label class="flex items-center gap-1.5"><input v-model="form.roles" type="checkbox" :value="r" class="size-3.5" />{{ r }}</label>
+                <label v-if="form.roles.includes(r)" class="flex items-center gap-1 font-sans text-muted-foreground" :title="t('users.adminOptionHint')">
+                  (<input v-model="form.adminRoles" type="checkbox" :value="r" class="size-3" />{{ t("users.adminOption") }})
+                </label>
+              </span>
               <span v-if="!grantable.length" class="text-muted-foreground">{{ t("users.noRoles") }}</span>
             </div>
 

@@ -12,6 +12,7 @@ use mysql_async::{Pool, Row};
 use serde::{Deserialize, Serialize};
 
 use crate::browse::ident;
+use crate::versioning::Period;
 use crate::error::{AppError, AppResult};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -50,6 +51,9 @@ pub struct ColumnDef {
     /// Column-level CHECK (MariaDB; e.g. json_valid() on JSON columns): restated on every CHANGE.
     pub check: Option<String>,
     pub comment: String,
+    /// WITHOUT SYSTEM VERSIONING: changes to it leave no history (versioned tables only).
+    #[serde(default)]
+    pub unversioned: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -81,6 +85,9 @@ pub struct IndexDef {
     pub m: Option<u32>,
     #[serde(default)]
     pub distance: Option<String>,
+    /// `period WITHOUT OVERLAPS` after the columns (PRIMARY / UNIQUE on an application period).
+    #[serde(default)]
+    pub overlaps: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -115,6 +122,16 @@ pub struct TableDef {
     pub indexes: Vec<IndexDef>,
     pub fks: Vec<FkDef>,
     pub checks: Vec<CheckDef>,
+    /// WITH SYSTEM VERSIONING (MariaDB).
+    #[serde(default)]
+    pub versioned: bool,
+    /// `PERIOD FOR name (start, end)`: application periods, and SYSTEM_TIME when its ROW START /
+    /// ROW END columns are explicit (implicit ones are not listed).
+    #[serde(default)]
+    pub periods: Vec<Period>,
+    /// `PARTITION BY …` clause as SHOW CREATE TABLE writes it; empty = not partitioned. Edited as SQL.
+    #[serde(default)]
+    pub partitions: String,
 }
 
 /// Quoted text literal. `'` is doubled and `\` doubled: the statements run between `ESCAPES_ON` and
@@ -159,6 +176,8 @@ pub fn column_sql(c: &ColumnDef) -> AppResult<String> {
         s += &format!(" COLLATE {}", word("collation", coll)?);
     }
     match &c.generated {
+        // ROW START / ROW END of a system-versioned table with explicit period columns.
+        Some(g) if is_row_period(&g.expr) => s += &format!(" GENERATED ALWAYS AS {}", g.expr.trim().to_ascii_uppercase()),
         Some(g) => {
             nonempty("generated", &g.expr)?;
             s += &format!(" AS ({}) {}", g.expr.trim(), if g.stored { "PERSISTENT" } else { "VIRTUAL" });
@@ -182,6 +201,9 @@ pub fn column_sql(c: &ColumnDef) -> AppResult<String> {
     if c.invisible {
         s += " INVISIBLE";
     }
+    if c.unversioned {
+        s += " WITHOUT SYSTEM VERSIONING";
+    }
     if !c.comment.is_empty() {
         s += &format!(" COMMENT {}", literal(&c.comment));
     }
@@ -189,6 +211,17 @@ pub fn column_sql(c: &ColumnDef) -> AppResult<String> {
         s += &format!(" CHECK ({})", chk.trim());
     }
     Ok(s)
+}
+
+fn is_row_period(expr: &str) -> bool {
+    let e = expr.trim();
+    e.eq_ignore_ascii_case("ROW START") || e.eq_ignore_ascii_case("ROW END")
+}
+
+fn period_sql(p: &Period) -> AppResult<String> {
+    nonempty("period", &p.name)?;
+    let name = if p.name == "SYSTEM_TIME" { "SYSTEM_TIME".to_string() } else { ident(p.name.trim()) };
+    Ok(format!("PERIOD FOR {name} ({}, {})", ident(&p.start), ident(&p.end)))
 }
 
 /// `mariadb` picks the keyword of an index the optimizer must not use: IGNORED, or INVISIBLE on MySQL.
@@ -216,6 +249,10 @@ fn index_sql(i: &IndexDef, mariadb: bool) -> AppResult<String> {
             if c.desc { col + " DESC" } else { col }
         })
         .collect();
+    let mut cols = cols;
+    if let Some(p) = i.overlaps.as_deref().filter(|p| !p.is_empty()) {
+        cols.push(format!("{} WITHOUT OVERLAPS", ident(p)));
+    }
     let name = if i.name.trim().is_empty() { String::new() } else { format!("{} ", ident(i.name.trim())) };
     let mut s = match i.kind.as_str() {
         "PRIMARY" => format!("PRIMARY KEY ({})", cols.join(", ")),
@@ -280,6 +317,9 @@ fn table_options(t: &TableDef) -> AppResult<Vec<String>> {
         o.push(format!("COLLATE={}", word("collation", &t.collation)?));
     }
     o.push(format!("COMMENT={}", literal(&t.comment)));
+    if t.versioned {
+        o.push("WITH SYSTEM VERSIONING".into());
+    }
     Ok(o)
 }
 
@@ -289,6 +329,9 @@ pub fn create_sql(schema: &str, t: &TableDef, mariadb: bool) -> AppResult<String
         return Err(AppError { detail: Some("columns".into()), ..AppError::new("REQUIRED", String::new()) });
     }
     let mut parts: Vec<String> = t.columns.iter().map(column_sql).collect::<AppResult<_>>()?;
+    for p in &t.periods {
+        parts.push(period_sql(p)?);
+    }
     for i in &t.indexes {
         parts.push(index_sql(i, mariadb)?);
     }
@@ -298,8 +341,9 @@ pub fn create_sql(schema: &str, t: &TableDef, mariadb: bool) -> AppResult<String
     for c in &t.checks {
         parts.push(check_sql(c)?);
     }
+    let part = if t.partitions.trim().is_empty() { String::new() } else { format!("\n{}", t.partitions.trim()) };
     Ok(format!(
-        "CREATE TABLE {}.{} (\n  {}\n) {}",
+        "CREATE TABLE {}.{} (\n  {}\n) {}{part}",
         ident(schema),
         ident(&t.name),
         parts.join(",\n  "),
@@ -340,6 +384,10 @@ pub fn alter_clauses(old: &TableDef, new: &TableDef, mariadb: bool) -> AppResult
             out.push(if i.kind == "PRIMARY" { "DROP PRIMARY KEY".into() } else { format!("DROP INDEX {}", ident(&i.name)) });
         }
     }
+    // SYSTEM_TIME goes with DROP SYSTEM VERSIONING (and its columns), not on its own.
+    for p in old.periods.iter().filter(|p| p.name != "SYSTEM_TIME" && !new.periods.contains(p)) {
+        out.push(format!("DROP PERIOD FOR {}", ident(&p.name)));
+    }
     for c in &old.columns {
         if !new.columns.iter().any(|n| n.original.as_deref() == Some(&c.name)) {
             out.push(format!("DROP COLUMN {}", ident(&c.name)));
@@ -375,7 +423,10 @@ pub fn alter_clauses(old: &TableDef, new: &TableDef, mariadb: bool) -> AppResult
         }
     }
 
-    // 3. Adds.
+    // 3. Adds: periods first, an index may use one WITHOUT OVERLAPS.
+    for p in new.periods.iter().filter(|p| !old.periods.contains(p)) {
+        out.push(format!("ADD {}", period_sql(p)?));
+    }
     for i in &new.indexes {
         match old.indexes.iter().find(|o| i.original.as_deref() == Some(&o.name)) {
             Some(o) if strip_index(o) == strip_index(i) => {
@@ -408,6 +459,11 @@ pub fn alter_clauses(old: &TableDef, new: &TableDef, mariadb: bool) -> AppResult
     if new.comment != old.comment {
         out.push(format!("COMMENT={}", literal(&new.comment)));
     }
+    match (old.versioned, new.versioned) {
+        (false, true) => out.push("ADD SYSTEM VERSIONING".into()),
+        (true, false) => out.push("DROP SYSTEM VERSIONING".into()),
+        _ => {}
+    }
     Ok(out)
 }
 
@@ -422,12 +478,33 @@ fn strip_fk(f: &FkDef) -> FkDef {
 
 /// The full statements to run: RENAME first (when the name changed), then one ALTER TABLE.
 pub fn alter_sql(schema: &str, old: &TableDef, new: &TableDef, algo: Algorithm, mariadb: bool) -> AppResult<Vec<String>> {
+    if !old.versioned && new.versioned && new.columns.iter().any(|c| c.unversioned) {
+        // WITHOUT SYSTEM VERSIONING is only accepted once the table is versioned: second ALTER.
+        let mut mid = new.clone();
+        mid.columns.iter_mut().for_each(|c| c.unversioned = false);
+        let mut out = alter_sql(schema, old, &mid, algo, mariadb)?;
+        let cols: Vec<String> =
+            new.columns.iter().filter(|c| c.unversioned).map(|c| Ok(format!("CHANGE COLUMN {} {}", ident(&c.name), column_sql(c)?))).collect::<AppResult<_>>()?;
+        out.push("SET SESSION system_versioning_alter_history = KEEP".into());
+        out.push(format!("ALTER TABLE {}.{}\n  {}", ident(schema), ident(new.name.trim()), cols.join(",\n  ")));
+        return Ok(out);
+    }
     let mut out = Vec::new();
     if new.name.trim() != old.name {
         nonempty("table_name", &new.name)?;
         out.push(rename_sql(schema, &old.name, new.name.trim()));
     }
     let clauses = alter_clauses(old, new, mariadb)?;
+    // Partitioning is not a comma-separated clause: its own ALTER, after the others.
+    let part = (new.partitions.trim() != old.partitions.trim()).then(|| match new.partitions.trim() {
+        "" => format!("ALTER TABLE {}.{} REMOVE PARTITIONING", ident(schema), ident(new.name.trim())),
+        p => format!("ALTER TABLE {}.{}\n  {p}", ident(schema), ident(new.name.trim())),
+    });
+    if (!clauses.is_empty() || part.is_some()) && old.versioned {
+        // Without it the server refuses any ALTER of a system-versioned table (error 4119).
+        // Session only: the pool resets the connection when it is given back.
+        out.push("SET SESSION system_versioning_alter_history = KEEP".into());
+    }
     if !clauses.is_empty() {
         let algo = match algo {
             Algorithm::Instant => ", ALGORITHM=INSTANT",
@@ -436,6 +513,7 @@ pub fn alter_sql(schema: &str, old: &TableDef, new: &TableDef, algo: Algorithm, 
         };
         out.push(format!("ALTER TABLE {}.{}\n  {}{algo}", ident(schema), ident(new.name.trim()), clauses.join(",\n  ")));
     }
+    out.extend(part);
     Ok(out)
 }
 
@@ -466,7 +544,11 @@ pub fn drop_sql(schema: &str, name: &str, kind: &str, truncate: bool) -> AppResu
 /// Run statements one by one (DDL commits on its own: no transaction is possible).
 /// The pooled connection gets its sql_mode back, failure or not.
 pub async fn run(pool: &Pool, stmts: &[String]) -> AppResult<()> {
-    let mut conn = pool.get_conn().await?;
+    run_on(&mut pool.get_conn().await?, stmts).await
+}
+
+/// `run` on a given connection: the caller knows its id (progress, KILL QUERY).
+pub async fn run_on(conn: &mut mysql_async::Conn, stmts: &[String]) -> AppResult<()> {
     conn.query_drop(ESCAPES_ON).await?;
     let mut result = Ok(());
     for s in stmts {
@@ -477,6 +559,24 @@ pub async fn run(pool: &Pool, stmts: &[String]) -> AppResult<()> {
     }
     conn.query_drop(ESCAPES_RESTORE).await?;
     result
+}
+
+/// MariaDB: how long the ALTERs of `table` wait for the metadata lock. None = server default
+/// (lock_wait_timeout), Some(0) = NOWAIT (fail at once), Some(n) = WAIT n seconds.
+pub fn with_wait(stmts: Vec<String>, schema: &str, table: &str, wait: Option<u32>) -> Vec<String> {
+    let Some(n) = wait else { return stmts };
+    let head = format!("ALTER TABLE {}.{}", ident(schema), ident(table.trim()));
+    let kw = if n == 0 { " NOWAIT".to_string() } else { format!(" WAIT {n}") };
+    stmts.into_iter().map(|s| if s.starts_with(&head) { format!("{head}{kw}{}", &s[head.len()..]) } else { s }).collect()
+}
+
+/// How far a running ALTER (or LOAD DATA…) of connection `id` is, MariaDB only: (percent, stage, stages).
+pub async fn progress(pool: &Pool, id: u32) -> AppResult<Option<(f64, u32, u32)>> {
+    Ok(pool
+        .get_conn()
+        .await?
+        .exec_first("SELECT PROGRESS + 0e0, STAGE, MAX_STAGE FROM information_schema.PROCESSLIST WHERE ID = ?", (id,))
+        .await?)
 }
 
 /// Parse information_schema.COLUMN_DEFAULT. MariaDB quotes literals ('abc'), writes 'NULL' for
@@ -514,9 +614,10 @@ pub async fn load_tables(pool: &Pool, schema: &str, only: Option<&str>, mariadb:
     let mut conn = pool.get_conn().await?;
     // `? IS NULL OR TABLE_NAME = ?`: all tables, or one.
     let which = (schema, only, only);
-    let tables: Vec<(String, String, String, String)> = conn
+    let tables: Vec<(String, String, String, String, bool, bool)> = conn
         .exec(
-            "SELECT TABLE_NAME, IFNULL(ENGINE, ''), IFNULL(TABLE_COLLATION, ''), IFNULL(TABLE_COMMENT, '')
+            "SELECT TABLE_NAME, IFNULL(ENGINE, ''), IFNULL(TABLE_COLLATION, ''), IFNULL(TABLE_COMMENT, ''), TABLE_TYPE = 'SYSTEM VERSIONED',
+                    IFNULL(CREATE_OPTIONS LIKE '%partitioned%', 0)
                FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND (? IS NULL OR TABLE_NAME = ?)
                 AND TABLE_TYPE NOT IN ('VIEW', 'SYSTEM VIEW', 'SEQUENCE') ORDER BY TABLE_NAME",
             which,
@@ -593,7 +694,7 @@ pub async fn load_tables(pool: &Pool, schema: &str, only: Option<&str>, mariadb:
     let mut fk_rows = by_table(rows.into_iter().map(|(t, a, b, c, d, e, f, g)| (t, (a, b, c, d, e, f, g))).collect());
 
     let mut out = Vec::new();
-    for (table, engine, collation, comment) in tables {
+    for (table, engine, collation, comment, versioned, partitioned) in tables {
         let mut col_checks: Vec<(String, String)> = Vec::new();
         let mut table_checks = Vec::new();
         for (name, clause, level) in checks.remove(&table).unwrap_or_default() {
@@ -626,6 +727,7 @@ pub async fn load_tables(pool: &Pool, schema: &str, only: Option<&str>, mariadb:
                 invisible: extra.contains("invisible"),
                 collation: coll.filter(|c| *c != collation),
                 comment: r.take(7).unwrap_or_default(),
+                unversioned: extra.contains("without system versioning"),
                 generated,
                 name,
             });
@@ -655,6 +757,7 @@ pub async fn load_tables(pool: &Pool, schema: &str, only: Option<&str>, mariadb:
                     ignored,
                     m: None,
                     distance: None,
+                    overlaps: None,
                 }),
             }
         }
@@ -662,7 +765,8 @@ pub async fn load_tables(pool: &Pool, schema: &str, only: Option<&str>, mariadb:
         let fk_list = fk_rows.remove(&table).unwrap_or_default();
         // SHOW CREATE TABLE only when needed: M and DISTANCE of a vector index (else a rebuilt one
         // could change), FK rules hidden from a SELECT-only account.
-        let needs_ddl = idx.iter().any(|i| i.kind == "VECTOR") || fk_list.iter().any(|r| r.5.is_none());
+        // Also periods: a versioned table, or a CHECK (an application period comes with one, named after it).
+        let needs_ddl = idx.iter().any(|i| i.kind == "VECTOR") || fk_list.iter().any(|r| r.5.is_none()) || versioned || partitioned || !table_checks.is_empty();
         let ddl = if needs_ddl { crate::browse::ddl_on(&mut conn, schema, &table, "table").await? } else { String::new() };
         if idx.iter().any(|i| i.kind == "VECTOR") {
             let found = crate::vector::vector_indexes(&ddl);
@@ -698,9 +802,39 @@ pub async fn load_tables(pool: &Pool, schema: &str, only: Option<&str>, mariadb:
             }
         }
 
-        out.push(TableDef { name: table, engine, collation, comment, columns: cols, indexes: idx, fks, checks: table_checks });
+        let periods = crate::versioning::periods(&ddl);
+        server_added_out(&periods, &mut idx, &mut table_checks);
+        let partitions = partition_clause(&ddl);
+        out.push(TableDef { name: table, engine, collation, comment, columns: cols, indexes: idx, fks, checks: table_checks, versioned, periods, partitions });
     }
     Ok(out)
+}
+
+/// The `PARTITION BY …` end of a SHOW CREATE TABLE (MySQL wraps it in `/*!50100 … */`); "" when none.
+pub fn partition_clause(ddl: &str) -> String {
+    let Some(i) = ddl.find("\n PARTITION BY").or_else(|| ddl.find("\n/*!50100 PARTITION BY")) else { return String::new() };
+    let rest = ddl[i..].trim().trim_start_matches("/*!50100").trim();
+    rest.strip_suffix("*/").unwrap_or(rest).trim().to_string()
+}
+
+/// What the server adds by itself, left out so the definition reads as written (and a CREATE from it
+/// works): ROW END at the end of each unique key of a versioned table with explicit columns, the
+/// `end, start` columns that stand for `period WITHOUT OVERLAPS`, the CHECK named after a period.
+fn server_added_out(periods: &[Period], idx: &mut [IndexDef], checks: &mut Vec<CheckDef>) {
+    for i in idx.iter_mut().filter(|i| i.kind == "PRIMARY" || i.kind == "UNIQUE") {
+        for p in periods {
+            let n = i.columns.len();
+            if p.name == "SYSTEM_TIME" {
+                if n > 1 && i.columns[n - 1].name == p.end {
+                    i.columns.pop();
+                }
+            } else if n > 2 && i.columns[n - 2].name == p.end && i.columns[n - 1].name == p.start {
+                i.columns.truncate(n - 2);
+                i.overlaps = Some(p.name.clone());
+            }
+        }
+    }
+    checks.retain(|c| !periods.iter().any(|p| p.name == c.name));
 }
 
 /// ON UPDATE / ON DELETE of constraint `name` in SHOW CREATE TABLE; a missing clause is RESTRICT.
@@ -835,6 +969,7 @@ mod tests {
             collation: None,
             check: None,
             comment: String::new(),
+            unversioned: false,
         }
     }
 
@@ -854,9 +989,13 @@ mod tests {
                 ignored: false,
                 m: None,
                 distance: None,
+                overlaps: None,
             }],
             fks: vec![],
             checks: vec![],
+            versioned: false,
+            periods: vec![],
+            partitions: String::new(),
         }
     }
 
@@ -938,7 +1077,7 @@ mod tests {
         };
         let mut new = old.clone();
         new.indexes[0].columns.push(IndexColumn { name: "a".into(), length: Some(4), desc: false });
-        new.indexes.push(IndexDef { original: None, name: "".into(), kind: "UNIQUE".into(), columns: vec![IndexColumn { name: "b".into(), length: None, desc: true }], comment: String::new(), ignored: false, m: None, distance: None });
+        new.indexes.push(IndexDef { original: None, name: "".into(), kind: "UNIQUE".into(), columns: vec![IndexColumn { name: "b".into(), length: None, desc: true }], comment: String::new(), ignored: false, m: None, distance: None, overlaps: None });
         new.fks[0].on_delete = "set null".into();
         new.checks.clear();
         new.comment = "hi".into();
@@ -959,6 +1098,83 @@ mod tests {
     }
 
     #[test]
+    fn partitions_sql() {
+        let ddl = "CREATE TABLE `pr` (\n  `id` int(11) NOT NULL\n) ENGINE=InnoDB\n PARTITION BY RANGE (`id`)\n(PARTITION `p0` VALUES LESS THAN (10) ENGINE = InnoDB)";
+        assert_eq!(partition_clause(ddl), "PARTITION BY RANGE (`id`)\n(PARTITION `p0` VALUES LESS THAN (10) ENGINE = InnoDB)");
+        let mysql = "CREATE TABLE `h` (\n  `id` int NOT NULL\n) ENGINE=InnoDB\n/*!50100 PARTITION BY HASH (`id`)\nPARTITIONS 4 */";
+        assert_eq!(partition_clause(mysql), "PARTITION BY HASH (`id`)\nPARTITIONS 4");
+        assert_eq!(partition_clause("CREATE TABLE `t` (\n  `id` int\n) ENGINE=InnoDB"), "");
+
+        let mut t = table();
+        t.partitions = "PARTITION BY HASH (`id`) PARTITIONS 4".into();
+        assert!(create_sql("s", &t, true).unwrap().ends_with("COMMENT=''\nPARTITION BY HASH (`id`) PARTITIONS 4"));
+        let plain = table();
+        assert_eq!(alter_sql("s", &plain, &t, Algorithm::Default, true).unwrap(), ["ALTER TABLE `s`.`t`\n  PARTITION BY HASH (`id`) PARTITIONS 4"]);
+        assert_eq!(alter_sql("s", &t, &plain, Algorithm::Default, true).unwrap(), ["ALTER TABLE `s`.`t` REMOVE PARTITIONING"]);
+        // A versioned table needs KEEP for it too; WAIT goes on every ALTER of the table.
+        let mut v = plain.clone();
+        v.versioned = true;
+        let mut vp = t.clone();
+        vp.versioned = true;
+        let w = with_wait(alter_sql("s", &v, &vp, Algorithm::Default, true).unwrap(), "s", "t", Some(3));
+        assert_eq!(w, ["SET SESSION system_versioning_alter_history = KEEP", "ALTER TABLE `s`.`t` WAIT 3\n  PARTITION BY HASH (`id`) PARTITIONS 4"]);
+    }
+
+    #[test]
+    fn lock_wait_on_alters_only() {
+        let stmts = vec!["RENAME TABLE `s`.`a` TO `s`.`b`".to_string(), "SET SESSION x = 1".into(), "ALTER TABLE `s`.`b`\n  ADD COLUMN c int".into()];
+        let w = with_wait(stmts.clone(), "s", "b", Some(5));
+        assert_eq!(w[2], "ALTER TABLE `s`.`b` WAIT 5\n  ADD COLUMN c int");
+        assert_eq!(&w[..2], &stmts[..2]);
+        assert_eq!(with_wait(stmts.clone(), "s", "b", Some(0))[2], "ALTER TABLE `s`.`b` NOWAIT\n  ADD COLUMN c int");
+        assert_eq!(with_wait(stmts.clone(), "s", "b", None), stmts);
+    }
+
+    #[test]
+    fn versioning_and_periods_sql() {
+        let mut t = table();
+        t.columns.push(col("d1", "date"));
+        t.columns.push(col("d2", "date"));
+        t.columns[2].unversioned = true;
+        t.periods.push(Period { name: "valid".into(), start: "d1".into(), end: "d2".into() });
+        t.indexes[0].overlaps = Some("valid".into());
+        t.versioned = true;
+        let c = create_sql("s", &t, true).unwrap();
+        assert!(c.contains("`b` int(11) NOT NULL WITHOUT SYSTEM VERSIONING"), "{c}");
+        assert!(c.contains("PERIOD FOR `valid` (`d1`, `d2`),\n  PRIMARY KEY (`id`, `valid` WITHOUT OVERLAPS)"), "{c}");
+        assert!(c.ends_with("COMMENT='' WITH SYSTEM VERSIONING"), "{c}");
+
+        // Explicit row columns: GENERATED ALWAYS AS ROW START / END, SYSTEM_TIME unquoted.
+        let mut rs = col("rs", "timestamp(6)");
+        rs.generated = Some(Generated { expr: "ROW START".into(), stored: true });
+        assert_eq!(column_sql(&rs).unwrap(), "`rs` timestamp(6) GENERATED ALWAYS AS ROW START");
+        assert_eq!(period_sql(&Period { name: "SYSTEM_TIME".into(), start: "rs".into(), end: "re".into() }).unwrap(), "PERIOD FOR SYSTEM_TIME (`rs`, `re`)");
+
+        // ALTER of a versioned table: KEEP first; period dropped before its columns, added before its index.
+        let old = t.clone();
+        let mut new = t.clone();
+        new.periods.clear();
+        new.indexes[0].overlaps = None;
+        new.versioned = false;
+        let a = alter_sql("s", &old, &new, Algorithm::Default, true).unwrap();
+        assert_eq!(a[0], "SET SESSION system_versioning_alter_history = KEEP");
+        assert_eq!(a[1], "ALTER TABLE `s`.`t`\n  DROP PRIMARY KEY,\n  DROP PERIOD FOR `valid`,\n  ADD PRIMARY KEY (`id`),\n  DROP SYSTEM VERSIONING");
+        let back = alter_clauses(&new, &old, true).unwrap();
+        assert_eq!(back, ["DROP PRIMARY KEY", "ADD PERIOD FOR `valid` (`d1`, `d2`)", "ADD PRIMARY KEY (`id`, `valid` WITHOUT OVERLAPS)", "ADD SYSTEM VERSIONING"]);
+
+        // Server-added parts left out on load.
+        let ip = |n: &str| IndexColumn { name: n.into(), length: None, desc: false };
+        let mut idx = vec![IndexDef { columns: vec![ip("id"), ip("d2"), ip("d1"), ip("re")], ..t.indexes[0].clone() }];
+        idx[0].overlaps = None;
+        let mut checks = vec![CheckDef { original: None, name: "valid".into(), clause: "`d1` < `d2`".into() }];
+        let periods = [Period { name: "SYSTEM_TIME".into(), start: "rs".into(), end: "re".into() }, Period { name: "valid".into(), start: "d1".into(), end: "d2".into() }];
+        server_added_out(&periods, &mut idx, &mut checks);
+        assert_eq!(idx[0].columns, [ip("id")]);
+        assert_eq!(idx[0].overlaps.as_deref(), Some("valid"));
+        assert!(checks.is_empty());
+    }
+
+    #[test]
     fn keeps_index_flags() {
         let mut old = table();
         old.indexes.push(IndexDef {
@@ -970,6 +1186,7 @@ mod tests {
             ignored: false,
             m: None,
             distance: None,
+            overlaps: None,
         });
         old.indexes.push(IndexDef {
             original: Some("ve".into()),
@@ -980,6 +1197,7 @@ mod tests {
             ignored: false,
             m: None,
             distance: None,
+            overlaps: None,
         });
         assert!(alter_clauses(&old, &old, true).unwrap().is_empty());
 
@@ -1069,6 +1287,35 @@ mod tests {
         assert_eq!(database_options(&pool, "otaria_newdb").await.unwrap_err().code, "NOT_FOUND");
     }
 
+    /// A long ALTER reports its progress, and KILL QUERY stops it.
+    #[tokio::test]
+    #[ignore]
+    async fn alter_progress_on_test_server() {
+        let pool = pool();
+        run(&pool, &["DROP DATABASE IF EXISTS otaria_prog".into(), "CREATE DATABASE otaria_prog".into(),
+            "CREATE TABLE otaria_prog.big (id INT PRIMARY KEY, v CHAR(200)) SELECT seq AS id, REPEAT('x', 200) AS v FROM mysql.seq_1_to_300000".into()])
+            .await
+            .unwrap();
+        let mut conn = pool.get_conn().await.unwrap();
+        let id = conn.id();
+        let stmts = with_wait(vec!["ALTER TABLE `otaria_prog`.`big`\n  FORCE, ALGORITHM=COPY".into()], "otaria_prog", "big", Some(5));
+        let alter = tokio::spawn(async move { run_on(&mut conn, &stmts).await });
+        let mut seen = None;
+        for _ in 0..100 {
+            tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+            if let Some(p) = progress(&pool, id).await.unwrap().filter(|p| p.0 > 0.0) {
+                seen = Some(p);
+                break;
+            }
+        }
+        let (pct, _, stages) = seen.expect("progress reported");
+        assert!(pct > 0.0 && pct <= 100.0 && stages >= 1, "{pct} {stages}");
+        crate::query::cancel(&pool, id).await.unwrap();
+        let res = alter.await.unwrap();
+        assert!(res.is_err() || progress(&pool, id).await.unwrap().is_none(), "{res:?}");
+        run(&pool, &["DROP DATABASE otaria_prog".into()]).await.unwrap();
+    }
+
     #[tokio::test]
     #[ignore]
     async fn designer_on_test_server() {
@@ -1115,7 +1362,7 @@ mod tests {
         new.columns.insert(1, created);
         new.columns.insert(1, ColumnDef { original: None, ..col("extra", "int(11)") });
         new.columns.iter_mut().find(|c| c.name == "n").unwrap().default = DefaultValue::Expr("5".into());
-        new.indexes.push(IndexDef { original: None, name: "ipid".into(), kind: "INDEX".into(), columns: vec![IndexColumn { name: "pid".into(), length: None, desc: false }], comment: String::new(), ignored: false, m: None, distance: None });
+        new.indexes.push(IndexDef { original: None, name: "ipid".into(), kind: "INDEX".into(), columns: vec![IndexColumn { name: "pid".into(), length: None, desc: false }], comment: String::new(), ignored: false, m: None, distance: None, overlaps: None });
         run(&pool, &alter_sql("otaria_des", &def, &new, Algorithm::Default, true).unwrap()).await.unwrap();
         let after = load(&pool, "otaria_des", "t2", true).await.unwrap();
         let names: Vec<&str> = after.columns.iter().map(|c| c.name.as_str()).collect();

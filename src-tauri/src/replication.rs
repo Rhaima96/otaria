@@ -1,15 +1,17 @@
 //! Replication and Galera (MariaDB only), read-only: replication channels from `SHOW ALL SLAVES STATUS`
 //! (multi-source, one row per connection name), Galera cluster from the `wsrep_*` status and
-//! `information_schema.WSREP_MEMBERSHIP`.
-// ponytail: no START / STOP SLAVE, no CHANGE MASTER here: monitoring only; the SQL editor does the rest.
+//! `information_schema.WSREP_MEMBERSHIP`. Actions on a channel (start, stop, skip a failing event)
+//! go through a preview of their SQL, like every other change.
+// ponytail: no CHANGE MASTER here: setting up a channel stays in the SQL editor.
 
 use std::collections::HashMap;
 
 use mysql_async::prelude::Queryable;
 use mysql_async::{Pool, Row};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-use crate::error::AppResult;
+use crate::designer::literal;
+use crate::error::{AppError, AppResult};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -110,6 +112,37 @@ pub async fn state(pool: &Pool) -> AppResult<State> {
     Ok(State { channels, galera })
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum Action {
+    Start,
+    Stop,
+    /// Skip the next `count` events (transactions with GTID) of the SQL thread, then restart it:
+    /// for a replica stopped on an error.
+    Skip { count: u32 },
+}
+
+/// Statements for `action` on channel `name` ("" = the default connection), run in order on one
+/// connection: `default_master_connection` is a session variable.
+pub fn statements(name: &str, action: &Action) -> AppResult<Vec<String>> {
+    let ch = if name.is_empty() { String::new() } else { format!(" {}", literal(name)) };
+    Ok(match action {
+        Action::Start => vec![format!("START SLAVE{ch}")],
+        Action::Stop => vec![format!("STOP SLAVE{ch}")],
+        Action::Skip { count } => {
+            if !(1..=1000).contains(count) {
+                return Err(AppError::new("INVALID_NUMBER", count.to_string()));
+            }
+            vec![
+                format!("STOP SLAVE{ch} SQL_THREAD"),
+                format!("SET @@default_master_connection = {}", literal(name)),
+                format!("SET GLOBAL sql_slave_skip_counter = {count}"),
+                format!("START SLAVE{ch} SQL_THREAD"),
+            ]
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -131,6 +164,18 @@ mod tests {
         let c = channel(&m);
         assert_eq!((c.name.as_str(), c.master_port, c.read_pos, c.seconds_behind), ("src1", 3306, 644, None));
         assert_eq!((c.io_running.as_str(), c.sql_running.as_str(), c.last_sql_error.as_str()), ("Yes", "No", "boom"));
+    }
+
+    #[test]
+    fn channel_actions() {
+        assert_eq!(statements("", &Action::Start).unwrap(), ["START SLAVE"]);
+        assert_eq!(statements("src'1", &Action::Stop).unwrap(), ["STOP SLAVE 'src''1'"]);
+        assert_eq!(
+            statements("src1", &Action::Skip { count: 2 }).unwrap(),
+            ["STOP SLAVE 'src1' SQL_THREAD", "SET @@default_master_connection = 'src1'", "SET GLOBAL sql_slave_skip_counter = 2", "START SLAVE 'src1' SQL_THREAD"]
+        );
+        assert_eq!(statements("", &Action::Skip { count: 1 }).unwrap()[1], "SET @@default_master_connection = ''");
+        assert_eq!(statements("x", &Action::Skip { count: 0 }).unwrap_err().code, "INVALID_NUMBER");
     }
 
     fn pool(var: &str) -> Pool {
@@ -156,5 +201,64 @@ mod tests {
         assert_eq!(g.status["cluster_status"], "Primary");
         assert_eq!(g.status["cluster_size"], g.nodes.len().to_string());
         assert!(g.nodes.iter().any(|n| n.name == g.node_name));
+    }
+
+    /// Start, stop and skip on a channel the test sets up itself: a replica (OTARIA_TEST_REPLICA_ACTIONS_DB)
+    /// of the binlog server (OTARIA_TEST_BINLOG_DB, seen from the replica as OTARIA_TEST_MASTER_HOST).
+    #[tokio::test]
+    #[ignore]
+    async fn replication_actions_on_test_servers() {
+        let master = pool("OTARIA_TEST_BINLOG_DB");
+        let replica = pool("OTARIA_TEST_REPLICA_ACTIONS_DB");
+        let host = std::env::var("OTARIA_TEST_MASTER_HOST").unwrap_or_else(|_| "otaria-test-binlog".into());
+        let pw = std::env::var("OTARIA_TEST_BINLOG_DB").unwrap().splitn(4, ':').nth(3).unwrap().to_string();
+        let mut m = master.get_conn().await.unwrap();
+        let mut r = replica.get_conn().await.unwrap();
+        m.query_drop("DROP DATABASE IF EXISTS ot_rep; CREATE DATABASE ot_rep; CREATE TABLE ot_rep.t (id INT PRIMARY KEY)").await.unwrap();
+        let gtid: String = m.query_first("SELECT @@gtid_binlog_pos").await.unwrap().unwrap();
+        r.query_drop(format!(
+            "STOP ALL SLAVES; DROP DATABASE IF EXISTS ot_rep; CREATE DATABASE ot_rep; CREATE TABLE ot_rep.t (id INT PRIMARY KEY);
+             SET GLOBAL gtid_slave_pos = '{gtid}';
+             CHANGE MASTER 'ot' TO MASTER_HOST = '{host}', MASTER_USER = 'root', MASTER_PASSWORD = '{pw}', MASTER_USE_GTID = slave_pos"
+        ))
+        .await
+        .unwrap();
+        let wait = |cond: fn(&Channel) -> bool| {
+            let replica = replica.clone();
+            async move {
+                for _ in 0..50 {
+                    let st = state(&replica).await.unwrap();
+                    if let Some(c) = st.channels.into_iter().find(|c| c.name == "ot").filter(cond) {
+                        return c;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                }
+                panic!("channel never reached the expected state");
+            }
+        };
+        crate::designer::run(&replica, &statements("ot", &Action::Start).unwrap()).await.unwrap();
+        wait(|c| c.io_running == "Yes" && c.sql_running == "Yes").await;
+
+        // A row the replica already has: the SQL thread stops on 1062, skipping one transaction resumes it.
+        r.query_drop("INSERT INTO ot_rep.t VALUES (1)").await.unwrap();
+        m.query_drop("INSERT INTO ot_rep.t VALUES (1); INSERT INTO ot_rep.t VALUES (2)").await.unwrap();
+        let broken = wait(|c| c.sql_running == "No").await;
+        assert!(broken.last_sql_error.contains("Duplicate"), "{broken:?}");
+        crate::designer::run(&replica, &statements("ot", &Action::Skip { count: 1 }).unwrap()).await.unwrap();
+        wait(|c| c.sql_running == "Yes").await;
+        for _ in 0..50 {
+            let n: Option<u64> = r.query_first("SELECT COUNT(*) FROM ot_rep.t").await.unwrap();
+            if n == Some(2) {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        let n: Option<u64> = r.query_first("SELECT COUNT(*) FROM ot_rep.t").await.unwrap();
+        assert_eq!(n, Some(2), "the transaction after the skipped one was applied");
+
+        crate::designer::run(&replica, &statements("ot", &Action::Stop).unwrap()).await.unwrap();
+        wait(|c| c.io_running == "No" && c.sql_running == "No").await;
+        r.query_drop("RESET SLAVE 'ot' ALL; DROP DATABASE ot_rep").await.unwrap();
+        m.query_drop("DROP DATABASE ot_rep").await.unwrap();
     }
 }
