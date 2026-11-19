@@ -15,11 +15,16 @@ import "monaco-editor/editor/contrib/wordOperations/browser/wordOperations";
 import "monaco-editor/features/codicon/register";
 import "monaco-editor/languages/definitions/mysql/register";
 import { language as mysql } from "monaco-editor/languages/definitions/mysql/mysql";
+import { namedTables } from "@/lib/search";
 import EditorWorker from "monaco-editor/editor/editor.worker?worker";
 
 self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
 
-// ponytail: Monaco's MySQL grammar, close enough for MariaDB; add MariaDB-only keywords if highlighting misses some.
+// Monaco's MySQL grammar plus MariaDB's own words; mutated before the first editor compiles it.
+mysql.keywords.push(
+  ..."RETURNING SYSTEM_TIME VERSIONING HISTORY PERIOD OVERLAPS SEQUENCE NEXTVAL LASTVAL SETVAL INCREMENT MINVALUE NOMINVALUE NOMAXVALUE NOCACHE NOCYCLE CYCLE RESTART VECTOR INVISIBLE IGNORED PACKAGE ROWNUM".split(" "),
+);
+mysql.builtinFunctions.push(..."VEC_DISTANCE VEC_DISTANCE_COSINE VEC_DISTANCE_EUCLIDEAN VEC_FROMTEXT VEC_TOTEXT JSON_TABLE JSON_DETAILED JSON_NORMALIZE JSON_EQUALS SFORMAT NATURAL_SORT_KEY".split(" "));
 const KEYWORDS = mysql.keywords;
 
 /** Theme colours come from tokens.css, re-read when the app switches light/dark. */
@@ -79,21 +84,27 @@ monaco.languages.registerCompletionItemProvider("mysql", {
     const schemas = await src.schemas();
     const current = src.schema();
 
-    // After "x.": tables of schema x, or columns of table x.
+    const named = namedTables(model.getValue());
+
+    // After "x.": columns of the table aliased x, tables of schema x, or columns of table x.
     const dot = before.match(new RegExp(`(?:(${ID})\\.)?(${ID})\\.$`));
     if (dot) {
       const [, a, b] = dot.map((s) => (s ? unquote(s) : s));
+      const aliased = !a && named.find((n) => n.alias === b.toLowerCase());
+      if (aliased) {
+        const schema = aliased.schema ?? current;
+        return { suggestions: schema ? (await src.columns(schema, aliased.table)).map((c) => item(c, K.Field, aliased.table)) : [] };
+      }
       if (!a && schemas.includes(b)) return { suggestions: (await src.tables(b)).map((t) => item(t, K.Struct, b)) };
       const schema = a ?? current;
       return { suggestions: schema ? (await src.columns(schema, b)).map((c) => item(c, K.Field, b)) : [] };
     }
 
     // Columns of the tables named in the script, then tables, schemas and keywords.
-    const named = [...model.getValue().matchAll(new RegExp(`\\b(?:from|join|update|into)\\s+(?:(${ID})\\.)?(${ID})`, "gi"))];
     const cols = await Promise.all(
-      named.map(async ([, s, tb]) => {
-        const schema = s ? unquote(s) : current;
-        return schema ? (await src.columns(schema, unquote(tb)).catch(() => [])).map((c) => item(c, K.Field, unquote(tb))) : [];
+      named.map(async ({ schema: s, table }) => {
+        const schema = s ?? current;
+        return schema ? (await src.columns(schema, table).catch(() => [])).map((c) => item(c, K.Field, table)) : [];
       }),
     );
     const tables = current ? (await src.tables(current)).map((t) => item(t, K.Struct, current)) : [];

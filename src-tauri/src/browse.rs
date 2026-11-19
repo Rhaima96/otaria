@@ -74,6 +74,57 @@ pub async fn all_objects(pool: &Pool) -> AppResult<Vec<SchemaObject>> {
     Ok(rows.into_iter().map(|(schema, name, kind, versioned)| SchemaObject { schema, object: DbObject { name, kind, versioned } }).collect())
 }
 
+/// An object found by what it contains: a column name, or a word in a routine's body.
+#[derive(Debug, Serialize)]
+pub struct InsideMatch {
+    #[serde(flatten)]
+    pub object: SchemaObject,
+    /// The matching column; empty for a routine body.
+    pub column: String,
+}
+
+/// `term` as a LIKE pattern with `!` as escape character (independent of NO_BACKSLASH_ESCAPES).
+pub fn like_pattern(term: &str) -> String {
+    let mut out = String::from("%");
+    for c in term.chars() {
+        if matches!(c, '%' | '_' | '!') {
+            out.push('!');
+        }
+        out.push(c);
+    }
+    out.push('%');
+    out
+}
+
+/// Cmd+P, second part: tables and views having a column whose name contains `term`, and with
+/// `bodies`, routines whose body contains it. At most 100 rows; read on demand, no cache.
+pub async fn search_inside(pool: &Pool, term: &str, bodies: bool) -> AppResult<Vec<InsideMatch>> {
+    let system = "('information_schema', 'performance_schema', 'sys', 'mysql')";
+    let mut sql = format!(
+        "SELECT c.TABLE_SCHEMA, c.TABLE_NAME, CASE t.TABLE_TYPE WHEN 'VIEW' THEN 'view' ELSE 'table' END,
+                t.TABLE_TYPE = 'SYSTEM VERSIONED', c.COLUMN_NAME
+           FROM information_schema.COLUMNS c
+           JOIN information_schema.TABLES t ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME
+          WHERE c.TABLE_SCHEMA NOT IN {system} AND c.COLUMN_NAME LIKE ? ESCAPE '!'"
+    );
+    let pattern = like_pattern(term);
+    let mut params = vec![pattern.clone()];
+    if bodies {
+        sql += &format!(
+            " UNION ALL SELECT ROUTINE_SCHEMA, ROUTINE_NAME, LOWER(ROUTINE_TYPE), 0, ''
+                FROM information_schema.ROUTINES
+               WHERE ROUTINE_SCHEMA NOT IN {system} AND ROUTINE_TYPE IN ('PROCEDURE', 'FUNCTION') AND ROUTINE_DEFINITION LIKE ? ESCAPE '!'"
+        );
+        params.push(pattern);
+    }
+    sql += " ORDER BY 1, 2, 5 LIMIT 100";
+    let rows: Vec<(String, String, String, bool, String)> = pool.get_conn().await?.exec(sql, params).await?;
+    Ok(rows
+        .into_iter()
+        .map(|(schema, name, kind, versioned, column)| InsideMatch { object: SchemaObject { schema, object: DbObject { name, kind, versioned } }, column })
+        .collect())
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Column {
@@ -417,6 +468,35 @@ mod tests {
         assert_eq!(one.matches("= ?").count(), 4);
         let all = objects_sql(true);
         assert!(!all.contains('?') && all.matches("NOT IN ('information_schema', 'performance_schema', 'sys')").count() == 4);
+    }
+
+    #[test]
+    fn like_pattern_escapes_wildcards() {
+        assert_eq!(like_pattern("a_b%c!d"), "%a!_b!%c!!d%");
+    }
+
+    /// Cmd+P inside search: a column name with `_` matched literally, routine bodies only on demand.
+    #[tokio::test]
+    #[ignore]
+    async fn search_inside_on_test_server() {
+        let spec = std::env::var("OTARIA_TEST_DB").expect("set OTARIA_TEST_DB");
+        let p: Vec<&str> = spec.splitn(4, ':').collect();
+        let pool = Pool::new(
+            mysql_async::OptsBuilder::default().ip_or_hostname(p[0]).tcp_port(p[1].parse().unwrap()).user(Some(p[2])).pass(Some(p[3])).prefer_socket(false),
+        );
+        let mut conn = pool.get_conn().await.unwrap();
+        conn.query_drop(
+            "DROP DATABASE IF EXISTS otaria_find; CREATE DATABASE otaria_find; USE otaria_find;
+             CREATE TABLE t (id INT, zq_x INT, zqyx INT); CREATE PROCEDURE p() SELECT zq_x FROM t;",
+        )
+        .await
+        .unwrap();
+        let found = search_inside(&pool, "zq_x", false).await.unwrap();
+        let got: Vec<(&str, &str, &str)> = found.iter().map(|m| (m.object.object.name.as_str(), m.object.object.kind.as_str(), m.column.as_str())).collect();
+        assert_eq!(got, [("t", "table", "zq_x")]);
+        let with_bodies = search_inside(&pool, "zq_x", true).await.unwrap();
+        assert!(with_bodies.iter().any(|m| m.object.object.name == "p" && m.object.object.kind == "procedure" && m.column.is_empty()), "{with_bodies:?}");
+        conn.query_drop("DROP DATABASE otaria_find").await.unwrap();
     }
 
     #[test]

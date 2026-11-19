@@ -150,7 +150,11 @@
     "placeholder": "Trouver une table, une vue, une routine… (base.nom accepté)",
     "button": "Trouver un objet (⌘P / Ctrl+P)",
     "none": "Aucun objet ne correspond.",
-    "hint": "{n} objets dans toutes les bases. Tapez une partie du nom ; ↑ ↓ pour se déplacer, Entrée pour ouvrir."
+    "hint": "{n} objets dans toutes les bases. Tapez une partie du nom ; ↑ ↓ pour se déplacer, Entrée pour ouvrir.",
+    "inside": "Colonnes et corps des routines",
+    "column": "colonne",
+    "body": "corps de routine",
+    "searchBodies": "Chercher aussi dans le corps des routines (plus lent)"
   },
   "kinds": {
     "table": "Table",
@@ -485,7 +489,10 @@
     "killConnectionHint": "Ferme la connexion ; sa transaction ouverte est annulée.",
     "planTitle": "Plan d'exécution de la connexion {id}",
     "none": "Aucun processus ne correspond.",
-    "planLoading": "En attente du serveur… il répond quand la requête atteint un point de contrôle, ce qui peut prendre quelques secondes."
+    "planLoading": "En attente du serveur… il répond quand la requête atteint un point de contrôle, ce qui peut prendre quelques secondes.",
+    "own": "Otaria",
+    "ownHint": "Une des connexions d'Otaria (cette liste ou un onglet d'éditeur)",
+    "ownWarning": "C'est une des connexions d'Otaria : l'arrêter interrompt ce que fait l'application, et un onglet d'éditeur perd ses variables de session."
   },
   "variables": {
     "tab": "Variables",
@@ -792,5 +799,17 @@
     "dropConfirm": "Supprimer la base {name} avec toutes ses tables, vues, routines et données ? C'est irréversible.",
     "alterHint": "Seuls les réglages par défaut des nouvelles tables changent ; les tables et colonnes existantes gardent leur jeu de caractères.",
     "apply": "Appliquer"
+  },
+  "shortcuts": {
+    "title": "Raccourcis clavier",
+    "palette": "Trouver un objet, une colonne",
+    "newQuery": "Nouvelle requête",
+    "closeTab": "Fermer l'onglet",
+    "goTab": "Aller à l'onglet 1 à 9 (9 = dernier)",
+    "nextTab": "Onglet suivant / précédent",
+    "refresh": "Actualiser la grille, ou l'arbre",
+    "run": "Exécuter le script",
+    "runCurrent": "Exécuter l'instruction sous le curseur",
+    "help": "Afficher cette liste"
   }
 }

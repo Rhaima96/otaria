@@ -54,11 +54,25 @@ function open(schema: string, obj: DbObject) {
 const tree = ref<InstanceType<typeof ObjectTree> | null>(null);
 
 // Session shortcuts, in the session shown only (sessions stay mounted). Mod = Cmd on macOS, Ctrl elsewhere.
-// Mod+P object search, Mod+T new query, Mod+W close tab, Mod+1…9 go to tab (9 = last), Ctrl+(Shift+)Tab next / previous.
+// Mod+P object search, Mod+T new query, Mod+W close tab, Mod+1…9 go to tab (9 = last), Ctrl+(Shift+)Tab next / previous,
+// F5 reload the grid (or the tree), ? or Mod+/ this list.
+const mac = navigator.userAgent.includes("Mac");
+const shortcuts = ref<HTMLDialogElement | null>(null);
+const modKey = mac ? "⌘" : "Ctrl+";
+const shortcutList = [
+  [`${modKey}P`, "palette"],
+  [`${modKey}T`, "newQuery"],
+  [`${modKey}W`, "closeTab"],
+  [`${modKey}1…9`, "goTab"],
+  ["Ctrl+Tab · Ctrl+Shift+Tab", "nextTab"],
+  ["F5", "refresh"],
+  [`${modKey}Enter · F9`, "run"],
+  [`${modKey}Shift+Enter`, "runCurrent"],
+  [`? · ${modKey}/`, "help"],
+];
 const palette = ref<InstanceType<typeof ObjectPalette> | null>(null);
 const { activeTab } = useSessions();
 const { confirm } = useConfirm();
-const mac = navigator.userAgent.includes("Mac");
 function onKey(e: KeyboardEvent) {
   if (activeTab.value !== props.session.sessionId || e.altKey) return;
   const mod = mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
@@ -67,7 +81,12 @@ function onKey(e: KeyboardEvent) {
   const go = (i: number) => (active.value = ids[(i + ids.length) % ids.length]);
   // e.code, not e.key: digits need Shift on AZERTY.
   const digit = /^Digit[1-9]$/.test(e.code) ? Number(e.code[5]) : 0;
+  const inMonaco = (e.target as Element | null)?.closest?.(".monaco-editor");
+  const typing = inMonaco || (e.target as Element | null)?.matches?.("input, textarea, select, [contenteditable]");
   if (mod && !e.shiftKey && e.key.toLowerCase() === "p") palette.value?.open();
+  else if (e.key === "F5" && !mod && !e.shiftKey) (active.value && panels.get(active.value)?.refresh?.()) || tree.value?.load();
+  // Mod+/ stays Monaco's comment toggle inside the editor.
+  else if ((e.key === "?" && !typing && !e.metaKey && !e.ctrlKey) || (mod && e.key === "/" && !inMonaco)) shortcuts.value?.showModal();
   else if (mod && !e.shiftKey && e.key.toLowerCase() === "t") newQuery();
   else if (mod && !e.shiftKey && e.key.toLowerCase() === "w") active.value !== null && closeTab(active.value);
   else if (mod && digit && (digit === 9 || digit <= ids.length)) go(digit === 9 ? -1 : digit - 1);
@@ -130,9 +149,9 @@ function newQuery(schema = tabs.value.find((x) => x.id === active.value)?.schema
 }
 
 // Tab panels that can hold unsaved work (grid rows, designer changes), by tab id.
-const panels = new Map<string, { dirty: boolean }>();
+const panels = new Map<string, { dirty: boolean; refresh?: () => boolean }>();
 function setPanel(id: string, el: unknown) {
-  if (el) panels.set(id, el as { dirty: boolean });
+  if (el) panels.set(id, el as { dirty: boolean; refresh?: () => boolean });
   else panels.delete(id);
 }
 /** Close from the UI (cross, middle click, Mod+W): asks first if the tab has unsaved changes. */
@@ -253,5 +272,17 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
     <CompareDialog ref="compare" :session-id="session.sessionId" @script="(schema, sql) => newQuery(schema, sql)" />
     <ObjectPalette ref="palette" :session-id="session.sessionId" @open="(schema, obj) => (open(schema, obj), tree?.reveal(schema, obj))" />
     <TransferDialog ref="transfer" :session-id="session.sessionId" @imported="tree?.load()" />
+    <dialog ref="shortcuts" class="m-auto w-[min(28rem,90vw)] rounded-lg border bg-popover p-0 text-popover-foreground backdrop:bg-black/40" @click.self="shortcuts?.close()">
+      <div class="border-b px-4 py-2 font-semibold">{{ t("shortcuts.title") }}</div>
+      <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 p-4">
+        <template v-for="[keys, what] in shortcutList" :key="what">
+          <dt><kbd class="rounded-sm border bg-secondary px-1.5 font-mono text-xs">{{ keys }}</kbd></dt>
+          <dd>{{ t(`shortcuts.${what}`) }}</dd>
+        </template>
+      </dl>
+      <div class="flex justify-end px-4 pb-3">
+        <button class="h-7 rounded-sm border px-3 font-medium hover:bg-secondary" @click="shortcuts?.close()">{{ t("object.close") }}</button>
+      </div>
+    </dialog>
   </div>
 </template>

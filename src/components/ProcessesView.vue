@@ -37,12 +37,12 @@ const secs = computed(() => new Intl.NumberFormat(locale.value, { maximumFractio
 
 // KILL: confirm with the exact statement, then run it.
 const killDialog = ref<HTMLDialogElement | null>(null);
-const target = ref<{ id: number; connection: boolean } | null>(null);
+const target = ref<{ id: number; connection: boolean; own: boolean } | null>(null);
 const actionError = ref<AppError | null>(null);
 const busy = ref(false);
 
-function askKill(id: number, connection: boolean) {
-  target.value = { id, connection };
+function askKill(id: number, connection: boolean, own: boolean) {
+  target.value = { id, connection, own };
   actionError.value = null;
   killDialog.value?.showModal();
 }
@@ -124,7 +124,10 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-1.5 text-muted-foreground
         </thead>
         <tbody>
           <tr v-for="p in shown" :key="p.id" class="hover:bg-secondary">
-            <td :class="cn(cell, 'font-mono text-xs')">{{ p.id }}</td>
+            <td :class="cn(cell, 'font-mono text-xs whitespace-nowrap')">
+              {{ p.id }}
+              <span v-if="p.own" class="ml-1 rounded-sm bg-selection px-1 font-sans text-primary" :title="t('processes.ownHint')">{{ t("processes.own") }}</span>
+            </td>
             <td :class="cell">{{ p.user }}</td>
             <td :class="cn(cell, 'font-mono text-xs')">{{ p.host }}</td>
             <td :class="cell">{{ p.db }}</td>
@@ -140,10 +143,10 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-1.5 text-muted-foreground
                 <button v-if="p.info && p.command === 'Query'" :class="btn" :title="t('processes.explain')" @click="explain(p)">
                   <FileSearch class="size-3.5" /><span class="sr-only">{{ t("processes.explain") }}</span>
                 </button>
-                <button v-if="p.info" :class="btn" :title="t('processes.killQuery')" @click="askKill(p.id, false)">
+                <button v-if="p.info" :class="btn" :title="t('processes.killQuery')" @click="askKill(p.id, false, p.own)">
                   <OctagonX class="size-3.5" /><span class="sr-only">{{ t("processes.killQuery") }}</span>
                 </button>
-                <button :class="btn" :title="t('processes.killConnection')" @click="askKill(p.id, true)">
+                <button :class="btn" :title="t('processes.killConnection')" @click="askKill(p.id, true, p.own)">
                   <Unplug class="size-3.5" /><span class="sr-only">{{ t("processes.killConnection") }}</span>
                 </button>
               </div>
@@ -158,6 +161,7 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-1.5 text-muted-foreground
       <div class="border-b px-4 py-2 font-semibold">{{ t("grid.previewTitle") }}</div>
       <pre v-if="target" class="p-4 font-mono text-xs select-text">{{ `KILL ${target.connection ? "CONNECTION" : "QUERY"} ${target.id}` }}</pre>
       <p class="px-4 text-muted-foreground">{{ target?.connection ? t("processes.killConnectionHint") : t("processes.killQueryHint") }}</p>
+      <p v-if="target?.own" class="px-4 pt-2 font-medium text-warning">{{ t("processes.ownWarning") }}</p>
       <ErrorLine v-if="actionError" :error="actionError" class="mx-4 mt-2" />
       <div class="flex justify-end gap-2 px-4 py-3">
         <button class="h-7 rounded-sm border px-3 font-medium hover:bg-secondary" @click="killDialog?.close()">{{ t("grid.cancel") }}</button>

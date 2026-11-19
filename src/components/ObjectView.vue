@@ -46,7 +46,8 @@ const error = ref<AppError | null>(null);
 const grid = ref<InstanceType<typeof DataGrid> | null>(null);
 const designer = ref<InstanceType<typeof TableDesigner> | null>(null);
 const dirty = computed(() => !!(grid.value?.dirty || designer.value?.dirty));
-defineExpose({ dirty });
+/** F5: reload the grid when it is shown; false = nothing here, SessionView reloads the tree. */
+defineExpose({ dirty, refresh: () => view.value === "data" && !!grid.value?.reload() });
 /** Views are v-if: leaving the grid or the designer drops their unsaved changes, so ask first. */
 async function switchView(v: View) {
   if (v === view.value || (dirty.value && !(await confirm(t("object.leaveDirty"), t("object.leave"))))) return;

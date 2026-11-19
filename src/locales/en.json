@@ -150,7 +150,11 @@
     "placeholder": "Find a table, view, routine… (schema.name works too)",
     "button": "Find an object (⌘P / Ctrl+P)",
     "none": "No object matches.",
-    "hint": "{n} objects in all databases. Type part of a name; ↑ ↓ to move, Enter to open."
+    "hint": "{n} objects in all databases. Type part of a name; ↑ ↓ to move, Enter to open.",
+    "inside": "Columns and routine bodies",
+    "column": "column",
+    "body": "routine body",
+    "searchBodies": "Also search routine bodies (slower)"
   },
   "kinds": {
     "table": "Table",
@@ -485,7 +489,10 @@
     "killConnectionHint": "Closes the connection; its open transaction is rolled back.",
     "planTitle": "Execution plan of connection {id}",
     "none": "No process matches.",
-    "planLoading": "Waiting for the server… it answers when the query reaches a checkpoint, which can take a few seconds."
+    "planLoading": "Waiting for the server… it answers when the query reaches a checkpoint, which can take a few seconds.",
+    "own": "Otaria",
+    "ownHint": "One of Otaria's own connections (this list or an editor tab)",
+    "ownWarning": "This is one of Otaria's own connections: stopping it interrupts what this app is doing, and an editor tab loses its session variables."
   },
   "variables": {
     "tab": "Variables",
@@ -792,5 +799,17 @@
     "dropConfirm": "Drop the database {name} with all its tables, views, routines and data? This cannot be undone.",
     "alterHint": "Only the defaults for new tables change; existing tables and columns keep their character set.",
     "apply": "Apply"
+  },
+  "shortcuts": {
+    "title": "Keyboard shortcuts",
+    "palette": "Find an object, a column",
+    "newQuery": "New query",
+    "closeTab": "Close the tab",
+    "goTab": "Go to tab 1 to 9 (9 = last)",
+    "nextTab": "Next / previous tab",
+    "refresh": "Reload the grid, or the tree",
+    "run": "Run the script",
+    "runCurrent": "Run the statement under the cursor",
+    "help": "Show this list"
   }
 }

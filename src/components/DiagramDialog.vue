@@ -4,11 +4,13 @@ import { useI18n } from "vue-i18n";
 import { save } from "@tauri-apps/plugin-dialog";
 import { Check, Copy, Image, Maximize, Minus, Plus, Save } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
+import { useTheme } from "@/composables/useTheme";
 import { api, toAppError, type AppError } from "@/lib/api";
 
 /** Mermaid `erDiagram` text for a schema: pick tables, then copy or save as .mmd. */
 const props = defineProps<{ sessionId: string }>();
 const { t } = useI18n();
+const { dark } = useTheme();
 
 const dialog = ref<HTMLDialogElement | null>(null);
 const schema = ref("");
@@ -66,7 +68,8 @@ watch([picked, neighbors], async () => {
 // Mermaid is loaded on first render only (its own chunk, bundled: works offline).
 let mermaid: Promise<typeof import("mermaid").default> | null = null;
 let drawSeq = 0;
-watch(text, async (src) => {
+// Redrawn when the theme changes too: the colours are baked into the SVG.
+watch([text, dark], async ([src]) => {
   const n = ++drawSeq;
   if (!src) return (svg.value = "");
   try {

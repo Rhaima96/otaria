@@ -87,6 +87,11 @@ export interface SchemaObject extends DbObject {
   schema: string;
 }
 
+/** Cmd+P: an object found by a column name, or (column empty) by its routine body. */
+export interface InsideMatch extends SchemaObject {
+  column: string;
+}
+
 export interface Column {
   name: string;
   dataType: string;
@@ -380,6 +385,8 @@ export interface Process {
   info: string | null;
   /** 0–100, MariaDB only. */
   progress: number;
+  /** One of this app's own connections (the listing one, an editor tab's). */
+  own: boolean;
 }
 
 export interface Variable {
@@ -513,6 +520,7 @@ export const api = {
   disconnect: (sessionId: string) => invoke<void>("disconnect", { sessionId }),
   listSchemas: (sessionId: string) => invoke<string[]>("list_schemas", { sessionId }),
   allObjects: (sessionId: string) => invoke<SchemaObject[]>("all_objects", { sessionId }),
+  searchInside: (sessionId: string, term: string, bodies: boolean) => invoke<InsideMatch[]>("search_inside", { sessionId, term, bodies }),
   listObjects: (sessionId: string, schema: string) => invoke<DbObject[]>("list_objects", { sessionId, schema }),
   tableInfo: (sessionId: string, schema: string, table: string) => invoke<TableInfo>("table_info", { sessionId, schema, table }),
   objectDdl: (sessionId: string, schema: string, name: string, kind: ObjectKind) =>

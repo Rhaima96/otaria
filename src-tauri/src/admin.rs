@@ -22,19 +22,24 @@ pub struct Process {
     pub info: Option<String>,
     /// 0–100, MariaDB only (ALTER TABLE, LOAD DATA…); 0 elsewhere.
     pub progress: f64,
+    /// One of this app's own connections: the one listing or an editor tab's.
+    pub own: bool,
 }
 
-pub async fn processes(pool: &Pool, mariadb: bool) -> AppResult<Vec<Process>> {
+/// `own`: connection ids the app holds (editor tabs); the listing connection is added here.
+pub async fn processes(pool: &Pool, mariadb: bool, own: &[u32]) -> AppResult<Vec<Process>> {
     // TIME_MS and PROGRESS are MariaDB columns. `+ 0e0` turns DECIMAL into DOUBLE.
     let sql = if mariadb {
-        "SELECT ID, USER, HOST, DB, COMMAND, TIME_MS + 0e0, STATE, INFO, PROGRESS + 0e0 FROM information_schema.PROCESSLIST ORDER BY ID"
+        "SELECT ID, USER, HOST, DB, COMMAND, TIME_MS + 0e0, STATE, INFO, PROGRESS + 0e0, ID = CONNECTION_ID() FROM information_schema.PROCESSLIST ORDER BY ID"
     } else {
-        "SELECT ID, USER, HOST, DB, COMMAND, TIME * 1e3, STATE, INFO, 0e0 FROM information_schema.PROCESSLIST ORDER BY ID"
+        "SELECT ID, USER, HOST, DB, COMMAND, TIME * 1e3, STATE, INFO, 0e0, ID = CONNECTION_ID() FROM information_schema.PROCESSLIST ORDER BY ID"
     };
     Ok(pool
         .get_conn()
         .await?
-        .query_map(sql, |(id, user, host, db, command, time_ms, state, info, progress)| Process { id, user, host, db, command, time_ms, state, info, progress })
+        .query_map(sql, |(id, user, host, db, command, time_ms, state, info, progress, me): (u64, _, _, _, _, _, _, _, _, bool)| {
+            Process { id, user, host, db, command, time_ms, state, info, progress, own: me || own.iter().any(|&o| o as u64 == id) }
+        })
         .await?)
 }
 
@@ -229,8 +234,9 @@ mod tests {
         let busy_id = busy.id() as u64;
         let sleeper = tokio::spawn(async move { busy.query_drop("SELECT SLEEP(30) FROM information_schema.TABLES LIMIT 1").await });
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        let list = processes(&pool, true).await.unwrap();
+        let list = processes(&pool, true, &[busy_id as u32]).await.unwrap();
         let me = list.iter().find(|x| x.id == busy_id).expect("busy connection listed");
+        assert!(me.own && list.iter().filter(|x| x.own).count() == 2, "{list:?}");
         assert!(me.info.as_deref().unwrap_or("").contains("SLEEP(30)"), "{me:?}");
         let plan = explain(&pool, busy_id).await.unwrap().expect("plan");
         assert!(plan.contains("query_block"), "{plan}");

@@ -150,7 +150,11 @@
     "placeholder": "Tabelle, Sicht, Routine… finden (auch db.name)",
     "button": "Objekt finden (⌘P / Strg+P)",
     "none": "Kein Objekt passt.",
-    "hint": "{n} Objekte in allen Datenbanken. Teil des Namens eingeben; ↑ ↓ zum Wählen, Eingabe zum Öffnen."
+    "hint": "{n} Objekte in allen Datenbanken. Teil des Namens eingeben; ↑ ↓ zum Wählen, Eingabe zum Öffnen.",
+    "inside": "Spalten und Routinen-Rümpfe",
+    "column": "Spalte",
+    "body": "Routinen-Rumpf",
+    "searchBodies": "Auch in Routinen-Rümpfen suchen (langsamer)"
   },
   "kinds": {
     "table": "Tabelle",
@@ -485,7 +489,10 @@
     "killConnectionHint": "Schließt die Verbindung; ihre offene Transaktion wird zurückgesetzt.",
     "planTitle": "Ausführungsplan der Verbindung {id}",
     "none": "Kein Prozess passt.",
-    "planLoading": "Warte auf den Server … er antwortet, sobald die Abfrage einen Kontrollpunkt erreicht; das kann einige Sekunden dauern."
+    "planLoading": "Warte auf den Server … er antwortet, sobald die Abfrage einen Kontrollpunkt erreicht; das kann einige Sekunden dauern.",
+    "own": "Otaria",
+    "ownHint": "Eine von Otarias eigenen Verbindungen (diese Liste oder ein Editor-Tab)",
+    "ownWarning": "Dies ist eine von Otarias eigenen Verbindungen: Wird sie beendet, bricht ab, was die App gerade tut, und ein Editor-Tab verliert seine Sitzungsvariablen."
   },
   "variables": {
     "tab": "Variablen",
@@ -792,5 +799,17 @@
     "dropConfirm": "Datenbank {name} mit allen Tabellen, Views, Routinen und Daten löschen? Das kann nicht rückgängig gemacht werden.",
     "alterHint": "Nur die Vorgaben für neue Tabellen ändern sich; bestehende Tabellen und Spalten behalten ihren Zeichensatz.",
     "apply": "Anwenden"
+  },
+  "shortcuts": {
+    "title": "Tastenkürzel",
+    "palette": "Objekt oder Spalte suchen",
+    "newQuery": "Neue Abfrage",
+    "closeTab": "Tab schließen",
+    "goTab": "Zu Tab 1 bis 9 (9 = letzter)",
+    "nextTab": "Nächster / vorheriger Tab",
+    "refresh": "Raster neu laden, sonst den Baum",
+    "run": "Skript ausführen",
+    "runCurrent": "Anweisung unter dem Cursor ausführen",
+    "help": "Diese Liste anzeigen"
   }
 }

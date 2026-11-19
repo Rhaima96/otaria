@@ -190,6 +190,11 @@ async fn list_schemas(state: State<'_, AppState>, session_id: String) -> AppResu
 }
 
 #[tauri::command]
+async fn search_inside(state: State<'_, AppState>, session_id: String, term: String, bodies: bool) -> AppResult<Vec<browse::InsideMatch>> {
+    browse::search_inside(&pool(&state, &session_id).await?, &term, bodies).await
+}
+
+#[tauri::command]
 async fn all_objects(state: State<'_, AppState>, session_id: String) -> AppResult<Vec<browse::SchemaObject>> {
     browse::all_objects(&pool(&state, &session_id).await?).await
 }
@@ -425,7 +430,12 @@ async fn sequence_setval(state: State<'_, AppState>, session_id: String, schema:
 
 #[tauri::command]
 async fn list_processes(state: State<'_, AppState>, session_id: String) -> AppResult<Vec<admin::Process>> {
-    admin::processes(&pool(&state, &session_id).await?, is_mariadb(&state, &session_id).await?).await
+    // ponytail: editor tabs only; jobs (exports) aren't tied to a session here, idle pool connections are unknown.
+    let own: Vec<u32> = match state.sessions.lock().await.get(&session_id) {
+        Some(s) => s.editors.lock().unwrap().values().map(|e| e.conn_id).collect(),
+        None => vec![],
+    };
+    admin::processes(&pool(&state, &session_id).await?, is_mariadb(&state, &session_id).await?, &own).await
 }
 
 #[tauri::command]
@@ -783,6 +793,7 @@ pub fn run() {
             list_schemas,
             list_objects,
             all_objects,
+            search_inside,
             table_info,
             object_ddl,
             table_data,

@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { AgGridVue } from "ag-grid-vue3";
+import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from "reka-ui";
 import type { ColDef, GridApi, GridReadyEvent } from "ag-grid-community";
 import { Braces, Gauge, History, Play, Square, Star, TextCursorInput, Trash2, X } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
@@ -233,8 +234,12 @@ const tabBtn = "flex h-full shrink-0 items-center gap-1 border-r px-3 hover:bg-s
 
     <div class="flex min-h-0 flex-1">
       <div class="flex min-w-0 flex-1 flex-col">
-        <!-- ponytail: fixed 45/55 split; add a drag handle if people ask for it. -->
-        <div ref="host" class="h-[45%] min-h-24 border-b" />
+        <SplitterGroup direction="vertical" auto-save-id="otaria.editorSplit">
+          <SplitterPanel :default-size="45" :min-size="10">
+            <div ref="host" class="h-full" />
+          </SplitterPanel>
+          <SplitterResizeHandle class="h-1 shrink-0 border-b hover:bg-primary data-[state=drag]:bg-primary" />
+          <SplitterPanel :default-size="55" :min-size="10" class="flex flex-col">
         <ErrorLine v-if="error" :error="error" class="m-2" />
 
         <template v-if="output">
@@ -289,6 +294,8 @@ const tabBtn = "flex h-full shrink-0 items-center gap-1 border-r px-3 hover:bg-s
           </ul>
         </template>
         <p v-else class="p-3 text-muted-foreground">{{ t("editor.hint") }}</p>
+          </SplitterPanel>
+        </SplitterGroup>
       </div>
 
       <aside v-if="panel" class="flex w-72 shrink-0 flex-col border-l bg-sidebar">

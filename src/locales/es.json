@@ -150,7 +150,11 @@
     "placeholder": "Buscar una tabla, vista, rutina… (también base.nombre)",
     "button": "Buscar un objeto (⌘P / Ctrl+P)",
     "none": "Ningún objeto coincide.",
-    "hint": "{n} objetos en todas las bases. Escriba parte del nombre; ↑ ↓ para moverse, Intro para abrir."
+    "hint": "{n} objetos en todas las bases. Escriba parte del nombre; ↑ ↓ para moverse, Intro para abrir.",
+    "inside": "Columnas y cuerpos de rutinas",
+    "column": "columna",
+    "body": "cuerpo de rutina",
+    "searchBodies": "Buscar también en el cuerpo de las rutinas (más lento)"
   },
   "kinds": {
     "table": "Tabla",
@@ -485,7 +489,10 @@
     "killConnectionHint": "Cierra la conexión; su transacción abierta se revierte.",
     "planTitle": "Plan de ejecución de la conexión {id}",
     "none": "Ningún proceso coincide.",
-    "planLoading": "Esperando al servidor… responde cuando la consulta llega a un punto de control, lo que puede tardar unos segundos."
+    "planLoading": "Esperando al servidor… responde cuando la consulta llega a un punto de control, lo que puede tardar unos segundos.",
+    "own": "Otaria",
+    "ownHint": "Una de las conexiones de Otaria (esta lista o una pestaña del editor)",
+    "ownWarning": "Es una de las conexiones de Otaria: detenerla interrumpe lo que hace la aplicación, y una pestaña del editor pierde sus variables de sesión."
   },
   "variables": {
     "tab": "Variables",
@@ -792,5 +799,17 @@
     "dropConfirm": "¿Eliminar la base de datos {name} con todas sus tablas, vistas, rutinas y datos? No se puede deshacer.",
     "alterHint": "Solo cambian los valores por defecto de las tablas nuevas; las tablas y columnas existentes conservan su juego de caracteres.",
     "apply": "Aplicar"
+  },
+  "shortcuts": {
+    "title": "Atajos de teclado",
+    "palette": "Buscar un objeto, una columna",
+    "newQuery": "Nueva consulta",
+    "closeTab": "Cerrar la pestaña",
+    "goTab": "Ir a la pestaña 1 a 9 (9 = última)",
+    "nextTab": "Pestaña siguiente / anterior",
+    "refresh": "Recargar la cuadrícula, o el árbol",
+    "run": "Ejecutar el script",
+    "runCurrent": "Ejecutar la sentencia bajo el cursor",
+    "help": "Mostrar esta lista"
   }
 }

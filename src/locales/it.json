@@ -150,7 +150,11 @@
     "placeholder": "Trova una tabella, vista, routine… (anche db.nome)",
     "button": "Trova un oggetto (⌘P / Ctrl+P)",
     "none": "Nessun oggetto corrisponde.",
-    "hint": "{n} oggetti in tutti i database. Digita parte del nome; ↑ ↓ per spostarti, Invio per aprire."
+    "hint": "{n} oggetti in tutti i database. Digita parte del nome; ↑ ↓ per spostarti, Invio per aprire.",
+    "inside": "Colonne e corpi delle routine",
+    "column": "colonna",
+    "body": "corpo della routine",
+    "searchBodies": "Cerca anche nel corpo delle routine (più lento)"
   },
   "kinds": {
     "table": "Tabella",
@@ -485,7 +489,10 @@
     "killConnectionHint": "Chiude la connessione; la sua transazione aperta viene annullata.",
     "planTitle": "Piano di esecuzione della connessione {id}",
     "none": "Nessun processo corrisponde.",
-    "planLoading": "In attesa del server… risponde quando la query raggiunge un punto di controllo, il che può richiedere qualche secondo."
+    "planLoading": "In attesa del server… risponde quando la query raggiunge un punto di controllo, il che può richiedere qualche secondo.",
+    "own": "Otaria",
+    "ownHint": "Una delle connessioni di Otaria (questo elenco o una scheda dell'editor)",
+    "ownWarning": "È una delle connessioni di Otaria: fermarla interrompe ciò che l'app sta facendo, e una scheda dell'editor perde le sue variabili di sessione."
   },
   "variables": {
     "tab": "Variabili",
@@ -792,5 +799,17 @@
     "dropConfirm": "Eliminare il database {name} con tutte le sue tabelle, viste, routine e dati? L'operazione è irreversibile.",
     "alterHint": "Cambiano solo i valori predefiniti delle nuove tabelle; tabelle e colonne esistenti mantengono il loro set di caratteri.",
     "apply": "Applica"
+  },
+  "shortcuts": {
+    "title": "Scorciatoie da tastiera",
+    "palette": "Trova un oggetto, una colonna",
+    "newQuery": "Nuova query",
+    "closeTab": "Chiudi la scheda",
+    "goTab": "Vai alla scheda da 1 a 9 (9 = ultima)",
+    "nextTab": "Scheda successiva / precedente",
+    "refresh": "Ricarica la griglia, o l'albero",
+    "run": "Esegui lo script",
+    "runCurrent": "Esegui l'istruzione sotto il cursore",
+    "help": "Mostra questo elenco"
   }
 }

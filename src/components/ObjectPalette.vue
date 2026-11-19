@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ListboxContent, ListboxFilter, ListboxItem, ListboxRoot } from "reka-ui";
 import { Loader2, Search } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
-import { api, toAppError, type AppError, type DbObject, type SchemaObject } from "@/lib/api";
+import { api, toAppError, type AppError, type DbObject, type InsideMatch, type SchemaObject } from "@/lib/api";
 import { objectIcon } from "@/lib/objects";
 import { searchObjects } from "@/lib/search";
 
-/** Cmd+P / Ctrl+P: find any object of any database by name and open it. */
+/** Cmd+P / Ctrl+P: find any object of any database by name, or by column name / routine body, and open it. */
 const props = defineProps<{ sessionId: string }>();
 const emit = defineEmits<{ open: [schema: string, obj: DbObject] }>();
 const { t } = useI18n();
@@ -38,8 +38,31 @@ defineExpose({ open });
 const results = computed(() => searchObjects(objects.value, query.value));
 const key = (o: SchemaObject) => `${o.schema}.${o.kind}.${o.name}`;
 
+// Columns and routine bodies: asked to the server (LIKE), 250 ms after the last keystroke, 2 characters at least.
+const BODIES_KEY = "otaria.paletteBodies";
+const bodies = ref(localStorage.getItem(BODIES_KEY) === "1");
+const inside = ref<InsideMatch[]>([]);
+const insideKey = (m: InsideMatch) => `in:${key(m)}.${m.column}`;
+let timer = 0;
+let seq = 0;
+watch([query, bodies], ([q, b]) => {
+  localStorage.setItem(BODIES_KEY, b ? "1" : "0");
+  clearTimeout(timer);
+  const term = q.trim().split(/[\s.]+/).at(-1) ?? "";
+  const n = ++seq;
+  if (term.length < 2) return (inside.value = []);
+  timer = window.setTimeout(async () => {
+    try {
+      const found = await api.searchInside(props.sessionId, term, b);
+      if (n === seq) inside.value = found;
+    } catch (e) {
+      if (n === seq) error.value = toAppError(e);
+    }
+  }, 250);
+});
+
 function pick(k: unknown) {
-  const o = results.value.find((r) => key(r) === k);
+  const o = results.value.find((r) => key(r) === k) ?? inside.value.find((m) => insideKey(m) === k);
   if (!o) return;
   dialog.value?.close();
   emit("open", o.schema, { name: o.name, kind: o.kind, versioned: o.versioned });
@@ -72,8 +95,22 @@ function pick(k: unknown) {
           <span class="truncate font-mono">{{ o.name }}</span>
           <span class="ml-auto shrink-0 text-muted-foreground">{{ o.schema }} · {{ t(`kinds.${o.kind}`) }}</span>
         </ListboxItem>
+        <div v-if="inside.length" class="mt-1 border-t px-3 pt-1.5 pb-0.5 text-xs font-medium text-muted-foreground">{{ t("palette.inside") }}</div>
+        <ListboxItem
+          v-for="m in inside"
+          :key="insideKey(m)"
+          :value="insideKey(m)"
+          class="flex cursor-default items-center gap-2 px-3 py-1 data-highlighted:bg-selection"
+        >
+          <component :is="objectIcon(m)" class="size-3.5 shrink-0 text-muted-foreground" />
+          <span class="truncate font-mono">{{ m.name }}<span v-if="m.column" class="text-muted-foreground">.{{ m.column }}</span></span>
+          <span class="ml-auto shrink-0 text-muted-foreground">{{ m.schema }} · {{ m.column ? t("palette.column") : t("palette.body") }}</span>
+        </ListboxItem>
       </ListboxContent>
-      <p v-if="!loading && query.trim() && !results.length" class="px-3 pb-3 text-muted-foreground">{{ t("palette.none") }}</p>
+      <label class="flex items-center gap-1.5 border-t px-3 py-1.5 text-muted-foreground">
+        <input v-model="bodies" type="checkbox" class="size-3.5" />{{ t("palette.searchBodies") }}
+      </label>
+      <p v-if="!loading && query.trim() && !results.length && !inside.length" class="px-3 pb-3 text-muted-foreground">{{ t("palette.none") }}</p>
       <p v-else-if="!query.trim()" class="px-3 pb-3 text-muted-foreground">{{ t("palette.hint", { n: objects.length }) }}</p>
     </ListboxRoot>
   </dialog>
