@@ -4,6 +4,7 @@
 // ponytail: internal SQL dump only. mariadb-dump would need the password, the SSH tunnel port and the
 // TLS files on its command line; add it if the internal dump falls short.
 
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -39,6 +40,9 @@ pub struct ExportReq {
     pub data: bool,
     /// SQL: `DROP … IF EXISTS` before each CREATE.
     pub drop: bool,
+    /// CSV: NULL written `\N` (as `SELECT … INTO OUTFILE` does), so it differs from an empty string.
+    #[serde(default)]
+    pub null_as_n: bool,
 }
 
 /// Rows between two progress reports.
@@ -172,11 +176,11 @@ async fn export_rows(pool: &Pool, req: &ExportReq, table: &str, cancel: &AtomicB
 
     match req.format {
         Format::Csv => {
-            // ponytail: NULL and '' both become an empty field; write \N if a reader needs to tell them apart.
+            let null = if req.null_as_n { "\\N" } else { "" };
             let mut w = csv::Writer::from_path(&req.path).map_err(file_err)?;
             w.write_record(&cols).map_err(file_err)?;
             while let Some(row) = next(&mut res, &mut n).await? {
-                w.write_record(row.iter().map(|c| c.as_deref().unwrap_or(""))).map_err(file_err)?;
+                w.write_record(row.iter().map(|c| c.as_deref().unwrap_or(null))).map_err(file_err)?;
             }
             w.flush()?;
         }
@@ -268,8 +272,7 @@ SET FOREIGN_KEY_CHECKS = @OLD_FOREIGN_KEY_CHECKS;
 ";
 
 /// Objects in an order that recreates them: sequences before the tables whose defaults use them,
-/// views after tables, triggers after the rows (so they do not fire on the INSERTs).
-// ponytail: views on views are created alphabetically; one may fail if it sorts before the view it reads.
+/// views after tables (each after the views it reads), triggers after the rows (so they do not fire on the INSERTs).
 const KIND_ORDER: [&str; 7] = ["sequence", "table", "view", "procedure", "function", "trigger", "event"];
 
 /// Schema (or one table) as an SQL script with no schema name in it, so it can be loaded into any schema.
@@ -288,6 +291,19 @@ async fn export_sql(pool: &Pool, req: &ExportReq, table: Option<&str>, cancel: &
     let mut tx = conn.start_transaction(opts).await?;
     tx.query_drop(format!("SET time_zone = '+00:00'; USE {}", ident(schema))).await?;
 
+    // Views: read their text first to put each after the views it reads.
+    let mut views = Vec::new();
+    for (_, name) in objects.iter().filter(|(k, _)| k == "view") {
+        views.push((name.clone(), browse::ddl_on(&mut tx, schema, name, "view").await?));
+    }
+    if !views.is_empty() {
+        let at = objects.iter().position(|(k, _)| k == "view").unwrap_or(0);
+        objects.retain(|(k, _)| k != "view");
+        let ordered = browse::view_order(&views).into_iter().map(|i| ("view".to_string(), views[i].0.clone()));
+        objects.splice(at..at, ordered);
+    }
+    let mut view_ddl: HashMap<String, String> = views.into_iter().collect();
+
     let mut w = BufWriter::new(File::create(&req.path)?);
     w.write_all(HEADER.as_bytes())?;
     let mut rows: u64 = 0;
@@ -295,7 +311,10 @@ async fn export_sql(pool: &Pool, req: &ExportReq, table: Option<&str>, cancel: &
         if cancel.load(Ordering::Relaxed) {
             return Err(cancelled());
         }
-        let ddl = browse::ddl_on(&mut tx, schema, name, kind).await?;
+        let ddl = match view_ddl.remove(name) {
+            Some(d) => d,
+            None => browse::ddl_on(&mut tx, schema, name, kind).await?,
+        };
         let keyword = kind.to_ascii_uppercase();
         writeln!(w, "\n-- {kind} {}", ident(name))?;
         if req.drop {
@@ -543,7 +562,8 @@ pub async fn import_csv(pool: &Pool, req: &CsvImport, cancel: &AtomicBool, progr
             }
             for (i, _) in &picked {
                 let v = record.get(*i).unwrap_or("");
-                params.push(if v.is_empty() && req.empty_null { Value::NULL } else { Value::from(v) });
+                // `\N` is NULL, as in LOAD DATA and in our own CSV export.
+                params.push(if v == "\\N" || (v.is_empty() && req.empty_null) { Value::NULL } else { Value::from(v) });
             }
             in_batch += 1;
         }
@@ -586,7 +606,7 @@ pub struct CopyReq {
 // ponytail: goes through a temp file on disk; stream directly between the two connections if disk space matters.
 pub async fn copy(src: &Pool, dst: &Pool, req: &CopyReq, cancel: &AtomicBool, progress: impl Fn(u64, u64)) -> AppResult<u64> {
     let path = std::env::temp_dir().join(format!("otaria-copy-{}.sql", uuid::Uuid::new_v4())).to_string_lossy().into_owned();
-    let export_req = ExportReq { schema: req.schema.clone(), table: req.table.clone(), format: Format::Sql, path: path.clone(), data: req.data, drop: req.drop };
+    let export_req = ExportReq { schema: req.schema.clone(), table: req.table.clone(), format: Format::Sql, path: path.clone(), data: req.data, drop: req.drop, null_as_n: false };
     let r = async {
         let rows = export(src, &export_req, cancel, |n| progress(n, 0)).await?;
         let mut conn = dst.get_conn().await?;
@@ -688,6 +708,7 @@ mod tests {
                (2, NULL, NULL, NULL, NULL, 5);
              CREATE SEQUENCE otaria_ex.s START WITH 10 NOCACHE; SELECT NEXTVAL(otaria_ex.s);
              CREATE VIEW otaria_ex.v AS SELECT id FROM otaria_ex.t;
+             CREATE VIEW otaria_ex.a_top AS SELECT id FROM otaria_ex.v;
              USE otaria_ex;
              CREATE PROCEDURE p() BEGIN SELECT 1; SELECT 2; END;
              CREATE TRIGGER tr BEFORE INSERT ON t FOR EACH ROW SET NEW.txt = UPPER(NEW.txt);",
@@ -703,6 +724,7 @@ mod tests {
             path: path(ext),
             data: true,
             drop: false,
+            null_as_n: false,
         };
         let no = AtomicBool::new(false);
 
@@ -725,12 +747,19 @@ mod tests {
             .query_first("SELECT (SELECT COUNT(*) FROM information_schema.VIEWS WHERE TABLE_SCHEMA = 'otaria_im') + (SELECT COUNT(*) FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = 'otaria_im') + (SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = 'otaria_im')")
             .await
             .unwrap();
-        assert_eq!(objs, Some(3));
+        // v, a_top (reads v, sorts before it), p, tr.
+        assert_eq!(objs, Some(4));
 
         // Rows → CSV / JSON / Excel.
         assert_eq!(export(&pool, &req(Format::Csv, Some("t"), "csv"), &no, |_| {}).await.unwrap(), 2);
         let csv = std::fs::read_to_string(path("csv")).unwrap();
         assert!(csv.starts_with("id,txt,bin,d,ts,g,inv\n1,\"a'b\\c\n;\","), "{csv}");
+        assert!(csv.ends_with("\n2,,,,,4,5\n"), "{csv}");
+        // NULL as \N on request (the CSV import below reads \N back as NULL).
+        let with_n = ExportReq { null_as_n: true, ..req(Format::Csv, Some("t"), "n.csv") };
+        export(&pool, &with_n, &no, |_| {}).await.unwrap();
+        let csv = std::fs::read_to_string(path("n.csv")).unwrap();
+        assert!(csv.ends_with("\n2,\\N,\\N,\\N,\\N,4,5\n"), "{csv}");
         assert_eq!(export(&pool, &req(Format::Json, Some("t"), "json"), &no, |_| {}).await.unwrap(), 2);
         let text = std::fs::read_to_string(path("json")).unwrap();
         assert!(text.contains(r#""d": 12345678901234567890.25"#), "{text}");
@@ -747,11 +776,11 @@ mod tests {
         assert_eq!(export(&pool, &req(Format::Csv, Some("t"), "stop.csv"), &stop, |_| {}).await.unwrap_err().code, "QUERY_CANCELLED");
         assert!(!std::path::Path::new(&path("stop.csv")).exists());
 
-        // CSV → table: BOM, quoted delimiter and newline, empty = NULL, unmapped column skipped.
+        // CSV → table: BOM, quoted delimiter and newline, empty = NULL, \N = NULL, unmapped column skipped.
         conn.query_drop("CREATE TABLE otaria_im.c (id INT PRIMARY KEY, name VARCHAR(20), n INT)").await.unwrap();
-        std::fs::write(path("in.csv"), "\u{feff}id;skip;name;n\n1;x;\"a;\nb\";5\n2;x;;\n").unwrap();
+        std::fs::write(path("in.csv"), "\u{feff}id;skip;name;n\n1;x;\"a;\nb\";5\n2;x;;\n3;x;\\N;7\n").unwrap();
         let pre = csv_preview(&path("in.csv"), None, true).unwrap();
-        assert_eq!((pre.delimiter.as_str(), pre.columns[0].as_str(), pre.rows.len()), (";", "id", 2));
+        assert_eq!((pre.delimiter.as_str(), pre.columns[0].as_str(), pre.rows.len()), (";", "id", 3));
         let imp = |mapping: Vec<Option<&str>>| CsvImport {
             schema: "otaria_im".into(),
             table: "c".into(),
@@ -761,15 +790,15 @@ mod tests {
             mapping: mapping.into_iter().map(|m| m.map(Into::into)).collect(),
             empty_null: true,
         };
-        assert_eq!(import_csv(&pool, &imp(vec![Some("id"), None, Some("name"), Some("n")]), &no, |_, _| {}).await.unwrap(), 2);
+        assert_eq!(import_csv(&pool, &imp(vec![Some("id"), None, Some("name"), Some("n")]), &no, |_, _| {}).await.unwrap(), 3);
         let got: Vec<(i32, Option<String>, Option<i32>)> = conn.query("SELECT id, name, n FROM otaria_im.c ORDER BY id").await.unwrap();
-        assert_eq!(got, [(1, Some("a;\nb".into()), Some(5)), (2, None, None)]);
+        assert_eq!(got, [(1, Some("a;\nb".into()), Some(5)), (2, None, None), (3, None, Some(7))]);
         // Same file again: duplicate keys, nothing kept, lines of the failing batch reported.
         conn.query_drop("DELETE FROM otaria_im.c WHERE id = 2").await.unwrap();
         let err = import_csv(&pool, &imp(vec![Some("id"), None, Some("name"), Some("n")]), &no, |_, _| {}).await.unwrap_err();
-        assert_eq!((err.code, err.detail.as_deref()), ("IMPORT_ROWS", Some("2-4")));
+        assert_eq!((err.code, err.detail.as_deref()), ("IMPORT_ROWS", Some("2-5")));
         let left: Option<u64> = conn.query_first("SELECT COUNT(*) FROM otaria_im.c").await.unwrap();
-        assert_eq!(left, Some(1));
+        assert_eq!(left, Some(2));
         assert_eq!(import_csv(&pool, &imp(vec![Some("nope")]), &no, |_, _| {}).await.unwrap_err().code, "NOT_FOUND");
 
         // Copy one table into a schema that does not exist yet.

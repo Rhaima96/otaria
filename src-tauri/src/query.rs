@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::browse::{cell, ident};
+use crate::designer::{self, literal};
 use crate::error::{AppError, AppResult};
 
 /// One editor tab = one server connection, so `USE`, session variables and temporary tables persist
@@ -118,43 +119,70 @@ pub fn split_from(src: &str, delim: &str) -> (Vec<Stmt>, usize, String) {
     (out, start.min(b.len()), delim)
 }
 
-/// Destructive statements that need an explicit confirmation (PLAN §4).
-// ponytail: keyword check, a WHERE inside a subquery or string fools it; use a real parser if it matters.
+/// Destructive statements that need an explicit confirmation (PLAN §4). Only the statement's own
+/// WHERE counts: one inside a subquery, a string or a comment does not limit the rows hit.
 pub fn risky(sql: &str) -> bool {
-    let up = strip_comments(sql).to_ascii_uppercase();
-    let words: Vec<&str> = up.split(|c: char| !c.is_ascii_alphanumeric() && c != '_').filter(|w| !w.is_empty()).collect();
-    match words.first().copied() {
+    let words = top_level_words(sql);
+    match words.first().map(String::as_str) {
         Some("DROP" | "TRUNCATE") => true,
-        Some("DELETE" | "UPDATE") => !words.contains(&"WHERE"),
+        Some("DELETE" | "UPDATE") => !words.iter().any(|w| w == "WHERE"),
         _ => false,
     }
 }
 
-/// Statement without `-- `, `#` and `/* */` comments, so a comment can neither hide nor fake a DROP.
-// ponytail: ignores quotes; a comment marker inside a string cuts too much, which only makes `risky` flag more.
-fn strip_comments(sql: &str) -> String {
-    let mut out = String::new();
-    let mut rest = sql;
-    while !rest.is_empty() {
-        let line = rest.find("-- ").into_iter().chain(rest.find('#')).min();
-        let block = rest.find("/*");
-        match (line, block) {
-            (Some(l), b) if b.is_none_or(|b| l < b) => {
-                out.push_str(&rest[..l]);
-                rest = rest[l..].find('\n').map_or("", |e| &rest[l + e..]);
-            }
-            (_, Some(b)) => {
-                out.push_str(&rest[..b]);
-                out.push(' ');
-                rest = rest[b..].find("*/").map_or("", |e| &rest[b + e + 2..]);
-            }
-            _ => {
-                out.push_str(rest);
-                rest = "";
-            }
+/// Upper-case words outside strings, backtick names, comments and parentheses. The body of an
+/// executable comment (`/*!40000 … */`) runs on the server, so it counts as code.
+fn top_level_words(sql: &str) -> Vec<String> {
+    fn end_word(cur: &mut String, words: &mut Vec<String>, depth: i32) {
+        if !cur.is_empty() && depth == 0 {
+            words.push(cur.to_ascii_uppercase());
         }
+        cur.clear();
     }
-    out
+    let b = sql.as_bytes();
+    let line_end = |i: usize| b[i..].iter().position(|&c| c == b'\n').map_or(b.len(), |n| i + n);
+    let (mut words, mut cur, mut depth, mut i) = (Vec::new(), String::new(), 0i32, 0usize);
+    while i < b.len() {
+        let rest = &b[i..];
+        let c = b[i];
+        if c.is_ascii_alphanumeric() || c == b'_' {
+            cur.push(c as char);
+            i += 1;
+            continue;
+        }
+        end_word(&mut cur, &mut words, depth);
+        i = match c {
+            b'\'' | b'"' | b'`' => {
+                // Quoted text; `\` escapes inside strings, a doubled quote is one quote.
+                let mut j = i + 1;
+                loop {
+                    match b.get(j) {
+                        None => break b.len(),
+                        Some(b'\\') if c != b'`' => j += 2,
+                        Some(&q) if q == c && b.get(j + 1) == Some(&c) => j += 2,
+                        Some(&q) if q == c => break j + 1,
+                        _ => j += 1,
+                    }
+                }
+            }
+            b'#' => line_end(i),
+            b'-' if rest.starts_with(b"--") && b.get(i + 2).is_none_or(|c| c.is_ascii_whitespace()) => line_end(i),
+            b'/' if rest.starts_with(b"/*!") => i + 3 + rest[3..].iter().take_while(|c| c.is_ascii_digit()).count(),
+            b'/' if rest.starts_with(b"/*") => b[i + 2..].windows(2).position(|w| w == b"*/").map_or(b.len(), |n| i + n + 4),
+            b'*' if rest.starts_with(b"*/") => i + 2,
+            b'(' => {
+                depth += 1;
+                i + 1
+            }
+            b')' => {
+                depth -= 1;
+                i + 1
+            }
+            _ => i + 1,
+        };
+    }
+    end_word(&mut cur, &mut words, depth);
+    words
 }
 
 #[derive(Debug, Serialize)]
@@ -358,10 +386,6 @@ fn json_path(steps: &[PathStep]) -> String {
     p
 }
 
-/// SQL string literal. ponytail: backslashes doubled, wrong under NO_BACKSLASH_ESCAPES (only exotic keys have one).
-fn literal(s: &str) -> String {
-    format!("'{}'", s.replace('\\', "\\\\").replace('\'', "''"))
-}
 
 /// Starter `JSON_TABLE` query over the array at `path`, one column per scalar key of `sample` (an element).
 pub fn json_table_sql(schema: &str, table: &str, column: &str, path: &[PathStep], sample: &serde_json::Value) -> String {
@@ -389,13 +413,19 @@ pub fn json_table_sql(schema: &str, table: &str, column: &str, path: &[PathStep]
         body.push('\n');
         body.push_str(&nested.join("\n"));
     }
-    format!(
+    let sql = format!(
         "SELECT jt.*\nFROM {}.{} AS t,\n  JSON_TABLE(t.{}, {} COLUMNS (\n{body}\n  )) AS jt\nLIMIT 100;",
         ident(schema),
         ident(table),
         ident(column),
         literal(&format!("{}[*]", json_path(path))),
-    )
+    );
+    // A key with a backslash: its doubled escape must survive NO_BACKSLASH_ESCAPES.
+    if sql.contains('\\') {
+        format!("{};\n{sql}\n{};", designer::ESCAPES_ON, designer::ESCAPES_RESTORE)
+    } else {
+        sql
+    }
 }
 
 #[cfg(test)]
@@ -475,6 +505,10 @@ FROM `s`.`t``x` AS t,
 LIMIT 100;"
         );
         assert!(json_table_sql("s", "t", "c", &[], &serde_json::json!(3)).contains("`value` LONGTEXT PATH '$'"));
+        // A backslash in a key: escapes forced on around the query, plain query otherwise.
+        let sql = json_table_sql("s", "t", "c", &[], &serde_json::json!({ "a\\b": 1 }));
+        assert!(sql.starts_with(designer::ESCAPES_ON) && sql.ends_with(&format!("{};", designer::ESCAPES_RESTORE)), "{sql}");
+        assert!(json_table_sql("s", "t", "c", &[], &serde_json::json!({ "ab": 1 })).starts_with("SELECT"));
     }
 
     #[test]
@@ -491,6 +525,16 @@ LIMIT 100;"
         assert!(risky("DELETE FROM t -- WHERE id = 1"));
         assert!(!risky("-- DROP TABLE t;\nSET FOREIGN_KEY_CHECKS = 1"));
         assert!(!risky("# DROP TABLE t\nSELECT 1"));
+        // `--` then a line break is a comment too.
+        assert!(risky("--\nDROP TABLE t"));
+        // Only the statement's own WHERE limits the rows.
+        assert!(risky("UPDATE t SET a = (SELECT b FROM u WHERE u.id = 1)"));
+        assert!(risky("DELETE FROM t ORDER BY 'WHERE'"));
+        assert!(risky("UPDATE t SET note = 'it''s \\' where'"));
+        assert!(!risky("DELETE FROM t WHERE id IN (SELECT id FROM u)"));
+        assert!(!risky("UPDATE `where` SET a = 1 WHERE id = 2"));
+        // An executable comment runs on the server.
+        assert!(risky("/*!40000 DROP TABLE t */"));
     }
 
     /// OTARIA_TEST_DB="host:port:user:password" cargo test -- --ignored

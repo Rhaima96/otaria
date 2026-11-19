@@ -116,11 +116,15 @@ pub struct TableDef {
     pub checks: Vec<CheckDef>,
 }
 
-/// Quoted text literal. `'` is doubled, `\` doubled for the default sql_mode.
-// ponytail: under NO_BACKSLASH_ESCAPES a backslash in a default/comment comes out doubled (wrong value, still safe).
+/// Quoted text literal. `'` is doubled and `\` doubled: the statements run between `ESCAPES_ON` and
+/// `ESCAPES_RESTORE`, so the backslash escape holds even on a server set to NO_BACKSLASH_ESCAPES.
 pub fn literal(s: &str) -> String {
     format!("'{}'", s.replace('\\', "\\\\").replace('\'', "''"))
 }
+
+/// Turns NO_BACKSLASH_ESCAPES off for the session (saving its sql_mode), so `literal`'s escapes read as meant.
+pub const ESCAPES_ON: &str = "SET @otaria_sql_mode = @@sql_mode, SESSION sql_mode = REPLACE(@@sql_mode, 'NO_BACKSLASH_ESCAPES', '')";
+pub const ESCAPES_RESTORE: &str = "SET SESSION sql_mode = @otaria_sql_mode";
 
 /// Engine and collation names: plain words only.
 fn word(field: &'static str, s: &str) -> AppResult<String> {
@@ -459,12 +463,19 @@ pub fn drop_sql(schema: &str, name: &str, kind: &str, truncate: bool) -> AppResu
 }
 
 /// Run statements one by one (DDL commits on its own: no transaction is possible).
+/// The pooled connection gets its sql_mode back, failure or not.
 pub async fn run(pool: &Pool, stmts: &[String]) -> AppResult<()> {
     let mut conn = pool.get_conn().await?;
+    conn.query_drop(ESCAPES_ON).await?;
+    let mut result = Ok(());
     for s in stmts {
-        conn.query_drop(s).await?;
+        if let Err(e) = conn.query_drop(s).await {
+            result = Err(e.into());
+            break;
+        }
     }
-    Ok(())
+    conn.query_drop(ESCAPES_RESTORE).await?;
+    result
 }
 
 /// Parse information_schema.COLUMN_DEFAULT. MariaDB quotes literals ('abc'), writes 'NULL' for
@@ -1118,5 +1129,37 @@ mod tests {
         assert!(ddl.contains("`M`='8'") && ddl.contains("`DISTANCE`='euclidean'"), "{ddl}");
 
         run(&pool, &["DROP DATABASE otaria_des".into()]).await.unwrap();
+    }
+
+    /// A server on NO_BACKSLASH_ESCAPES still gets the backslash we meant, and the connection keeps its mode.
+    #[tokio::test]
+    #[ignore]
+    async fn backslash_under_no_backslash_escapes() {
+        let spec = std::env::var("OTARIA_TEST_DB").expect("set OTARIA_TEST_DB");
+        let p: Vec<&str> = spec.splitn(4, ':').collect();
+        let opts = mysql_async::OptsBuilder::default()
+            .ip_or_hostname(p[0])
+            .tcp_port(p[1].parse().unwrap())
+            .user(Some(p[2]))
+            .pass(Some(p[3]))
+            .prefer_socket(false)
+            .init(vec!["SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES'"])
+            // No reset on return: the mode stays, as on a server whose global mode has it.
+            .pool_opts(mysql_async::PoolOpts::default().with_reset_connection(false).with_constraints(mysql_async::PoolConstraints::new(1, 1).unwrap()));
+        let pool = Pool::new(opts);
+        let mut c = col("note", "varchar(10)");
+        c.original = None;
+        c.default = DefaultValue::Literal("x\\y".into());
+        let t = TableDef { name: "nbe".into(), comment: "a\\b".into(), columns: vec![col("id", "int(11)"), c], ..table() };
+        run(&pool, &["DROP DATABASE IF EXISTS otaria_nbe".into(), "CREATE DATABASE otaria_nbe".into()]).await.unwrap();
+        run(&pool, &[create_sql("otaria_nbe", &t, true).unwrap()]).await.unwrap();
+        let back = load(&pool, "otaria_nbe", "nbe", true).await.unwrap();
+        assert_eq!(back.comment, "a\\b");
+        assert_eq!(back.columns[1].default, DefaultValue::Literal("x\\y".into()));
+        let mut conn = pool.get_conn().await.unwrap();
+        let mode: String = conn.query_first("SELECT @@sql_mode").await.unwrap().unwrap();
+        assert_eq!(mode, "NO_BACKSLASH_ESCAPES");
+        drop(conn);
+        run(&pool, &["DROP DATABASE otaria_nbe".into()]).await.unwrap();
     }
 }

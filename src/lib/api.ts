@@ -454,6 +454,8 @@ export interface ExportReq {
   path: string;
   data: boolean;
   drop: boolean;
+  /** CSV: NULL written as \N instead of an empty field. */
+  nullAsN: boolean;
 }
 
 export interface CsvPreview {

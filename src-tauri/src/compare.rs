@@ -44,10 +44,12 @@ pub struct Code {
 pub struct Schema {
     pub tables: Vec<TableDef>,
     pub code: Vec<Code>,
+    /// The schema's default collation: a table on it took the server's default, not a choice.
+    pub collation: String,
 }
 
 /// Script order: functions before the views and procedures that may call them, triggers and events last.
-// ponytail: a view built on another view comes in name order; reorder by hand if CREATE fails on it.
+/// Views among themselves: `load` puts each after the views it reads.
 const CODE_ORDER: [&str; 5] = ["function", "procedure", "view", "trigger", "event"];
 
 /// Diff of two loaded schemas. Every DROP comes out commented: deleting is left to the user.
@@ -86,7 +88,16 @@ pub fn compare(target_schema: &str, src: &Schema, tgt: &Schema, mariadb: bool) -
                 // A source column the target lacks is new to the diff (original = None), not a rename.
                 let mut s = s.clone();
                 for c in &mut s.columns {
-                    c.original = t.columns.iter().any(|o| o.name == c.name).then(|| c.name.clone());
+                    let other = t.columns.iter().find(|o| o.name == c.name);
+                    c.original = other.map(|_| c.name.clone());
+                    // int(11) on MariaDB, int on MySQL 8: same type, written two ways.
+                    if let Some(o) = other.filter(|o| int_width_free(&o.col_type) == int_width_free(&c.col_type)) {
+                        c.col_type = o.col_type.clone();
+                    }
+                }
+                // Both tables on their schema's default collation (each server's own): not a difference.
+                if s.collation == src.collation && t.collation == tgt.collation {
+                    s.collation = t.collation.clone();
                 }
                 let alter = designer::alter_sql(target_schema, t, &s, Algorithm::Default, mariadb)?;
                 if !alter.is_empty() {
@@ -106,7 +117,7 @@ pub fn compare(target_schema: &str, src: &Schema, tgt: &Schema, mariadb: bool) -
         for s in &src_c {
             let status = match tgt_c.iter().find(|t| t.name == s.name) {
                 None => "create",
-                Some(t) if t.ddl != s.ddl => "alter",
+                Some(t) if comparable(kind, &t.ddl) != comparable(kind, &s.ddl) => "alter",
                 Some(_) => continue,
             };
             diffs.push(diff(&s.name, kind, status));
@@ -122,7 +133,13 @@ pub fn compare(target_schema: &str, src: &Schema, tgt: &Schema, mariadb: bool) -
     } else {
         // USE: views and routines are created without a schema name. FK checks off: new tables may
         // reference each other in any order.
-        format!("USE {};\nSET FOREIGN_KEY_CHECKS = 0;\n\n{}\n\nSET FOREIGN_KEY_CHECKS = 1;\n", ident(target_schema), stmts.join("\n\n"))
+        format!(
+            "USE {};\nSET FOREIGN_KEY_CHECKS = 0;\n{};\n\n{}\n\n{};\nSET FOREIGN_KEY_CHECKS = 1;\n",
+            ident(target_schema),
+            designer::ESCAPES_ON,
+            stmts.join("\n\n"),
+            designer::ESCAPES_RESTORE
+        )
     };
     Ok(Comparison { diffs, sql })
 }
@@ -150,6 +167,33 @@ fn alter_sequence(name: &str, src: &str, tgt: &str) -> Vec<String> {
     let shrinks = matches!((max(src_opts), max(tgt_opts)), (Some(s), Some(t)) if s < t);
     let order = if shrinks { [opts, ty] } else { [ty, opts] };
     order.into_iter().flatten().collect()
+}
+
+/// Integer type without its display width (`int(11) unsigned` → `int unsigned`). tinyint(1) keeps it:
+/// MySQL 8 still writes it (it means boolean there).
+fn int_width_free(ty: &str) -> String {
+    let lower = ty.to_ascii_lowercase();
+    let is_int = ["tinyint(", "smallint(", "mediumint(", "int(", "bigint("].iter().any(|p| lower.starts_with(p));
+    match lower.find('(').zip(lower.find(')')) {
+        Some((open, close)) if is_int && !lower.starts_with("tinyint(1)") => format!("{}{}", &lower[..open], &lower[close + 1..]),
+        _ => lower,
+    }
+}
+
+/// Text compared for code objects. An event's STARTS / ENDS hold the moment it was created on each
+/// server: left out, or every event would show as changed.
+fn comparable(kind: &str, ddl: &str) -> String {
+    if kind != "event" {
+        return ddl.to_string();
+    }
+    let mut out = ddl.to_string();
+    for kw in [" STARTS '", " ENDS '"] {
+        if let Some(i) = out.find(kw) {
+            let end = out[i + kw.len()..].find('\'').map_or(out.len(), |e| i + kw.len() + e + 1);
+            out.replace_range(i..end, "");
+        }
+    }
+    out
 }
 
 /// Views: CREATE OR REPLACE. Routines, triggers, events: DROP IF EXISTS then CREATE, in a DELIMITER
@@ -202,20 +246,39 @@ fn strip_definer(ddl: &str) -> String {
 
 /// The schema's own name removed where it qualifies a name (`schema`.x or schema.x): a view still
 /// qualifies stored function calls after USE, and a trigger keeps the text it was created with.
-// ponytail: plain text scan; `schema.` inside a string literal of a body is stripped too.
+/// Text inside string literals and backtick names is left alone.
 fn strip_schema(ddl: &str, schema: &str) -> String {
     let quoted = format!("{}.", ident(schema));
-    let mut out = ddl.replace(&quoted, "");
     let plain = format!("{schema}.");
-    let word = |c: char| c.is_alphanumeric() || c == '_' || c == '$' || c == '`' || c == '.';
-    let mut from = 0;
-    while let Some(i) = out[from..].find(&plain).map(|i| from + i) {
-        if out[..i].chars().next_back().is_some_and(word) {
-            from = i + plain.len();
-        } else {
-            out.replace_range(i..i + plain.len(), "");
-            from = i;
+    let word = |c: char| c.is_alphanumeric() || matches!(c, '_' | '$' | '`' | '.');
+    let mut out = String::with_capacity(ddl.len());
+    let mut quote: Option<char> = None;
+    let mut i = 0;
+    while let Some(c) = ddl[i..].chars().next() {
+        let rest = &ddl[i..];
+        match quote {
+            Some(q) if q != '`' && c == '\\' => {
+                // Escaped character: copy it with its backslash.
+                let n = 1 + rest[1..].chars().next().map_or(0, char::len_utf8);
+                out.push_str(&rest[..n]);
+                i += n;
+                continue;
+            }
+            Some(q) if c == q => quote = None,
+            Some(_) => {}
+            None if rest.starts_with(&quoted) => {
+                i += quoted.len();
+                continue;
+            }
+            None if rest.starts_with(&plain) && !out.chars().next_back().is_some_and(word) => {
+                i += plain.len();
+                continue;
+            }
+            None if matches!(c, '\'' | '"' | '`') => quote = Some(c),
+            None => {}
         }
+        out.push(c);
+        i += c.len_utf8();
     }
     out
 }
@@ -236,7 +299,14 @@ pub async fn load(pool: &Pool, schema: &str, mariadb: bool) -> AppResult<Schema>
         let ddl = browse::ddl_on(&mut conn, schema, &o.name, &o.kind).await?;
         code.push(Code { kind: o.kind.clone(), name: o.name.clone(), ddl: strip_schema(&strip_definer(&ddl), schema) });
     }
-    Ok(Schema { tables, code })
+    let (views, mut code): (Vec<Code>, Vec<Code>) = code.into_iter().partition(|c| c.kind == "view");
+    let pairs: Vec<(String, String)> = views.iter().map(|v| (v.name.clone(), v.ddl.clone())).collect();
+    code.extend(browse::view_order(&pairs).into_iter().map(|i| views[i].clone()));
+    let collation: String = conn
+        .exec_first("SELECT DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?", (schema,))
+        .await?
+        .unwrap_or_default();
+    Ok(Schema { tables, code, collation })
 }
 
 #[cfg(test)]
@@ -284,7 +354,11 @@ mod tests {
     }
 
     fn schema(tables: Vec<TableDef>, code: &[(&str, &str, &str)]) -> Schema {
-        Schema { tables, code: code.iter().map(|(k, n, d)| Code { kind: k.to_string(), name: n.to_string(), ddl: d.to_string() }).collect() }
+        Schema {
+            tables,
+            code: code.iter().map(|(k, n, d)| Code { kind: k.to_string(), name: n.to_string(), ddl: d.to_string() }).collect(),
+            collation: "utf8mb4_general_ci".into(),
+        }
     }
 
     #[test]
@@ -312,6 +386,7 @@ mod tests {
             [("a", "table", "alter"), ("new_t", "table", "create"), ("old_t", "table", "drop"), ("f", "function", "drop"), ("p", "procedure", "create"), ("v", "view", "alter")]
         );
         assert!(c.sql.starts_with("USE `prod`;\nSET FOREIGN_KEY_CHECKS = 0;"));
+        assert!(c.sql.contains(designer::ESCAPES_ON) && c.sql.contains(designer::ESCAPES_RESTORE));
         assert!(c.sql.contains("-- DROP FUNCTION `prod`.`f`;"), "{}", c.sql);
         assert!(c.sql.contains("DROP PROCEDURE IF EXISTS `prod`.`p`;\nDELIMITER $$\nCREATE PROCEDURE `p`()\nBEGIN SELECT 1; END$$\nDELIMITER ;"), "{}", c.sql);
         assert!(c.sql.contains("CREATE OR REPLACE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v` AS select 2;"), "{}", c.sql);
@@ -331,10 +406,12 @@ mod tests {
         let src = Schema {
             tables: vec![],
             code: vec![seq("a", "start with 1 minvalue 1 maxvalue 99 increment by 2 cache 1000 nocycle"), seq("b", &format!("as int {opts}")), new.clone()],
+            collation: String::new(),
         };
         let tgt = Schema {
             tables: vec![],
             code: vec![seq("a", "start with 1 minvalue 1 maxvalue 99 increment by 1 cache 1000 nocycle"), seq("b", opts), seq("o", opts)],
+            collation: String::new(),
         };
         let c = compare("prod", &src, &tgt, true).unwrap();
         let st: Vec<_> = c.diffs.iter().map(|d| (d.name.as_str(), d.status)).collect();
@@ -371,6 +448,27 @@ mod tests {
         assert_eq!(strip_schema("CREATE TRIGGER src.t BEFORE INSERT ON src.c", "src"), "CREATE TRIGGER t BEFORE INSERT ON c");
         // Only a whole name: mysrc.x, other.src.x and `a`.src stay.
         assert_eq!(strip_schema("mysrc.x, other.src.x, `other`.`t`", "src"), "mysrc.x, other.src.x, `other`.`t`");
+        // Inside a string or a backtick name the text is data, kept as is.
+        assert_eq!(strip_schema("select 'src.x', \"it\\'s src.y\", `a src.z` from src.t", "src"), "select 'src.x', \"it\\'s src.y\", `a src.z` from t");
+    }
+
+    #[test]
+    fn ignores_spelling_differences_between_servers() {
+        assert_eq!(int_width_free("int(11) unsigned"), "int unsigned");
+        assert_eq!(int_width_free("BIGINT(20)"), "bigint");
+        assert_eq!(int_width_free("tinyint(1)"), "tinyint(1)");
+        assert_eq!(int_width_free("varchar(10)"), "varchar(10)");
+        // MariaDB vs MySQL 8 spelling, each table on its own server's default collation: no difference.
+        let src = schema(vec![table("a", &[("id", "int(11)"), ("n", "bigint(20) unsigned")])], &[]);
+        let mut tgt = schema(vec![table("a", &[("id", "int"), ("n", "bigint unsigned")])], &[]);
+        tgt.collation = "utf8mb4_0900_ai_ci".into();
+        tgt.tables[0].collation = "utf8mb4_0900_ai_ci".into();
+        assert!(compare("prod", &src, &tgt, true).unwrap().diffs.is_empty());
+        // Events created at different moments only differ by STARTS.
+        let ev = |at: &str| format!("CREATE EVENT `e` ON SCHEDULE EVERY 1 DAY STARTS '{at}' ON COMPLETION NOT PRESERVE ENABLE DO select 1");
+        let a = schema(vec![], &[("event", "e", &ev("2026-01-01 00:00:00"))]);
+        let b = schema(vec![], &[("event", "e", &ev("2026-11-19 10:00:00"))]);
+        assert!(compare("prod", &a, &b, true).unwrap().diffs.is_empty());
     }
 
     // Live: OTARIA_TEST_DB="host:port:user:password", e.g. cargo test -- --ignored compare_on_test_server
@@ -391,6 +489,7 @@ mod tests {
              CREATE TABLE cmp_tgt.gone (id INT PRIMARY KEY);
              CREATE FUNCTION cmp_src.twice(x INT) RETURNS INT DETERMINISTIC RETURN x * 2;
              CREATE VIEW cmp_src.v_parent AS SELECT id, cmp_src.twice(id) AS t FROM cmp_src.parent;
+             CREATE VIEW cmp_src.a_top AS SELECT id FROM cmp_src.v_parent;
              CREATE PROCEDURE cmp_src.hello() BEGIN SELECT 'hi'; SELECT 'there'; END;
              CREATE PROCEDURE cmp_tgt.hello() BEGIN SELECT 'old'; END;
              CREATE TRIGGER cmp_src.child_bi BEFORE INSERT ON cmp_src.child FOR EACH ROW SET NEW.id = NEW.id;

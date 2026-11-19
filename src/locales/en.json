@@ -587,6 +587,7 @@
     },
     "withData": "Include the rows",
     "withDrop": "Add DROP … IF EXISTS before each CREATE",
+    "nullAsN": "Write NULL as \\N (else NULL and an empty text look the same)",
     "sqlHint": "The script names no database: it can be loaded into any database.",
     "importHint": "Statements run one after the other in {schema}. The first error stops the import; the statements before it stay applied.",
     "chooseSave": "Choose the file and export",

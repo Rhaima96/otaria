@@ -587,6 +587,7 @@
     },
     "withData": "Zeilen einschließen",
     "withDrop": "DROP … IF EXISTS vor jedem CREATE einfügen",
+    "nullAsN": "NULL als \\N schreiben (sonst sind NULL und ein leerer Text nicht zu unterscheiden)",
     "sqlHint": "Das Skript nennt keine Datenbank: Es kann in jede Datenbank geladen werden.",
     "importHint": "Die Anweisungen laufen nacheinander in {schema}. Der erste Fehler stoppt den Import; die vorherigen Anweisungen bleiben angewendet.",
     "chooseSave": "Datei wählen und exportieren",

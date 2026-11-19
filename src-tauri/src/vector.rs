@@ -32,9 +32,8 @@ pub fn vector_indexes(ddl: &str) -> Vec<(String, VectorIndex)> {
     ddl.lines()
         .filter_map(|l| {
             let rest = l.trim().strip_prefix("VECTOR KEY ")?;
-            // ponytail: names containing a backtick break the naive split; such names are rare.
-            let parts: Vec<&str> = rest.split('`').collect();
-            let (name, column) = (parts.get(1)?, parts.get(3)?);
+            let names = browse::quoted_names(rest);
+            let (name, column) = (names.first()?, names.get(1)?);
             // Option names keep the case they were typed in (`M` or `m`): compare in lower case.
             let lower = rest.to_ascii_lowercase();
             let opt = |key: &str| {

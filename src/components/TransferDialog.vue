@@ -32,6 +32,7 @@ const dest = ref<"file" | "connection">("file");
 const format = ref<ExportFormat>("csv");
 const data = ref(true);
 const drop = ref(false);
+const nullAsN = ref(false);
 const running = ref(false);
 const jobId = ref("");
 const progress = ref<TransferProgress | null>(null);
@@ -71,6 +72,7 @@ function open(x: TransferTarget) {
   format.value = formats.value[0];
   data.value = true;
   drop.value = false;
+  nullAsN.value = false;
   progress.value = null;
   result.value = "";
   error.value = null;
@@ -127,7 +129,7 @@ async function runExport() {
   const path = await save({ defaultPath: `${name.value}.${ext}`, filters: [{ name: ext.toUpperCase(), extensions: [ext] }] });
   if (!path) return;
   await track(
-    (id) => api.exportData(props.sessionId, id, { schema, table, format: format.value, path, data: data.value, drop: drop.value }),
+    (id) => api.exportData(props.sessionId, id, { schema, table, format: format.value, path, data: data.value, drop: drop.value, nullAsN: nullAsN.value }),
     (n) => t("transfer.exported", { n, path }),
   );
 }
@@ -247,6 +249,9 @@ const cell = "border-b px-2 py-1 text-left align-top";
           <label class="flex items-center gap-1.5"><input v-model="drop" :disabled="running" type="checkbox" class="size-3.5" />{{ t("transfer.withDrop") }}</label>
           <p v-if="dest === 'file'" class="text-muted-foreground">{{ t("transfer.sqlHint") }}</p>
         </div>
+        <label v-if="target.mode === 'export' && dest === 'file' && format === 'csv'" class="flex items-center gap-1.5">
+          <input v-model="nullAsN" :disabled="running" type="checkbox" class="size-3.5" />{{ t("transfer.nullAsN") }}
+        </label>
       </template>
 
       <p v-else-if="target.mode === 'import'" class="text-muted-foreground">{{ t("transfer.importHint", { schema: target.schema }) }}</p>

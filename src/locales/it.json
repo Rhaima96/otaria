@@ -587,6 +587,7 @@
     },
     "withData": "Includi le righe",
     "withDrop": "Aggiungi DROP … IF EXISTS prima di ogni CREATE",
+    "nullAsN": "Scrivi NULL come \\N (altrimenti NULL e un testo vuoto si confondono)",
     "sqlHint": "Lo script non nomina alcun database: può essere caricato in qualsiasi database.",
     "importHint": "Le istruzioni vengono eseguite una dopo l’altra in {schema}. Il primo errore interrompe l’importazione; le istruzioni precedenti restano applicate.",
     "chooseSave": "Scegli il file ed esporta",

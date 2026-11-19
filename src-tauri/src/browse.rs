@@ -218,11 +218,64 @@ pub async fn data(pool: &Pool, sql: &str, vars: &[(&str, Option<String>)]) -> Ap
 pub fn period_columns(ddl: &str) -> (String, String) {
     let parse = || {
         let at = ddl.find("PERIOD FOR SYSTEM_TIME (")?;
-        let mut names = ddl[at..].split('`').skip(1).step_by(2).map(|n| n.replace("``", "`"));
+        let mut names = quoted_names(&ddl[at..]).into_iter();
         Some((names.next()?, names.next()?))
     };
-    // ponytail: a column name containing a backtick breaks the naive split; such names are rare.
     parse().unwrap_or_else(|| ("ROW_START".into(), "ROW_END".into()))
+}
+
+/// Order (indexes into `views`, each `(name, SHOW CREATE text)`) in which each view comes after the
+/// views its text names. A name that is not a real dependency (a column, an alias) only moves a view
+/// later; views caught in a cycle keep their given order at the end.
+pub fn view_order(views: &[(String, String)]) -> Vec<usize> {
+    let deps: Vec<Vec<usize>> = views
+        .iter()
+        .enumerate()
+        .map(|(i, (_, ddl))| {
+            let names = quoted_names(ddl);
+            (0..views.len()).filter(|&j| j != i && names.contains(&views[j].0)).collect()
+        })
+        .collect();
+    let mut done = vec![false; views.len()];
+    let mut out = Vec::new();
+    loop {
+        let before = out.len();
+        for i in 0..views.len() {
+            if !done[i] && deps[i].iter().all(|&d| done[d]) {
+                done[i] = true;
+                out.push(i);
+            }
+        }
+        if out.len() == before {
+            break;
+        }
+    }
+    out.extend((0..views.len()).filter(|&i| !done[i]));
+    out
+}
+
+/// Backtick-quoted names in `s`, in order, ``` `` ``` read as one backtick (how SHOW CREATE writes them).
+pub fn quoted_names(s: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '`' {
+            continue;
+        }
+        let mut name = String::new();
+        while let Some(c) = chars.next() {
+            match c {
+                '`' if chars.peek() == Some(&'`') => {
+                    chars.next();
+                    name.push('`');
+                }
+                '`' => break,
+                c => name.push(c),
+            }
+        }
+        out.push(name);
+    }
+    out
 }
 
 #[derive(Debug, Serialize)]
@@ -291,6 +344,19 @@ mod tests {
         assert_eq!(period_columns(explicit), ("rs".into(), "re".into()));
         let implicit = "CREATE TABLE `vi` (\n  `id` int(11) NOT NULL\n) WITH SYSTEM VERSIONING";
         assert_eq!(period_columns(implicit), ("ROW_START".into(), "ROW_END".into()));
+        // A backtick inside a name is written doubled; it must not shift the following names.
+        let odd = "  PERIOD FOR SYSTEM_TIME (`r``s`, `re`)";
+        assert_eq!(period_columns(odd), ("r`s".into(), "re".into()));
+        assert_eq!(quoted_names("VECTOR KEY `a``b` (`e`) `M`='8'"), ["a`b", "e", "M"]);
+    }
+
+    #[test]
+    fn orders_views_after_the_views_they_read() {
+        let v = |n: &str, body: &str| (n.to_string(), format!("CREATE VIEW `{n}` AS select {body}"));
+        // a reads b, b reads c: c, b, a whatever the name order. d stands alone, e and f read each other.
+        let views = [v("a", "`b`.`x` from `b`"), v("b", "`x` from `c`"), v("c", "1 AS `x`"), v("d", "1"), v("e", "* from `f`"), v("f", "* from `e`")];
+        let names: Vec<&str> = view_order(&views).into_iter().map(|i| views[i].0.as_str()).collect();
+        assert_eq!(names, ["c", "d", "b", "a", "e", "f"]);
     }
 
     #[test]

@@ -50,13 +50,12 @@ pub struct State {
 
 /// Every `PERIOD FOR name (start, end)` of a `SHOW CREATE TABLE`, SYSTEM_TIME included.
 /// (`information_schema.PERIODS` only exists from 11.4.)
-// ponytail: names containing a backtick break the split, like browse::period_columns.
 pub fn periods(ddl: &str) -> Vec<Period> {
     ddl.lines()
         .filter_map(|l| {
             let rest = l.trim().strip_prefix("PERIOD FOR ")?;
-            let names: Vec<&str> = rest.split('`').skip(1).step_by(2).collect();
-            let (name, cols) = if rest.starts_with("SYSTEM_TIME") { ("SYSTEM_TIME", &names[..]) } else { (*names.first()?, names.get(1..)?) };
+            let names = browse::quoted_names(rest);
+            let (name, cols) = if rest.starts_with("SYSTEM_TIME") { ("SYSTEM_TIME", &names[..]) } else { (names.first()?.as_str(), names.get(1..)?) };
             Some(Period { name: name.into(), start: cols.first()?.to_string(), end: cols.get(1)?.to_string() })
         })
         .collect()
