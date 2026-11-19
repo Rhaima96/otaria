@@ -50,7 +50,8 @@ fn ssl_opts(profile: &Profile, mode: TlsMode, sni_host: Option<&str>) -> Option<
     Some(opts)
 }
 
-fn opts(profile: &Profile, password: Option<&str>, tunnel: Option<&Tunnel>, mode: TlsMode) -> Opts {
+/// `tag`: this session's own value of the `otaria_session` connection attribute (admin.rs finds its connections by it).
+fn opts(profile: &Profile, password: Option<&str>, tunnel: Option<&Tunnel>, mode: TlsMode, tag: &str) -> Opts {
     let socket = profile.socket.as_deref().filter(|s| !s.is_empty() && tunnel.is_none());
     let (host, port) = match tunnel {
         Some(t) => ("127.0.0.1".to_string(), t.port),
@@ -66,6 +67,11 @@ fn opts(profile: &Profile, password: Option<&str>, tunnel: Option<&Tunnel>, mode
         .prefer_socket(false)
         // Affected rows = matched rows, so a grid UPDATE that changes nothing still counts as 1 (edit.rs checks it).
         .client_found_rows(true)
+        // Shown by performance_schema.session_connect_attrs (and SHOW PROCESSLIST tools that read it).
+        // ponytail: lost over TLS: mysql_async 0.37 leaves CLIENT_CONNECT_ATTRS out of its SSL request packet,
+        // so the server drops them; plain TCP and sockets carry them. Recheck when mysql_async is upgraded.
+        .connect_attribute("program_name", "otaria")
+        .connect_attribute("otaria_session", tag)
         .user(Some(profile.user.clone()))
         .pass(password.map(str::to_string))
         .db_name(profile.database.clone().filter(|d| !d.is_empty()))
@@ -106,6 +112,8 @@ pub struct Session {
     pub editors: crate::query::Editors,
     /// For external clients (mariadb-binlog --flashback).
     pub cli: crate::binlog::Cli,
+    /// Value of the `otaria_session` connection attribute on every connection of `pool`.
+    pub tag: String,
     _tunnel: Option<Tunnel>,
 }
 
@@ -124,8 +132,9 @@ pub async fn open(profile: &Profile, password: Option<&str>, ssh_secret: Option<
         Some(s) => Some(ssh::open(s, ssh_secret, &profile.host, profile.port).await?),
         None => None,
     };
+    let tag = uuid::Uuid::new_v4().to_string();
     let try_open = |mode| {
-        let pool = Pool::new(opts(profile, password, tunnel.as_ref(), mode));
+        let pool = Pool::new(opts(profile, password, tunnel.as_ref(), mode, &tag));
         async move {
             let mut conn = with_timeout(pool.get_conn()).await?;
             let info = server_info(&mut conn, profile.ssh.is_some()).await?;
@@ -155,7 +164,7 @@ pub async fn open(profile: &Profile, password: Option<&str>, ssh_secret: Option<
         cert: profile.tls.cert.clone(),
         key: profile.tls.key.clone(),
     };
-    Ok(Session { pool, info, editors: Default::default(), cli, _tunnel: tunnel })
+    Ok(Session { pool, info, editors: Default::default(), cli, tag, _tunnel: tunnel })
 }
 
 #[cfg(test)]
@@ -195,7 +204,8 @@ mod tests {
     fn socket_disables_tls() {
         let mut p = profile(TlsMode::VerifyIdentity);
         p.socket = Some("/tmp/mysql.sock".into());
-        let o = opts(&p, None, None, p.tls.mode);
+        let o = opts(&p, None, None, p.tls.mode, "t");
+        assert_eq!(o.connect_attributes().unwrap()["program_name"], "otaria");
         assert!(o.ssl_opts().is_none());
         assert_eq!(o.socket(), Some("/tmp/mysql.sock"));
     }

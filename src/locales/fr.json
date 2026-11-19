@@ -142,7 +142,7 @@
     "BINLOG_TOOL_MISSING": "mariadb-binlog est introuvable. Installez le client MariaDB (Homebrew : brew install mariadb ; Linux : paquet mariadb-client ; Windows : installeur MariaDB).",
     "BINLOG_TOOL": "mariadb-binlog a échoué.",
     "INVALID_RANGE": "Plage invalide.",
-    "BINLOG_POSITION": "Aucun événement ne commence à cette position : prenez une valeur de la colonne Pos.",
+    "BINLOG_POSITION": "Cette position est au-delà de la fin du fichier.",
     "SSH_CERT": "Impossible de lire le certificat SSH (fichier -cert.pub d'OpenSSH)."
   },
   "tree": {
@@ -451,7 +451,22 @@
     "skip": "Passer",
     "skipHint": "Passer l'événement en erreur et relancer le thread SQL",
     "skipCount": "Événements à passer",
-    "skipWarning": "Les événements passés ne seront jamais appliqués sur ce réplica : ses données peuvent alors différer de la source."
+    "skipWarning": "Les événements passés ne seront jamais appliqués sur ce réplica : ses données peuvent alors différer de la source.",
+    "newChannel": "Nouveau canal",
+    "change": "Modifier la source",
+    "changeHint": "Configurer un canal de réplication (CHANGE MASTER TO), avec aperçu.",
+    "host": "Hôte source",
+    "port": "Port",
+    "user": "Utilisateur",
+    "password": "Mot de passe",
+    "passwordKeep": "inchangé",
+    "startAt": "Reprendre à",
+    "slavePos": "GTID, position du réplica (slave_pos)",
+    "currentPos": "GTID, position courante (current_pos)",
+    "filePos": "Fichier et position",
+    "file": "Fichier binlog",
+    "fileKeep": "laissé au serveur",
+    "changeNote": "Le mot de passe n'est pas affiché ici et n'est pas gardé par l'application. Démarrez le canal ensuite."
   },
   "binlog": {
     "tab": "Binlog",
@@ -476,13 +491,16 @@
     "byTxn": "Par transaction",
     "jump": "Aller",
     "jumpPlaceholder": "Position",
-    "jumpHint": "Lire à partir de cette position en octets : ce doit être le début d'un événement (colonne Pos).",
+    "jumpHint": "Lire à partir de cette position en octets. Une position au milieu d'un événement part du début de cet événement.",
     "gtidCol": "GTID",
     "events": "Événements",
     "tables": "Tables",
     "statements": "Instructions",
     "fromPos": "depuis {pos}",
-    "txnCount": "{n} transactions"
+    "txnCount": "{n} transactions",
+    "purge": "Supprimer les fichiers antérieurs à celui-ci",
+    "purgeWarning": "Fichiers supprimés définitivement du serveur : {n}. Un réplica qui ne les a pas encore lus ne pourra plus rattraper son retard.",
+    "purgeRun": "Supprimer"
   },
   "vector": {
     "loading": "Chargement des colonnes vecteur…",

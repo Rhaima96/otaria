@@ -1,7 +1,6 @@
 //! Binary log reader (MariaDB only): files from `SHOW BINARY LOGS`, events from `SHOW BINLOG EVENTS`,
 //! read one page at a time; flashback (undo SQL for a range of row events) through the external
 //! `mariadb-binlog` client. Nothing is run here: the undo script opens in the SQL editor.
-// ponytail: no PURGE here: the SQL editor does it.
 
 use mysql_async::Pool;
 use mysql_async::prelude::Queryable;
@@ -85,10 +84,7 @@ fn find_tool() -> Option<std::path::PathBuf> {
 /// Undo SQL for the events in [start, stop) of `file`, from `mariadb-binlog --flashback`.
 /// Only row events can be reversed (binlog_format ROW, binlog_row_image FULL); DDL is skipped by the tool.
 pub async fn flashback(pool: &Pool, cli: &Cli, file: &str, start: u64, stop: u64) -> AppResult<String> {
-    let names: Vec<String> = pool.get_conn().await?.query_map("SHOW BINARY LOGS", |r: mysql_async::Row| r.get::<String, _>(0).unwrap_or_default()).await?;
-    if !names.iter().any(|n| n == file) {
-        return Err(AppError::new("NOT_FOUND", file.to_string()));
-    }
+    file_size(&mut pool.get_conn().await?, file).await?;
     if start >= stop {
         return Err(AppError::new("INVALID_RANGE", format!("{start}..{stop}")));
     }
@@ -159,17 +155,41 @@ pub fn events_sql(file: &str, from: Option<u64>, offset: u64, limit: u64) -> Str
     format!("SHOW BINLOG EVENTS IN {}{from} LIMIT {offset}, {limit}", literal(file))
 }
 
+/// Size of `file` from SHOW BINARY LOGS, `NOT_FOUND` when the server has no such file.
+async fn file_size(conn: &mut mysql_async::Conn, file: &str) -> AppResult<u64> {
+    let files: Vec<(String, u64)> = conn.query_map("SHOW BINARY LOGS", |mut r: mysql_async::Row| (r.take(0).unwrap_or_default(), r.take(1).unwrap_or_default())).await?;
+    files.into_iter().find(|(n, _)| n == file).map(|(_, size)| size).ok_or_else(|| AppError::new("NOT_FOUND", file.to_string()))
+}
+
+/// Start of the event that contains byte `pos` of `file`: the last event start at or before it.
+// ponytail: reads the event list from the top (5000 per page), only when the position typed is not an event start.
+async fn event_start(conn: &mut mysql_async::Conn, file: &str, pos: u64) -> AppResult<Option<u64>> {
+    let mut best = None;
+    for page in 0.. {
+        let starts: Vec<u64> = conn.query_map(events_sql(file, None, page * 5000, 5000), |r: mysql_async::Row| r.get::<u64, _>(1).unwrap_or_default()).await?;
+        best = starts.iter().copied().filter(|&p| p <= pos).last().or(best);
+        if starts.len() < 5000 || starts.last().is_some_and(|&p| p > pos) {
+            break;
+        }
+    }
+    Ok(best)
+}
+
+/// `from` that is not an event start is moved back to the start of the event containing it (the first
+/// event returned says where the page starts); past the end of the file, `BINLOG_POSITION`.
 pub async fn events(pool: &Pool, file: &str, from: Option<u64>, offset: u64, limit: u64) -> AppResult<Vec<Event>> {
     let mut conn = pool.get_conn().await?;
-    let names: Vec<String> = conn.query_map("SHOW BINARY LOGS", |r: mysql_async::Row| r.get::<String, _>(0).unwrap_or_default()).await?;
-    if !names.iter().any(|n| n == file) {
-        return Err(AppError::new("NOT_FOUND", file.to_string()));
-    }
-    let rows: Vec<mysql_async::Row> = match conn.query(events_sql(file, from, offset, limit.clamp(1, 5000))).await {
+    let size = file_size(&mut conn, file).await?;
+    let limit = limit.clamp(1, 5000);
+    let rows: Vec<mysql_async::Row> = match conn.query(events_sql(file, from, offset, limit)).await {
         Ok(rows) => rows,
         // 1220 "Wrong offset": the position is not where an event starts.
         Err(mysql_async::Error::Server(e)) if e.code == 1220 && from.is_some() => {
-            return Err(AppError { detail: Some(file.to_string()), ..AppError::new("BINLOG_POSITION", from.unwrap_or(0).to_string()) });
+            let pos = from.unwrap_or(0);
+            match event_start(&mut conn, file, pos).await? {
+                Some(start) if pos < size => conn.query(events_sql(file, Some(start), offset, limit)).await?,
+                _ => return Err(AppError { detail: Some(file.to_string()), ..AppError::new("BINLOG_POSITION", pos.to_string()) }),
+            }
         }
         Err(e) => return Err(e.into()),
     };
@@ -183,6 +203,18 @@ pub async fn events(pool: &Pool, file: &str, from: Option<u64>, offset: u64, lim
             info: r.take::<Option<String>, _>(5).flatten().unwrap_or_default(),
         })
         .collect())
+}
+
+/// Deletes every binary log file before `file` (`file` itself is kept).
+pub fn purge_sql(file: &str) -> String {
+    format!("PURGE BINARY LOGS TO {}", literal(file))
+}
+
+pub async fn purge(pool: &Pool, file: &str) -> AppResult<()> {
+    let mut conn = pool.get_conn().await?;
+    file_size(&mut conn, file).await?;
+    conn.query_drop(purge_sql(file)).await?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -218,6 +250,7 @@ mod tests {
         assert_eq!(events_sql("mysql-bin.000002", None, 1000, 500), "SHOW BINLOG EVENTS IN 'mysql-bin.000002' LIMIT 1000, 500");
         assert_eq!(events_sql("a'b", None, 0, 1), "SHOW BINLOG EVENTS IN 'a''b' LIMIT 0, 1");
         assert_eq!(events_sql("b.1", Some(842), 0, 100), "SHOW BINLOG EVENTS IN 'b.1' FROM 842 LIMIT 0, 100");
+        assert_eq!(purge_sql("bin.0'7"), "PURGE BINARY LOGS TO 'bin.0''7'");
     }
 
     /// Needs a server with log_bin: OTARIA_TEST_BINLOG_DB="host:port:user:password" cargo test -- --ignored
@@ -248,10 +281,12 @@ mod tests {
         let page = events(&pool, last, None, 2, 2).await.unwrap();
         assert_eq!((page.len(), page[0].pos), (2, all[2].pos));
         assert_eq!(events(&pool, "nope.000001", None, 0, 10).await.unwrap_err().code, "NOT_FOUND");
-        // From a byte position: an event start works, the middle of an event says so.
+        // From a byte position: an event start works, the middle of an event goes back to its start,
+        // past the end of the file is refused.
         let from = events(&pool, last, Some(all[3].pos), 0, 2).await.unwrap();
         assert_eq!(from[0].pos, all[3].pos);
-        assert_eq!(events(&pool, last, Some(all[3].pos + 1), 0, 2).await.unwrap_err().code, "BINLOG_POSITION");
+        assert_eq!(events(&pool, last, Some(all[3].pos + 1), 0, 2).await.unwrap()[0].pos, all[3].pos);
+        assert_eq!(events(&pool, last, Some(st.files.last().unwrap().size + 10), 0, 2).await.unwrap_err().code, "BINLOG_POSITION");
 
         // Flashback: undo one UPDATE transaction, then replay the script the way the SQL editor splits it.
         async fn at(conn: &mut mysql_async::Conn) -> u64 {
@@ -276,6 +311,14 @@ mod tests {
         let bad = Cli { password: Some("wrong".into()), ..cli };
         assert_eq!(flashback(&pool, &bad, last, start, stop).await.unwrap_err().code, "BINLOG_TOOL");
         conn.query_drop("DROP DATABASE otaria_bl").await.unwrap();
+
+        // Purge: the files before the one named go, that one stays.
+        conn.query_drop("FLUSH BINARY LOGS").await.unwrap();
+        let names: Vec<String> = state(&pool).await.unwrap().files.into_iter().map(|f| f.name).collect();
+        purge(&pool, &names[names.len() - 2]).await.unwrap();
+        let left: Vec<String> = state(&pool).await.unwrap().files.into_iter().map(|f| f.name).collect();
+        assert_eq!(left, names[names.len() - 2..]);
+        assert_eq!(purge(&pool, "nope.000001").await.unwrap_err().code, "NOT_FOUND");
 
         // A server without binary log says so instead of failing on SHOW BINARY LOGS.
         if let Ok(other) = std::env::var("OTARIA_TEST_DB") {

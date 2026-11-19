@@ -142,7 +142,7 @@
     "BINLOG_TOOL_MISSING": "No se encontró mariadb-binlog. Instale el cliente MariaDB (Homebrew: brew install mariadb; Linux: paquete mariadb-client; Windows: instalador de MariaDB).",
     "BINLOG_TOOL": "mariadb-binlog falló.",
     "INVALID_RANGE": "Rango no válido.",
-    "BINLOG_POSITION": "Ningún evento empieza en esta posición: use un valor de la columna Pos.",
+    "BINLOG_POSITION": "Esta posición está más allá del final del archivo.",
     "SSH_CERT": "No se puede leer el certificado SSH (archivo -cert.pub de OpenSSH)."
   },
   "tree": {
@@ -451,7 +451,22 @@
     "skip": "Saltar",
     "skipHint": "Saltar el evento con error y reiniciar el hilo SQL",
     "skipCount": "Eventos que saltar",
-    "skipWarning": "Los eventos saltados nunca se aplicarán en esta réplica: sus datos pueden diferir del origen."
+    "skipWarning": "Los eventos saltados nunca se aplicarán en esta réplica: sus datos pueden diferir del origen.",
+    "newChannel": "Nuevo canal",
+    "change": "Cambiar el origen",
+    "changeHint": "Configurar un canal de replicación (CHANGE MASTER TO), con vista previa.",
+    "host": "Host de origen",
+    "port": "Puerto",
+    "user": "Usuario",
+    "password": "Contraseña",
+    "passwordKeep": "sin cambios",
+    "startAt": "Empezar desde",
+    "slavePos": "GTID, posición de la réplica (slave_pos)",
+    "currentPos": "GTID, posición actual (current_pos)",
+    "filePos": "Archivo y posición",
+    "file": "Archivo binlog",
+    "fileKeep": "a criterio del servidor",
+    "changeNote": "La contraseña no se muestra aquí y la aplicación no la guarda. Inicie el canal después."
   },
   "binlog": {
     "tab": "Binlog",
@@ -476,13 +491,16 @@
     "byTxn": "Por transacción",
     "jump": "Ir",
     "jumpPlaceholder": "Posición",
-    "jumpHint": "Leer desde esta posición en bytes: debe ser el inicio de un evento (columna Pos).",
+    "jumpHint": "Leer desde esta posición en bytes. Una posición dentro de un evento empieza en ese evento.",
     "gtidCol": "GTID",
     "events": "Eventos",
     "tables": "Tablas",
     "statements": "Sentencias",
     "fromPos": "desde {pos}",
-    "txnCount": "{n} transacciones"
+    "txnCount": "{n} transacciones",
+    "purge": "Eliminar los archivos anteriores a este",
+    "purgeWarning": "Archivos eliminados del servidor de forma definitiva: {n}. Una réplica que aún no los haya leído ya no podrá ponerse al día.",
+    "purgeRun": "Eliminar"
   },
   "vector": {
     "loading": "Cargando columnas vectoriales…",

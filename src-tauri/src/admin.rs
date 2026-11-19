@@ -26,19 +26,26 @@ pub struct Process {
     pub own: bool,
 }
 
-/// `own`: connection ids the app holds (editor tabs); the listing connection is added here.
-pub async fn processes(pool: &Pool, mariadb: bool, own: &[u32]) -> AppResult<Vec<Process>> {
+/// `own`: connection ids the app holds (editor tabs); the listing connection is added here, and every
+/// connection carrying the session's `tag` (`otaria_session` attribute: pool, exports) when
+/// performance_schema shows connection attributes. Without it (disabled, no privilege), the ids above only.
+pub async fn processes(pool: &Pool, mariadb: bool, own: &[u32], tag: &str) -> AppResult<Vec<Process>> {
     // TIME_MS and PROGRESS are MariaDB columns. `+ 0e0` turns DECIMAL into DOUBLE.
     let sql = if mariadb {
         "SELECT ID, USER, HOST, DB, COMMAND, TIME_MS + 0e0, STATE, INFO, PROGRESS + 0e0, ID = CONNECTION_ID() FROM information_schema.PROCESSLIST ORDER BY ID"
     } else {
         "SELECT ID, USER, HOST, DB, COMMAND, TIME * 1e3, STATE, INFO, 0e0, ID = CONNECTION_ID() FROM information_schema.PROCESSLIST ORDER BY ID"
     };
-    Ok(pool
-        .get_conn()
-        .await?
+    let mut conn = pool.get_conn().await?;
+    let mut own: Vec<u64> = own.iter().map(|&o| o as u64).collect();
+    let tagged: Vec<u64> = conn
+        .exec("SELECT PROCESSLIST_ID FROM performance_schema.session_connect_attrs WHERE ATTR_NAME = 'otaria_session' AND ATTR_VALUE = ?", (tag,))
+        .await
+        .unwrap_or_default();
+    own.extend(tagged);
+    Ok(conn
         .query_map(sql, |(id, user, host, db, command, time_ms, state, info, progress, me): (u64, _, _, _, _, _, _, _, _, bool)| {
-            Process { id, user, host, db, command, time_ms, state, info, progress, own: me || own.iter().any(|&o| o as u64 == id) }
+            Process { id, user, host, db, command, time_ms, state, info, progress, own: me || own.contains(&id) }
         })
         .await?)
 }
@@ -234,7 +241,7 @@ mod tests {
         let busy_id = busy.id() as u64;
         let sleeper = tokio::spawn(async move { busy.query_drop("SELECT SLEEP(30) FROM information_schema.TABLES LIMIT 1").await });
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        let list = processes(&pool, true, &[busy_id as u32]).await.unwrap();
+        let list = processes(&pool, true, &[busy_id as u32], "none").await.unwrap();
         let me = list.iter().find(|x| x.id == busy_id).expect("busy connection listed");
         assert!(me.own && list.iter().filter(|x| x.own).count() == 2, "{list:?}");
         assert!(me.info.as_deref().unwrap_or("").contains("SLEEP(30)"), "{me:?}");
@@ -245,6 +252,18 @@ mod tests {
         let res = tokio::time::timeout(std::time::Duration::from_secs(5), sleeper).await.expect("killed").unwrap();
         assert!(matches!(res, Err(mysql_async::Error::Server(ref e)) if e.code == 1317), "{res:?}");
         assert!(explain(&pool, 999_999).await.is_err());
+
+        // Connections tagged with the session attribute are the app's own when performance_schema is on.
+        let tagged = Pool::new(
+            mysql_async::OptsBuilder::default().ip_or_hostname(p[0]).tcp_port(p[1].parse().unwrap()).user(Some(p[2])).pass(Some(p[3])).prefer_socket(false)
+                .connect_attribute("otaria_session", "t1"),
+        );
+        let idle = tagged.get_conn().await.unwrap();
+        let ps: bool = pool.get_conn().await.unwrap().query_first("SELECT @@performance_schema").await.unwrap().unwrap();
+        let list = processes(&pool, true, &[], "t1").await.unwrap();
+        assert_eq!(list.iter().find(|x| x.id == idle.id() as u64).unwrap().own, ps, "performance_schema = {ps}");
+        drop(idle);
+        tagged.disconnect().await.unwrap();
 
         // Variables: typed SET GLOBAL, then back to default.
         let vars = variables(&pool, true).await.unwrap();

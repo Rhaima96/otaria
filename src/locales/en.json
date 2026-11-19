@@ -142,7 +142,7 @@
     "BINLOG_TOOL_MISSING": "mariadb-binlog was not found. Install the MariaDB client (Homebrew: brew install mariadb; Linux: mariadb-client package; Windows: MariaDB installer).",
     "BINLOG_TOOL": "mariadb-binlog failed.",
     "INVALID_RANGE": "Invalid range.",
-    "BINLOG_POSITION": "No event starts at this position: use a value from the Pos column.",
+    "BINLOG_POSITION": "This position is past the end of the file.",
     "SSH_CERT": "Cannot read the SSH certificate (OpenSSH -cert.pub file)."
   },
   "tree": {
@@ -451,7 +451,22 @@
     "skip": "Skip",
     "skipHint": "Skip the failing event and restart the SQL thread",
     "skipCount": "Events to skip",
-    "skipWarning": "Skipped events are never applied on this replica: its data may then differ from the source."
+    "skipWarning": "Skipped events are never applied on this replica: its data may then differ from the source.",
+    "newChannel": "New channel",
+    "change": "Change the source",
+    "changeHint": "Set up a replication channel (CHANGE MASTER TO), with a preview.",
+    "host": "Source host",
+    "port": "Port",
+    "user": "User",
+    "password": "Password",
+    "passwordKeep": "unchanged",
+    "startAt": "Start from",
+    "slavePos": "GTID, replica position (slave_pos)",
+    "currentPos": "GTID, current position (current_pos)",
+    "filePos": "File and position",
+    "file": "Binlog file",
+    "fileKeep": "left to the server",
+    "changeNote": "The password is not shown here and is not kept by the app. Start the channel afterwards."
   },
   "binlog": {
     "tab": "Binlog",
@@ -476,13 +491,16 @@
     "byTxn": "By transaction",
     "jump": "Go",
     "jumpPlaceholder": "Position",
-    "jumpHint": "Read from this byte position: it must be where an event starts (the Pos column).",
+    "jumpHint": "Read from this byte position. A position inside an event starts at that event.",
     "gtidCol": "GTID",
     "events": "Events",
     "tables": "Tables",
     "statements": "Statements",
     "fromPos": "from {pos}",
-    "txnCount": "{n} transactions"
+    "txnCount": "{n} transactions",
+    "purge": "Delete the files before this one",
+    "purgeWarning": "Files deleted from the server for good: {n}. A replica that has not read them yet can no longer catch up.",
+    "purgeRun": "Delete"
   },
   "vector": {
     "loading": "Loading vector columns…",

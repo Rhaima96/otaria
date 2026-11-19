@@ -142,7 +142,7 @@
     "BINLOG_TOOL_MISSING": "mariadb-binlog wurde nicht gefunden. MariaDB-Client installieren (Homebrew: brew install mariadb; Linux: Paket mariadb-client; Windows: MariaDB-Installer).",
     "BINLOG_TOOL": "mariadb-binlog ist fehlgeschlagen.",
     "INVALID_RANGE": "Ungültiger Bereich.",
-    "BINLOG_POSITION": "An dieser Position beginnt kein Ereignis: nehmen Sie einen Wert aus der Spalte Pos.",
+    "BINLOG_POSITION": "Diese Position liegt hinter dem Dateiende.",
     "SSH_CERT": "Das SSH-Zertifikat (OpenSSH-Datei -cert.pub) kann nicht gelesen werden."
   },
   "tree": {
@@ -451,7 +451,22 @@
     "skip": "Überspringen",
     "skipHint": "Das fehlerhafte Ereignis überspringen und den SQL-Thread neu starten",
     "skipCount": "Zu überspringende Ereignisse",
-    "skipWarning": "Übersprungene Ereignisse werden auf diesem Replikat nie angewendet: seine Daten können dann von der Quelle abweichen."
+    "skipWarning": "Übersprungene Ereignisse werden auf diesem Replikat nie angewendet: seine Daten können dann von der Quelle abweichen.",
+    "newChannel": "Neuer Kanal",
+    "change": "Quelle ändern",
+    "changeHint": "Einen Replikationskanal einrichten (CHANGE MASTER TO), mit Vorschau.",
+    "host": "Quell-Host",
+    "port": "Port",
+    "user": "Benutzer",
+    "password": "Passwort",
+    "passwordKeep": "unverändert",
+    "startAt": "Starten ab",
+    "slavePos": "GTID, Replikat-Position (slave_pos)",
+    "currentPos": "GTID, aktuelle Position (current_pos)",
+    "filePos": "Datei und Position",
+    "file": "Binlog-Datei",
+    "fileKeep": "dem Server überlassen",
+    "changeNote": "Das Passwort wird hier nicht angezeigt und von der App nicht gespeichert. Starten Sie den Kanal danach."
   },
   "binlog": {
     "tab": "Binlog",
@@ -476,13 +491,16 @@
     "byTxn": "Nach Transaktion",
     "jump": "Los",
     "jumpPlaceholder": "Position",
-    "jumpHint": "Ab dieser Byte-Position lesen: dort muss ein Ereignis beginnen (Spalte Pos).",
+    "jumpHint": "Ab dieser Byte-Position lesen. Eine Position mitten in einem Ereignis beginnt bei diesem Ereignis.",
     "gtidCol": "GTID",
     "events": "Ereignisse",
     "tables": "Tabellen",
     "statements": "Anweisungen",
     "fromPos": "ab {pos}",
-    "txnCount": "{n} Transaktionen"
+    "txnCount": "{n} Transaktionen",
+    "purge": "Dateien vor dieser löschen",
+    "purgeWarning": "Endgültig vom Server gelöschte Dateien: {n}. Ein Replikat, das sie noch nicht gelesen hat, kann nicht mehr aufholen.",
+    "purgeRun": "Löschen"
   },
   "vector": {
     "loading": "Vektorspalten werden geladen…",

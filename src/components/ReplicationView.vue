@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { Network, Play, Share2, SkipForward, Square } from "lucide-vue-next";
+import { Network, Pencil, Play, Plus, Share2, SkipForward, Square } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
-import { api, toAppError, type AppError, type ReplicationAction, type ReplicationChannel, type ReplicationState } from "@/lib/api";
+import { api, toAppError, type AppError, type ChangeMaster, type ReplicationAction, type ReplicationChannel, type ReplicationState } from "@/lib/api";
 import { INTERVALS, usePolling } from "@/lib/poll";
 import { cn } from "@/lib/utils";
 
@@ -50,10 +50,35 @@ async function ask(name: string, action: ReplicationAction) {
   actError.value = null;
   try {
     pending.value = { name, action, sql: await api.replicationSql(name, action) };
-    actDialog.value?.showModal();
+    if (!actDialog.value?.open) actDialog.value?.showModal();
   } catch (e) {
-    error.value = toAppError(e);
+    // Form fields being typed: the dialog stays open with the error under them.
+    if (actDialog.value?.open) {
+      pending.value = { name, action, sql: [] };
+      actError.value = toAppError(e);
+    } else error.value = toAppError(e);
   }
+}
+
+// CHANGE MASTER TO form: new channel (name editable) or an existing one (prefilled, password left unchanged).
+// The password lives only in this form while the dialog is open: cleared on close, never shown in the preview.
+// Typing empties the preview (Apply off) until the field is left: what runs is always what was shown.
+const form = reactive<ChangeMaster & { name: string; isNew: boolean }>({ name: "", isNew: true, host: "", port: 3306, user: "", password: "", gtid: "slave_pos", file: "", pos: 4 });
+const change = () => {
+  const { name, isNew: _, ...cm } = form;
+  if (cm.host) return ask(name, { kind: "change", ...cm });
+  pending.value = { name, action: { kind: "change", ...cm }, sql: [] }; // nothing to preview before a host
+  actError.value = null;
+};
+function openChange(c: ReplicationChannel | null) {
+  const gtid = c?.usingGtid === "Current_Pos" ? "current_pos" : c?.usingGtid === "No" ? "no" : "slave_pos";
+  Object.assign(form, { name: c?.name ?? "", isNew: !c, host: c?.masterHost ?? "", port: c?.masterPort || 3306, user: c?.masterUser ?? "", password: "", gtid, file: "", pos: 4 });
+  change();
+  actDialog.value?.showModal();
+}
+function closed() {
+  form.password = "";
+  pending.value = null;
 }
 async function act() {
   const p = pending.value!;
@@ -75,6 +100,7 @@ const h = "mb-2 flex items-center gap-1.5 font-semibold";
 const card = "rounded-md border p-3";
 const cell = "border-b px-2 py-1 text-left align-top";
 const label = "text-muted-foreground";
+const field = "h-7 rounded-sm border bg-background px-2 disabled:opacity-60";
 </script>
 
 <template>
@@ -93,7 +119,10 @@ const label = "text-muted-foreground";
     <div v-if="st" class="flex flex-col gap-4 p-4">
       <!-- Replication channels -->
       <section :class="card">
-        <h3 :class="h"><Share2 class="size-4 text-primary" />{{ t("replication.channels") }}</h3>
+        <h3 :class="h">
+          <Share2 class="size-4 text-primary" />{{ t("replication.channels") }}
+          <button :class="cn(btn, 'ml-auto font-normal')" :title="t('replication.changeHint')" @click="openChange(null)"><Plus class="size-3.5" />{{ t("replication.newChannel") }}</button>
+        </h3>
         <p v-if="!st.channels.length" class="text-muted-foreground">{{ t("replication.noChannels") }}</p>
         <table v-else class="w-full border-collapse">
           <thead :class="label">
@@ -127,6 +156,9 @@ const label = "text-muted-foreground";
                     <button v-if="c.ioRunning !== 'No' || c.sqlRunning !== 'No'" :class="btn" :title="t('replication.stop')" @click="ask(c.name, { kind: 'stop' })">
                       <Square class="size-3.5" /><span class="sr-only">{{ t("replication.stop") }}</span>
                     </button>
+                    <button v-if="c.ioRunning === 'No' && c.sqlRunning === 'No'" :class="btn" :title="t('replication.change')" @click="openChange(c)">
+                      <Pencil class="size-3.5" /><span class="sr-only">{{ t("replication.change") }}</span>
+                    </button>
                     <button v-if="c.sqlRunning === 'No' && c.lastSqlError" :class="btn" :title="t('replication.skipHint')" @click="ask(c.name, { kind: 'skip', count: skipCount })">
                       <SkipForward class="size-3.5" />{{ t("replication.skip") }}
                     </button>
@@ -144,8 +176,37 @@ const label = "text-muted-foreground";
         </table>
       </section>
 
-      <dialog ref="actDialog" class="m-auto w-[min(36rem,90vw)] rounded-lg border bg-popover p-0 text-popover-foreground backdrop:bg-black/40">
+      <dialog ref="actDialog" class="m-auto w-[min(36rem,90vw)] rounded-lg border bg-popover p-0 text-popover-foreground backdrop:bg-black/40" @close="closed">
         <div class="border-b px-4 py-2 font-semibold">{{ t("grid.previewTitle") }}</div>
+        <div v-if="pending?.action.kind === 'change'" class="grid grid-cols-[max-content_1fr] items-center gap-x-3 gap-y-1.5 px-4 pt-3"
+          @input="pending!.sql = []"
+          @change="change"
+        >
+          <label :class="label" for="cm-name">{{ t("replication.channel") }}</label>
+          <input id="cm-name" v-model.trim="form.name" :disabled="!form.isNew" :placeholder="t('replication.default')" :class="field" />
+          <label :class="label" for="cm-host">{{ t("replication.host") }}</label>
+          <div class="flex gap-2">
+            <input id="cm-host" v-model.trim="form.host" :class="cn(field, 'flex-1')" />
+            <input v-model.number="form.port" type="number" min="1" max="65535" :aria-label="t('replication.port')" :class="cn(field, 'w-24')" />
+          </div>
+          <label :class="label" for="cm-user">{{ t("replication.user") }}</label>
+          <input id="cm-user" v-model="form.user" autocomplete="off" :class="field" />
+          <label :class="label" for="cm-pw">{{ t("replication.password") }}</label>
+          <input id="cm-pw" v-model="form.password" type="password" autocomplete="new-password" :placeholder="form.isNew ? '' : t('replication.passwordKeep')" :class="field" />
+          <label :class="label" for="cm-gtid">{{ t("replication.startAt") }}</label>
+          <select id="cm-gtid" v-model="form.gtid" :class="field">
+            <option value="slave_pos">{{ t("replication.slavePos") }}</option>
+            <option value="current_pos">{{ t("replication.currentPos") }}</option>
+            <option value="no">{{ t("replication.filePos") }}</option>
+          </select>
+          <template v-if="form.gtid === 'no'">
+            <label :class="label" for="cm-file">{{ t("replication.file") }}</label>
+            <div class="flex gap-2">
+              <input id="cm-file" v-model.trim="form.file" :placeholder="t('replication.fileKeep')" :class="cn(field, 'flex-1 font-mono')" />
+              <input v-model.number="form.pos" type="number" min="4" :aria-label="t('binlog.pos')" :class="cn(field, 'w-28 font-mono')" />
+            </div>
+          </template>
+        </div>
         <label v-if="pending?.action.kind === 'skip'" class="flex items-center gap-2 px-4 pt-3">
           {{ t("replication.skipCount") }}
           <input
@@ -157,12 +218,13 @@ const label = "text-muted-foreground";
             @change="ask(pending!.name, { kind: 'skip', count: skipCount })"
           />
         </label>
-        <pre v-if="pending" class="max-h-[40vh] overflow-auto p-4 font-mono text-xs whitespace-pre-wrap select-text">{{ pending.sql.join(";\n") + ";" }}</pre>
+        <pre v-if="pending?.sql.length" class="max-h-[40vh] overflow-auto p-4 font-mono text-xs whitespace-pre-wrap select-text">{{ pending.sql.join(";\n") + ";" }}</pre>
         <p v-if="pending?.action.kind === 'skip'" class="px-4 text-warning">{{ t("replication.skipWarning") }}</p>
+        <p v-if="pending?.action.kind === 'change'" class="px-4 text-muted-foreground">{{ t("replication.changeNote") }}</p>
         <ErrorLine v-if="actError" :error="actError" class="mx-4 mt-2" />
         <div class="flex justify-end gap-2 px-4 py-3">
           <button class="h-7 rounded-sm border px-3 font-medium hover:bg-secondary" @click="actDialog?.close()">{{ t("grid.cancel") }}</button>
-          <button :disabled="busy" class="h-7 rounded-sm bg-primary px-3 font-semibold text-primary-foreground disabled:opacity-50" @click="act">{{ t("grid.apply") }}</button>
+          <button :disabled="busy || !pending?.sql.length" class="h-7 rounded-sm bg-primary px-3 font-semibold text-primary-foreground disabled:opacity-50" @click="act">{{ t("grid.apply") }}</button>
         </div>
       </dialog>
 

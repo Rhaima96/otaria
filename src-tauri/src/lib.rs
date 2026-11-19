@@ -389,19 +389,29 @@ async fn binlog_flashback(state: State<'_, AppState>, session_id: String, file: 
 }
 
 #[tauri::command]
+fn binlog_purge_sql(file: String) -> String {
+    binlog::purge_sql(&file)
+}
+
+#[tauri::command]
+async fn binlog_purge(state: State<'_, AppState>, session_id: String, file: String) -> AppResult<()> {
+    binlog::purge(&pool(&state, &session_id).await?, &file).await
+}
+
+#[tauri::command]
 async fn replication_state(state: State<'_, AppState>, session_id: String) -> AppResult<replication::State> {
     replication::state(&pool(&state, &session_id).await?).await
 }
 
 #[tauri::command]
 fn replication_sql(name: String, action: replication::Action) -> AppResult<Vec<String>> {
-    replication::statements(&name, &action)
+    replication::statements(&name, &action, true)
 }
 
 /// Rebuilt from the same inputs as the preview.
 #[tauri::command]
 async fn replication_apply(state: State<'_, AppState>, session_id: String, name: String, action: replication::Action) -> AppResult<()> {
-    designer::run(&pool(&state, &session_id).await?, &replication::statements(&name, &action)?).await
+    designer::run(&pool(&state, &session_id).await?, &replication::statements(&name, &action, false)?).await
 }
 
 #[tauri::command]
@@ -460,12 +470,12 @@ async fn sequence_setval(state: State<'_, AppState>, session_id: String, schema:
 
 #[tauri::command]
 async fn list_processes(state: State<'_, AppState>, session_id: String) -> AppResult<Vec<admin::Process>> {
-    // ponytail: editor tabs only; jobs (exports) aren't tied to a session here, idle pool connections are unknown.
-    let own: Vec<u32> = match state.sessions.lock().await.get(&session_id) {
-        Some(s) => s.editors.lock().unwrap().values().map(|e| e.conn_id).collect(),
-        None => vec![],
+    // Editor tabs by id; the rest (pool, exports) by the session's connection attribute, when the server shows it.
+    let (own, tag): (Vec<u32>, String) = match state.sessions.lock().await.get(&session_id) {
+        Some(s) => (s.editors.lock().unwrap().values().map(|e| e.conn_id).collect(), s.tag.clone()),
+        None => (vec![], String::new()),
     };
-    admin::processes(&pool(&state, &session_id).await?, is_mariadb(&state, &session_id).await?, &own).await
+    admin::processes(&pool(&state, &session_id).await?, is_mariadb(&state, &session_id).await?, &own, &tag).await
 }
 
 #[tauri::command]
@@ -852,6 +862,8 @@ pub fn run() {
             binlog_state,
             binlog_events,
             binlog_flashback,
+            binlog_purge_sql,
+            binlog_purge,
             versioning_state,
             versioning_sql,
             versioning_apply,

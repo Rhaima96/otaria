@@ -321,6 +321,7 @@ export interface ReplicationChannel {
   name: string;
   masterHost: string;
   masterPort: number;
+  masterUser: string;
   /** Yes | No | Connecting | Preparing */
   ioRunning: string;
   sqlRunning: string;
@@ -367,7 +368,17 @@ export interface BinlogEvent {
 }
 
 /** On one replication channel; skip = the next `count` events (transactions with GTID) of the SQL thread. */
-export type ReplicationAction = { kind: "start" } | { kind: "stop" } | { kind: "skip"; count: number };
+export type ReplicationAction = { kind: "start" } | { kind: "stop" } | { kind: "skip"; count: number } | ({ kind: "change" } & ChangeMaster);
+/** CHANGE MASTER TO; password "" = unchanged; file / pos only with gtid "no" (file "" = left to the server). */
+export interface ChangeMaster {
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  gtid: "slave_pos" | "current_pos" | "no";
+  file: string;
+  pos: number;
+}
 
 export interface Engine {
   name: string;
@@ -596,6 +607,8 @@ export const api = {
     invoke<BinlogEvent[]>("binlog_events", { sessionId, file, from, offset, limit }),
   replicationSql: (name: string, action: ReplicationAction) => invoke<string[]>("replication_sql", { name, action }),
   replicationApply: (sessionId: string, name: string, action: ReplicationAction) => invoke<void>("replication_apply", { sessionId, name, action }),
+  binlogPurgeSql: (file: string) => invoke<string>("binlog_purge_sql", { file }),
+  binlogPurge: (sessionId: string, file: string) => invoke<void>("binlog_purge", { sessionId, file }),
   binlogFlashback: (sessionId: string, file: string, start: number, stop: number) => invoke<string>("binlog_flashback", { sessionId, file, start, stop }),
   engineList: (sessionId: string) => invoke<Engine[]>("engine_list", { sessionId }),
   listPlugins: (sessionId: string) => invoke<Plugin[]>("list_plugins", { sessionId }),

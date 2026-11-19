@@ -1,8 +1,7 @@
 //! Replication and Galera (MariaDB only), read-only: replication channels from `SHOW ALL SLAVES STATUS`
 //! (multi-source, one row per connection name), Galera cluster from the `wsrep_*` status and
 //! `information_schema.WSREP_MEMBERSHIP`. Actions on a channel (start, stop, skip a failing event)
-//! go through a preview of their SQL, like every other change.
-// ponytail: no CHANGE MASTER here: setting up a channel stays in the SQL editor.
+//! go through a preview of their SQL, like every other change, and so does CHANGE MASTER TO.
 
 use std::collections::HashMap;
 
@@ -20,6 +19,7 @@ pub struct Channel {
     pub name: String,
     pub master_host: String,
     pub master_port: u32,
+    pub master_user: String,
     /// Yes | No | Connecting | Preparing
     pub io_running: String,
     pub sql_running: String,
@@ -50,6 +50,7 @@ fn channel(m: &HashMap<String, String>) -> Channel {
         name: s("Connection_name"),
         master_host: s("Master_Host"),
         master_port: n("Master_Port").unwrap_or(0) as u32,
+        master_user: s("Master_User"),
         io_running: s("Slave_IO_Running"),
         sql_running: s("Slave_SQL_Running"),
         seconds_behind: n("Seconds_Behind_Master"),
@@ -120,11 +121,15 @@ pub enum Action {
     /// Skip the next `count` events (transactions with GTID) of the SQL thread, then restart it:
     /// for a replica stopped on an error.
     Skip { count: u32 },
+    /// CHANGE MASTER TO. `password` empty = unchanged; `gtid`: slave_pos | current_pos | no, and with
+    /// `no`, `file` / `pos` (empty file = position left to the server).
+    Change { host: String, port: u16, user: String, password: String, gtid: String, file: String, pos: u64 },
 }
 
 /// Statements for `action` on channel `name` ("" = the default connection), run in order on one
-/// connection: `default_master_connection` is a session variable.
-pub fn statements(name: &str, action: &Action) -> AppResult<Vec<String>> {
+/// connection: `default_master_connection` is a session variable. `mask`: the password is replaced by
+/// `<hidden>` (preview); the statement then does not parse, so it cannot be run by mistake.
+pub fn statements(name: &str, action: &Action, mask: bool) -> AppResult<Vec<String>> {
     let ch = if name.is_empty() { String::new() } else { format!(" {}", literal(name)) };
     Ok(match action {
         Action::Start => vec![format!("START SLAVE{ch}")],
@@ -139,6 +144,27 @@ pub fn statements(name: &str, action: &Action) -> AppResult<Vec<String>> {
                 format!("SET GLOBAL sql_slave_skip_counter = {count}"),
                 format!("START SLAVE{ch} SQL_THREAD"),
             ]
+        }
+        Action::Change { host, port, user, password, gtid, file, pos } => {
+            if host.trim().is_empty() {
+                return Err(AppError::new("REQUIRED", host.clone()));
+            }
+            if *port == 0 {
+                return Err(AppError::new("INVALID_NUMBER", port.to_string()));
+            }
+            let mut opts = vec![format!("MASTER_HOST = {}", literal(host.trim())), format!("MASTER_PORT = {port}"), format!("MASTER_USER = {}", literal(user))];
+            if !password.is_empty() {
+                opts.push(format!("MASTER_PASSWORD = {}", if mask { "<hidden>".to_string() } else { literal(password) }));
+            }
+            match gtid.as_str() {
+                "slave_pos" | "current_pos" => {}
+                "no" if file.trim().is_empty() => {}
+                "no" if *pos >= 4 => opts.extend([format!("MASTER_LOG_FILE = {}", literal(file.trim())), format!("MASTER_LOG_POS = {pos}")]),
+                "no" => return Err(AppError::new("INVALID_NUMBER", pos.to_string())),
+                _ => return Err(AppError::new("INVALID_NAME", gtid.clone())),
+            }
+            opts.push(format!("MASTER_USE_GTID = {gtid}"));
+            vec![format!("CHANGE MASTER{ch} TO {}", opts.join(", "))]
         }
     })
 }
@@ -168,14 +194,34 @@ mod tests {
 
     #[test]
     fn channel_actions() {
-        assert_eq!(statements("", &Action::Start).unwrap(), ["START SLAVE"]);
-        assert_eq!(statements("src'1", &Action::Stop).unwrap(), ["STOP SLAVE 'src''1'"]);
+        assert_eq!(statements("", &Action::Start, false).unwrap(), ["START SLAVE"]);
+        assert_eq!(statements("src'1", &Action::Stop, false).unwrap(), ["STOP SLAVE 'src''1'"]);
         assert_eq!(
-            statements("src1", &Action::Skip { count: 2 }).unwrap(),
+            statements("src1", &Action::Skip { count: 2 }, false).unwrap(),
             ["STOP SLAVE 'src1' SQL_THREAD", "SET @@default_master_connection = 'src1'", "SET GLOBAL sql_slave_skip_counter = 2", "START SLAVE 'src1' SQL_THREAD"]
         );
-        assert_eq!(statements("", &Action::Skip { count: 1 }).unwrap()[1], "SET @@default_master_connection = ''");
-        assert_eq!(statements("x", &Action::Skip { count: 0 }).unwrap_err().code, "INVALID_NUMBER");
+        assert_eq!(statements("", &Action::Skip { count: 1 }, false).unwrap()[1], "SET @@default_master_connection = ''");
+        assert_eq!(statements("x", &Action::Skip { count: 0 }, false).unwrap_err().code, "INVALID_NUMBER");
+    }
+
+    #[test]
+    fn change_master() {
+        let c = |gtid: &str, file: &str, pos: u64, password: &str| Action::Change {
+            host: " db'1 ".into(), port: 3307, user: "rep".into(), password: password.into(), gtid: gtid.into(), file: file.into(), pos,
+        };
+        assert_eq!(
+            statements("src1", &c("slave_pos", "ignored.000001", 0, "p'w"), false).unwrap(),
+            ["CHANGE MASTER 'src1' TO MASTER_HOST = 'db''1', MASTER_PORT = 3307, MASTER_USER = 'rep', MASTER_PASSWORD = 'p''w', MASTER_USE_GTID = slave_pos"]
+        );
+        let shown = statements("src1", &c("slave_pos", "", 0, "secret"), true).unwrap().join("");
+        assert!(shown.contains("MASTER_PASSWORD = <hidden>") && !shown.contains("secret"), "{shown}");
+        assert_eq!(
+            statements("", &c("no", "bin.000002", 342, ""), false).unwrap(),
+            ["CHANGE MASTER TO MASTER_HOST = 'db''1', MASTER_PORT = 3307, MASTER_USER = 'rep', MASTER_LOG_FILE = 'bin.000002', MASTER_LOG_POS = 342, MASTER_USE_GTID = no"]
+        );
+        assert_eq!(statements("", &c("no", "bin.000002", 0, ""), false).unwrap_err().code, "INVALID_NUMBER");
+        assert_eq!(statements("", &c("own_pos; DROP", "", 0, ""), false).unwrap_err().code, "INVALID_NAME");
+        assert_eq!(statements("", &Action::Change { host: " ".into(), port: 1, user: String::new(), password: String::new(), gtid: "no".into(), file: String::new(), pos: 0 }, false).unwrap_err().code, "REQUIRED");
     }
 
     fn pool(var: &str) -> Pool {
@@ -218,11 +264,12 @@ mod tests {
         let gtid: String = m.query_first("SELECT @@gtid_binlog_pos").await.unwrap().unwrap();
         r.query_drop(format!(
             "STOP ALL SLAVES; DROP DATABASE IF EXISTS ot_rep; CREATE DATABASE ot_rep; CREATE TABLE ot_rep.t (id INT PRIMARY KEY);
-             SET GLOBAL gtid_slave_pos = '{gtid}';
-             CHANGE MASTER 'ot' TO MASTER_HOST = '{host}', MASTER_USER = 'root', MASTER_PASSWORD = '{pw}', MASTER_USE_GTID = slave_pos"
+             SET GLOBAL gtid_slave_pos = '{gtid}'"
         ))
         .await
         .unwrap();
+        let change = Action::Change { host, port: 3306, user: "root".into(), password: pw, gtid: "slave_pos".into(), file: String::new(), pos: 0 };
+        crate::designer::run(&replica, &statements("ot", &change, false).unwrap()).await.unwrap();
         let wait = |cond: fn(&Channel) -> bool| {
             let replica = replica.clone();
             async move {
@@ -236,7 +283,7 @@ mod tests {
                 panic!("channel never reached the expected state");
             }
         };
-        crate::designer::run(&replica, &statements("ot", &Action::Start).unwrap()).await.unwrap();
+        crate::designer::run(&replica, &statements("ot", &Action::Start, false).unwrap()).await.unwrap();
         wait(|c| c.io_running == "Yes" && c.sql_running == "Yes").await;
 
         // A row the replica already has: the SQL thread stops on 1062, skipping one transaction resumes it.
@@ -244,7 +291,7 @@ mod tests {
         m.query_drop("INSERT INTO ot_rep.t VALUES (1); INSERT INTO ot_rep.t VALUES (2)").await.unwrap();
         let broken = wait(|c| c.sql_running == "No").await;
         assert!(broken.last_sql_error.contains("Duplicate"), "{broken:?}");
-        crate::designer::run(&replica, &statements("ot", &Action::Skip { count: 1 }).unwrap()).await.unwrap();
+        crate::designer::run(&replica, &statements("ot", &Action::Skip { count: 1 }, false).unwrap()).await.unwrap();
         wait(|c| c.sql_running == "Yes").await;
         for _ in 0..50 {
             let n: Option<u64> = r.query_first("SELECT COUNT(*) FROM ot_rep.t").await.unwrap();
@@ -256,7 +303,7 @@ mod tests {
         let n: Option<u64> = r.query_first("SELECT COUNT(*) FROM ot_rep.t").await.unwrap();
         assert_eq!(n, Some(2), "the transaction after the skipped one was applied");
 
-        crate::designer::run(&replica, &statements("ot", &Action::Stop).unwrap()).await.unwrap();
+        crate::designer::run(&replica, &statements("ot", &Action::Stop, false).unwrap()).await.unwrap();
         wait(|c| c.io_running == "No" && c.sql_running == "No").await;
         r.query_drop("RESET SLAVE 'ot' ALL; DROP DATABASE ot_rep").await.unwrap();
         m.query_drop("DROP DATABASE ot_rep").await.unwrap();

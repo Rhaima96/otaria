@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { AgGridVue } from "ag-grid-vue3";
 import type { ColDef, SelectionChangedEvent } from "ag-grid-community";
-import { Loader2, RefreshCw, Undo2 } from "lucide-vue-next";
+import { Loader2, RefreshCw, Trash2, Undo2 } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
 import { api, toAppError, type AppError, type BinlogEvent, type BinlogState } from "@/lib/api";
 import { transactions, type Txn } from "@/lib/binlog";
@@ -74,6 +74,33 @@ async function jump() {
   from.value = jumpTo.value.trim() && Number.isInteger(n) && n >= 4 ? n : null;
   await open(file.value);
   if (error.value) from.value = before; // refused position: the list shown is still the old one
+  else if (from.value !== null && events.value.length) jumpTo.value = String((from.value = events.value[0].pos)); // moved back to its event's start
+}
+
+// Purge: every file before the chosen one goes; the preview names them and the file name must be retyped.
+const purgeDialog = ref<HTMLDialogElement | null>(null);
+const purge = ref<{ file: string; sql: string; gone: string[] } | null>(null);
+const purgeTyped = ref("");
+const purgeError = ref<AppError | null>(null);
+async function askPurge(i: number) {
+  const f = st.value!.files[i].name;
+  purge.value = { file: f, sql: await api.binlogPurgeSql(f), gone: st.value!.files.slice(0, i).map((x) => x.name) };
+  purgeTyped.value = "";
+  purgeError.value = null;
+  purgeDialog.value?.showModal();
+}
+async function runPurge() {
+  busy.value = true;
+  purgeError.value = null;
+  try {
+    await api.binlogPurge(props.sessionId, purge.value!.file);
+    purgeDialog.value?.close();
+    await load();
+  } catch (e) {
+    purgeError.value = toAppError(e);
+  } finally {
+    busy.value = false;
+  }
 }
 
 /**
@@ -167,17 +194,47 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
 
     <ErrorLine v-if="error" :error="error" class="m-3" />
 
+    <dialog ref="purgeDialog" class="m-auto w-[min(36rem,90vw)] rounded-lg border bg-popover p-0 text-popover-foreground backdrop:bg-black/40">
+      <form v-if="purge" @submit.prevent="runPurge">
+        <div class="border-b px-4 py-2 font-semibold">{{ t("grid.previewTitle") }}</div>
+        <pre class="p-4 font-mono text-xs whitespace-pre-wrap select-text">{{ purge.sql }};</pre>
+        <p class="px-4 text-warning">{{ t("binlog.purgeWarning", { n: purge.gone.length }) }}</p>
+        <p class="max-h-24 overflow-auto px-4 font-mono text-xs text-muted-foreground">{{ purge.gone.join(", ") }}</p>
+        <label class="flex flex-col gap-1 px-4 pt-3">
+          <span class="text-muted-foreground">{{ t("object.typeName", { name: purge.file }) }}</span>
+          <input v-model="purgeTyped" autocomplete="off" spellcheck="false" class="h-7 rounded-sm border bg-background px-2 font-mono" />
+        </label>
+        <ErrorLine v-if="purgeError" :error="purgeError" class="mx-4 mt-2" />
+        <div class="flex justify-end gap-2 px-4 py-3">
+          <button type="button" class="h-7 rounded-sm border px-3 font-medium hover:bg-secondary" @click="purgeDialog?.close()">{{ t("grid.cancel") }}</button>
+          <button type="submit" :disabled="busy || purgeTyped !== purge.file" class="h-7 rounded-sm bg-destructive px-3 font-semibold text-primary-foreground disabled:opacity-50">
+            {{ t("binlog.purgeRun") }}
+          </button>
+        </div>
+      </form>
+    </dialog>
+
     <div v-if="st" class="flex min-h-0 flex-1">
       <ul class="w-56 shrink-0 overflow-auto border-r py-1" :aria-label="t('binlog.files')">
-        <li v-for="(f, i) in st.files" :key="f.name">
+        <li v-for="(f, i) in st.files" :key="f.name" :class="cn('group flex items-center hover:bg-secondary', f.name === file && 'bg-selection')">
           <button
-            :class="cn('flex w-full items-center justify-between gap-2 px-3 py-1 text-left hover:bg-secondary', f.name === file && 'bg-selection')"
+            class="flex min-w-0 flex-1 items-center justify-between gap-2 py-1 pl-3 text-left"
             :title="i === st.files.length - 1 ? t('binlog.current') : undefined"
             @click="pickFile(f.name)"
           >
             <span :class="cn('truncate font-mono', i === st.files.length - 1 && 'text-primary')">{{ f.name }}</span>
             <span class="shrink-0 text-muted-foreground">{{ size(f.size) }}</span>
           </button>
+          <button
+            v-if="i > 0"
+            class="mx-1 rounded-sm p-0.5 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive focus-visible:opacity-100"
+            :title="t('binlog.purge', { n: i })"
+            :aria-label="t('binlog.purge', { n: i })"
+            @click="askPurge(i)"
+          >
+            <Trash2 class="size-3.5" />
+          </button>
+          <span v-else class="w-6 shrink-0" />
         </li>
       </ul>
 
