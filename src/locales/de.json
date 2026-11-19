@@ -254,7 +254,7 @@
     "removeFavorite": "Entfernen",
     "emptyFavorites": "Noch keine Favoriten.",
     "confirmTitle": "Destruktive Anweisung",
-    "confirmText": "Diese Anweisungen können Daten oder Objekte löschen. Trotzdem ausführen?",
+    "confirmText": "Diese Anweisungen ändern oder löschen Daten oder Objekte. Trotzdem ausführen?",
     "confirmRun": "Trotzdem ausführen",
     "favoriteName": "Name des Favoriten",
     "save": "Speichern",

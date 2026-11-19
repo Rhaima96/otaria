@@ -119,15 +119,10 @@ pub fn split_from(src: &str, delim: &str) -> (Vec<Stmt>, usize, String) {
     (out, start.min(b.len()), delim)
 }
 
-/// Destructive statements that need an explicit confirmation (PLAN §4). Only the statement's own
-/// WHERE counts: one inside a subquery, a string or a comment does not limit the rows hit.
+/// Statements that need an explicit confirmation in the editor: every DROP, TRUNCATE, DELETE and
+/// UPDATE, WHERE or not. Comments and strings neither hide nor fake one.
 pub fn risky(sql: &str) -> bool {
-    let words = top_level_words(sql);
-    match words.first().map(String::as_str) {
-        Some("DROP" | "TRUNCATE") => true,
-        Some("DELETE" | "UPDATE") => !words.iter().any(|w| w == "WHERE"),
-        _ => false,
-    }
+    matches!(top_level_words(sql).first().map(String::as_str), Some("DROP" | "TRUNCATE" | "DELETE" | "UPDATE"))
 }
 
 /// Upper-case words outside strings, backtick names, comments and parentheses. The body of an
@@ -542,7 +537,7 @@ LIMIT 100;"
         assert!(risky("TRUNCATE t"));
         assert!(risky("DELETE FROM t"));
         assert!(risky("update t set a=1"));
-        assert!(!risky("UPDATE t SET a=1 WHERE id=2"));
+        assert!(risky("UPDATE t SET a=1 WHERE id=2"));
         assert!(!risky("SELECT * FROM t"));
         // Comments neither hide nor fake a destructive statement.
         assert!(risky("/* note */ DROP TABLE t"));
@@ -552,12 +547,9 @@ LIMIT 100;"
         assert!(!risky("# DROP TABLE t\nSELECT 1"));
         // `--` then a line break is a comment too.
         assert!(risky("--\nDROP TABLE t"));
-        // Only the statement's own WHERE limits the rows.
-        assert!(risky("UPDATE t SET a = (SELECT b FROM u WHERE u.id = 1)"));
-        assert!(risky("DELETE FROM t ORDER BY 'WHERE'"));
-        assert!(risky("UPDATE t SET note = 'it''s \\' where'"));
-        assert!(!risky("DELETE FROM t WHERE id IN (SELECT id FROM u)"));
-        assert!(!risky("UPDATE `where` SET a = 1 WHERE id = 2"));
+        // A WHERE no longer exempts DELETE or UPDATE.
+        assert!(risky("DELETE FROM t WHERE id IN (SELECT id FROM u)"));
+        assert!(!risky("SELECT 'DELETE' FROM t"));
         // An executable comment runs on the server.
         assert!(risky("/*!40000 DROP TABLE t */"));
     }

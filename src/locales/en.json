@@ -254,7 +254,7 @@
     "removeFavorite": "Remove",
     "emptyFavorites": "No favorite yet.",
     "confirmTitle": "Destructive statement",
-    "confirmText": "These statements can delete data or objects. Run them anyway?",
+    "confirmText": "These statements modify or delete data or objects. Run them anyway?",
     "confirmRun": "Run anyway",
     "favoriteName": "Favorite name",
     "save": "Save",

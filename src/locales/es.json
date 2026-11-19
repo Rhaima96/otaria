@@ -254,7 +254,7 @@
     "removeFavorite": "Quitar",
     "emptyFavorites": "Aún no hay favoritos.",
     "confirmTitle": "Sentencia destructiva",
-    "confirmText": "Estas sentencias pueden borrar datos u objetos. ¿Ejecutarlas de todos modos?",
+    "confirmText": "Estas sentencias modifican o borran datos u objetos. ¿Ejecutarlas de todos modos?",
     "confirmRun": "Ejecutar de todos modos",
     "favoriteName": "Nombre del favorito",
     "save": "Guardar",

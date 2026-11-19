@@ -254,7 +254,7 @@
     "removeFavorite": "Retirer",
     "emptyFavorites": "Aucun favori.",
     "confirmTitle": "Instruction destructrice",
-    "confirmText": "Ces instructions peuvent supprimer des données ou des objets. Les exécuter quand même ?",
+    "confirmText": "Ces instructions modifient ou suppriment des données ou des objets. Les exécuter quand même ?",
     "confirmRun": "Exécuter quand même",
     "favoriteName": "Nom du favori",
     "save": "Enregistrer",
