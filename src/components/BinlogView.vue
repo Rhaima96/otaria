@@ -68,10 +68,12 @@ function pickFile(name: string) {
   jumpTo.value = "";
   open(name);
 }
-function jump() {
+async function jump() {
   const n = Number(jumpTo.value);
+  const before = from.value;
   from.value = jumpTo.value.trim() && Number.isInteger(n) && n >= 4 ? n : null;
-  open(file.value);
+  await open(file.value);
+  if (error.value) from.value = before; // refused position: the list shown is still the old one
 }
 
 /**
