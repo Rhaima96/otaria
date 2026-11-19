@@ -63,6 +63,7 @@ async function ask(name: string, action: ReplicationAction) {
 // CHANGE MASTER TO form: new channel (name editable) or an existing one (prefilled, password left unchanged).
 // The password lives only in this form while the dialog is open: cleared on close, never shown in the preview.
 // Typing empties the preview (Apply off) until the field is left: what runs is always what was shown.
+// Not for the <select>: re-rendering between its input and change events put the old option back.
 const form = reactive<ChangeMaster & { name: string; isNew: boolean }>({ name: "", isNew: true, host: "", port: 3306, user: "", password: "", gtid: "slave_pos", file: "", pos: 4 });
 const change = () => {
   const { name, isNew: _, ...cm } = form;
@@ -179,7 +180,7 @@ const field = "h-7 rounded-sm border bg-background px-2 disabled:opacity-60";
       <dialog ref="actDialog" class="m-auto w-[min(36rem,90vw)] rounded-lg border bg-popover p-0 text-popover-foreground backdrop:bg-black/40" @close="closed">
         <div class="border-b px-4 py-2 font-semibold">{{ t("grid.previewTitle") }}</div>
         <div v-if="pending?.action.kind === 'change'" class="grid grid-cols-[max-content_1fr] items-center gap-x-3 gap-y-1.5 px-4 pt-3"
-          @input="pending!.sql = []"
+          @input="($event.target as HTMLElement).tagName !== 'SELECT' && (pending!.sql = [])"
           @change="change"
         >
           <label :class="label" for="cm-name">{{ t("replication.channel") }}</label>
