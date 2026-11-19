@@ -221,7 +221,8 @@ export interface IndexDef {
   name: string;
   /** VECTOR: MariaDB 11.7+, one VECTOR NOT NULL column. */
   kind: "PRIMARY" | "UNIQUE" | "INDEX" | "FULLTEXT" | "SPATIAL" | "VECTOR";
-  columns: { name: string; length: number | null; desc: boolean }[];
+  /** `expr`: functional key part (MySQL 8), written `(expr)`; `name` is then empty. */
+  columns: { name: string; length: number | null; desc: boolean; expr?: string | null }[];
   comment: string;
   /** Not used by the optimizer: IGNORED (MariaDB) / INVISIBLE (MySQL). */
   ignored: boolean;

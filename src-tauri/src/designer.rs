@@ -65,6 +65,9 @@ pub struct IndexColumn {
     /// Descending order (MariaDB 10.8+, MySQL 8).
     #[serde(default)]
     pub desc: bool,
+    /// Functional key part (MySQL 8): the expression, written `(expr)` in place of the column; `name` is then empty.
+    #[serde(default)]
+    pub expr: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -242,9 +245,10 @@ fn index_sql(i: &IndexDef, mariadb: bool) -> AppResult<String> {
         .columns
         .iter()
         .map(|c| {
-            let col = match c.length {
-                Some(n) => format!("{}({n})", ident(&c.name)),
-                None => ident(&c.name),
+            let col = match (&c.expr, c.length) {
+                (Some(e), _) => format!("({})", e.trim()),
+                (None, Some(n)) => format!("{}({n})", ident(&c.name)),
+                (None, None) => ident(&c.name),
             };
             if c.desc { col + " DESC" } else { col }
         })
@@ -662,19 +666,21 @@ pub async fn load_tables(pool: &Pool, schema: &str, only: Option<&str>, mariadb:
 
     // IGNORED exists from MariaDB 10.6 (oldest supported: 10.11); MySQL calls it IS_VISIBLE.
     let ignored = if mariadb { "IGNORED = 'YES'" } else { "IS_VISIBLE = 'NO'" };
-    type IndexRow = (String, String, bool, Option<String>, Option<u32>, String, String, bool, bool);
+    // Functional key parts: MySQL 8 lists their expression (COLUMN_NAME NULL); MariaDB has none.
+    let expression = if mariadb { "NULL" } else { "EXPRESSION" };
+    type IndexRow = (String, String, bool, Option<String>, Option<u32>, String, String, bool, bool, Option<String>);
     let rows: Vec<IndexRow> = conn
         .exec(
             format!(
                 "SELECT TABLE_NAME, INDEX_NAME, NON_UNIQUE = 1, COLUMN_NAME, SUB_PART, INDEX_TYPE, IFNULL(INDEX_COMMENT, ''),
-                        IFNULL(COLLATION = 'D', 0), {ignored}
+                        IFNULL(COLLATION = 'D', 0), {ignored}, {expression}
                    FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND (? IS NULL OR TABLE_NAME = ?)
                   ORDER BY TABLE_NAME, INDEX_NAME = 'PRIMARY' DESC, INDEX_NAME, SEQ_IN_INDEX"
             ),
             which,
         )
         .await?;
-    let mut indexes = by_table(rows.into_iter().map(|(t, a, b, c, d, e, f, g, h)| (t, (a, b, c, d, e, f, g, h))).collect());
+    let mut indexes = by_table(rows.into_iter().map(|(t, a, b, c, d, e, f, g, h, x)| (t, (a, b, c, d, e, f, g, h, x))).collect());
 
     // LEFT JOIN: with SELECT only, MariaDB lists the FK in KEY_COLUMN_USAGE but hides its
     // REFERENTIAL_CONSTRAINTS row; the rules then come from SHOW CREATE TABLE (visible with SELECT).
@@ -734,10 +740,12 @@ pub async fn load_tables(pool: &Pool, schema: &str, only: Option<&str>, mariadb:
         }
 
         let mut idx: Vec<IndexDef> = Vec::new();
-        for (name, non_unique, col, sub_part, itype, icomment, desc, ignored) in indexes.remove(&table).unwrap_or_default() {
-            // ponytail: functional index parts (MySQL, COLUMN_NAME NULL) are skipped; such an index is shown without them.
-            let Some(col) = col else { continue };
-            let column = IndexColumn { name: col, length: sub_part, desc };
+        for (name, non_unique, col, sub_part, itype, icomment, desc, ignored, expr) in indexes.remove(&table).unwrap_or_default() {
+            let column = match (col, expr) {
+                (Some(col), _) => IndexColumn { name: col, length: sub_part, desc, expr: None },
+                (None, Some(e)) => IndexColumn { name: String::new(), length: None, desc, expr: Some(e) },
+                (None, None) => continue,
+            };
             match idx.last_mut().filter(|i| i.name == name) {
                 Some(i) => i.columns.push(column),
                 None => idx.push(IndexDef {
@@ -984,7 +992,7 @@ mod tests {
                 original: Some("PRIMARY".into()),
                 name: "PRIMARY".into(),
                 kind: "PRIMARY".into(),
-                columns: vec![IndexColumn { name: "id".into(), length: None, desc: false }],
+                columns: vec![IndexColumn { name: "id".into(), length: None, desc: false, expr: None }],
                 comment: String::new(),
                 ignored: false,
                 m: None,
@@ -1076,8 +1084,11 @@ mod tests {
             ..table()
         };
         let mut new = old.clone();
-        new.indexes[0].columns.push(IndexColumn { name: "a".into(), length: Some(4), desc: false });
-        new.indexes.push(IndexDef { original: None, name: "".into(), kind: "UNIQUE".into(), columns: vec![IndexColumn { name: "b".into(), length: None, desc: true }], comment: String::new(), ignored: false, m: None, distance: None, overlaps: None });
+        new.indexes[0].columns.push(IndexColumn { name: "a".into(), length: Some(4), desc: false, expr: None });
+        new.indexes.push(IndexDef { original: None, name: "".into(), kind: "UNIQUE".into(), columns: vec![IndexColumn { name: "b".into(), length: None, desc: true, expr: None }], comment: String::new(), ignored: false, m: None, distance: None, overlaps: None });
+        // A functional key part (MySQL 8) is written as its expression in parentheses.
+        let part = IndexColumn { name: String::new(), length: None, desc: true, expr: Some("`a` + 1".into()) };
+        new.indexes.push(IndexDef { original: None, name: "f".into(), kind: "INDEX".into(), columns: vec![part], comment: String::new(), ignored: false, m: None, distance: None, overlaps: None });
         new.fks[0].on_delete = "set null".into();
         new.checks.clear();
         new.comment = "hi".into();
@@ -1089,6 +1100,7 @@ mod tests {
                 "DROP PRIMARY KEY",
                 "ADD PRIMARY KEY (`id`, `a`(4))",
                 "ADD UNIQUE INDEX (`b` DESC)",
+                "ADD INDEX `f` ((`a` + 1) DESC)",
                 "ADD CONSTRAINT `fk` FOREIGN KEY (`b`) REFERENCES `p` (`id`) ON DELETE SET NULL ON UPDATE RESTRICT",
                 "COMMENT='hi'",
             ]
@@ -1163,7 +1175,7 @@ mod tests {
         assert_eq!(back, ["DROP PRIMARY KEY", "ADD PERIOD FOR `valid` (`d1`, `d2`)", "ADD PRIMARY KEY (`id`, `valid` WITHOUT OVERLAPS)", "ADD SYSTEM VERSIONING"]);
 
         // Server-added parts left out on load.
-        let ip = |n: &str| IndexColumn { name: n.into(), length: None, desc: false };
+        let ip = |n: &str| IndexColumn { name: n.into(), length: None, desc: false, expr: None };
         let mut idx = vec![IndexDef { columns: vec![ip("id"), ip("d2"), ip("d1"), ip("re")], ..t.indexes[0].clone() }];
         idx[0].overlaps = None;
         let mut checks = vec![CheckDef { original: None, name: "valid".into(), clause: "`d1` < `d2`".into() }];
@@ -1181,7 +1193,7 @@ mod tests {
             original: Some("ib".into()),
             name: "ib".into(),
             kind: "INDEX".into(),
-            columns: vec![IndexColumn { name: "b".into(), length: None, desc: true }],
+            columns: vec![IndexColumn { name: "b".into(), length: None, desc: true, expr: None }],
             comment: String::new(),
             ignored: false,
             m: None,
@@ -1192,7 +1204,7 @@ mod tests {
             original: Some("ve".into()),
             name: "ve".into(),
             kind: "VECTOR".into(),
-            columns: vec![IndexColumn { name: "a".into(), length: None, desc: false }],
+            columns: vec![IndexColumn { name: "a".into(), length: None, desc: false, expr: None }],
             comment: String::new(),
             ignored: false,
             m: None,
@@ -1362,7 +1374,7 @@ mod tests {
         new.columns.insert(1, created);
         new.columns.insert(1, ColumnDef { original: None, ..col("extra", "int(11)") });
         new.columns.iter_mut().find(|c| c.name == "n").unwrap().default = DefaultValue::Expr("5".into());
-        new.indexes.push(IndexDef { original: None, name: "ipid".into(), kind: "INDEX".into(), columns: vec![IndexColumn { name: "pid".into(), length: None, desc: false }], comment: String::new(), ignored: false, m: None, distance: None, overlaps: None });
+        new.indexes.push(IndexDef { original: None, name: "ipid".into(), kind: "INDEX".into(), columns: vec![IndexColumn { name: "pid".into(), length: None, desc: false, expr: None }], comment: String::new(), ignored: false, m: None, distance: None, overlaps: None });
         run(&pool, &alter_sql("otaria_des", &def, &new, Algorithm::Default, true).unwrap()).await.unwrap();
         let after = load(&pool, "otaria_des", "t2", true).await.unwrap();
         let names: Vec<&str> = after.columns.iter().map(|c| c.name.as_str()).collect();

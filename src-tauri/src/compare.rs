@@ -106,7 +106,10 @@ pub fn compare(target_schema: &str, src: &Schema, tgt: &Schema, mariadb: bool) -
                 let alter = designer::alter_sql(target_schema, t, &s, Algorithm::Default, mariadb)?;
                 if !alter.is_empty() {
                     diffs.push(diff(&s.name, "table", "alter"));
-                    stmts.extend(alter.into_iter().map(|a| format!("{a};")));
+                    // Same block as the ALTER it explains.
+                    let note = (s.engine != t.engine && !s.engine.is_empty())
+                        .then(|| format!("-- ENGINE {} -> {}: the whole table is copied, writes wait meanwhile.\n", t.engine, s.engine));
+                    stmts.extend(alter.into_iter().enumerate().map(|(k, a)| format!("{}{a};", if k == 0 { note.as_deref().unwrap_or("") } else { "" })));
                 }
             }
         }
@@ -156,10 +159,16 @@ fn sequence_parts<'a>(name: &str, ddl: &'a str) -> Option<(&'a str, &'a str)> {
     Some((rest[..i].trim(), &rest[i..]))
 }
 
+/// `ENGINE=Aria` at the end of SHOW CREATE SEQUENCE → "Aria" (plain word only, it goes back into SQL).
+fn sequence_engine(ddl: &str) -> Option<&str> {
+    let e = ddl.rsplit(" ENGINE=").next().filter(|_| ddl.contains(" ENGINE="))?.split_whitespace().next()?;
+    e.chars().all(|c| c.is_ascii_alphanumeric() || c == '_').then_some(e)
+}
+
 /// ALTER SEQUENCE keeps the current value (CREATE OR REPLACE would restart it). MariaDB refuses AS <type>
 /// together with other options, so the type change is its own statement: first when maxvalue grows
 /// (wider type), after the options when it shrinks (the new maxvalue must fit the narrower type).
-// ponytail: engine changes are not carried over.
+/// The engine is changed with ALTER TABLE, which also keeps the value.
 fn alter_sequence(name: &str, src: &str, tgt: &str) -> Vec<String> {
     let (Some((src_as, src_opts)), Some((tgt_as, tgt_opts))) = (sequence_parts(name, src), sequence_parts(name, tgt)) else {
         // Unknown shape: offer the replacement, commented, since it restarts the sequence.
@@ -170,7 +179,11 @@ fn alter_sequence(name: &str, src: &str, tgt: &str) -> Vec<String> {
     let max = |o: &str| o.split_once("maxvalue ").and_then(|(_, r)| r.split(' ').next()?.parse::<i128>().ok());
     let shrinks = matches!((max(src_opts), max(tgt_opts)), (Some(s), Some(t)) if s < t);
     let order = if shrinks { [opts, ty] } else { [ty, opts] };
-    order.into_iter().flatten().collect()
+    let engine = match (sequence_engine(src), sequence_engine(tgt)) {
+        (Some(s), t) if Some(s) != t => Some(format!("ALTER TABLE {} ENGINE={s};", ident(name))),
+        _ => None,
+    };
+    order.into_iter().flatten().chain(engine).collect()
 }
 
 /// Integer type without its display width (`int(11) unsigned` → `int unsigned`). tinyint(1) keeps it:
@@ -358,7 +371,7 @@ mod tests {
                 original: Some("PRIMARY".into()),
                 name: "PRIMARY".into(),
                 kind: "PRIMARY".into(),
-                columns: vec![IndexColumn { name: cols[0].0.into(), length: None, desc: false }],
+                columns: vec![IndexColumn { name: cols[0].0.into(), length: None, desc: false, expr: None }],
                 comment: String::new(),
                 ignored: false,
                 m: None,
@@ -387,6 +400,15 @@ mod tests {
         let c = compare("prod", &a, &a, true).unwrap();
         assert!(c.diffs.is_empty());
         assert_eq!(c.sql, "");
+    }
+
+    #[test]
+    fn engine_change_is_carried_with_a_warning() {
+        let tgt = schema(vec![table("a", &[("id", "int(11)")])], &[]);
+        let mut src = schema(vec![table("a", &[("id", "int(11)")])], &[]);
+        src.tables[0].engine = "Aria".into();
+        let c = compare("prod", &src, &tgt, true).unwrap();
+        assert!(c.sql.contains("-- ENGINE InnoDB -> Aria: the whole table is copied, writes wait meanwhile.\nALTER TABLE `prod`.`a`\n  ENGINE=Aria;"), "{}", c.sql);
     }
 
     #[test]
@@ -449,6 +471,10 @@ mod tests {
         // Before any table: a table DEFAULT may call NEXTVAL on it.
         assert!(c.sql.find("SEQUENCE `a`").unwrap() < c.sql.find("SET FOREIGN_KEY_CHECKS = 1").unwrap());
         assert_eq!(alter_sequence("x", "weird", "other")[0].lines().count(), 2);
+        // Engine only: ALTER TABLE, which keeps the current value.
+        let aria = big.replace("ENGINE=InnoDB", "ENGINE=Aria");
+        assert_eq!(alter_sequence("s", &aria, big), ["ALTER TABLE `s` ENGINE=Aria;"]);
+        assert_eq!(sequence_engine("CREATE SEQUENCE `s` ENGINE=x;y"), None);
     }
 
     #[test]

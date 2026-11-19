@@ -99,17 +99,38 @@ function toggleGenerated(c: ColumnDef, on: boolean) {
   c.generated = on ? { expr: "", stored: false } : null;
 }
 
-// Index / FK columns are edited as "a, b(10) DESC" text.
-const indexCols = (i: IndexDef) => i.columns.map((c) => (c.length ? `${c.name}(${c.length})` : c.name) + (c.desc ? " DESC" : "")).join(", ");
+// Index / FK columns are edited as "a, b(10) DESC, (expr)" text; a part in parentheses is an expression (MySQL 8).
+const indexCols = (i: IndexDef) =>
+  i.columns.map((c) => (c.expr ? `(${c.expr})` : c.length ? `${c.name}(${c.length})` : c.name) + (c.desc ? " DESC" : "")).join(", ");
+/** Splits on the commas outside parentheses and quotes, so an expression keeps its own commas. */
+function topLevelParts(text: string) {
+  const parts: string[] = [];
+  let depth = 0;
+  let quote = "";
+  let start = 0;
+  for (let k = 0; k < text.length; k++) {
+    const ch = text[k];
+    if (quote) {
+      if (ch === quote) quote = "";
+    } else if (ch === "'" || ch === '"' || ch === "`") quote = ch;
+    else if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    else if (ch === "," && depth === 0) {
+      parts.push(text.slice(start, k));
+      start = k + 1;
+    }
+  }
+  parts.push(text.slice(start));
+  return parts.map((p) => p.trim()).filter(Boolean);
+}
 function setIndexCols(i: IndexDef, text: string) {
-  i.columns = text
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((s) => {
-      const m = s.match(/^(.*?)(?:\s*\((\d+)\))?(\s+(?:DESC|ASC))?$/i)!;
-      return { name: m[1].trim(), length: m[2] ? Number(m[2]) : null, desc: /desc/i.test(m[3] ?? "") };
-    });
+  i.columns = topLevelParts(text).map((s) => {
+    const [, body, dir] = s.match(/^(.*?)(\s+(?:DESC|ASC))?$/i)!;
+    const desc = /desc/i.test(dir ?? "");
+    if (body.startsWith("(") && body.endsWith(")")) return { name: "", length: null, desc, expr: body.slice(1, -1).trim() };
+    const m = body.match(/^(.*?)(?:\s*\((\d+)\))?$/)!;
+    return { name: m[1].trim(), length: m[2] ? Number(m[2]) : null, desc };
+  });
 }
 const list = (v: string[]) => v.join(", ");
 const parseList = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
@@ -171,8 +192,20 @@ const RULES = ["RESTRICT", "CASCADE", "SET NULL", "NO ACTION", "SET DEFAULT"];
 // VECTOR indexes: MariaDB 11.7+ (an older server refuses them with its own error).
 const KINDS: IndexDef["kind"][] = ["PRIMARY", "UNIQUE", "INDEX", "FULLTEXT", "SPATIAL", ...(props.mariadb ? (["VECTOR"] as const) : [])];
 const fkSchema = (refSchema: string) => refSchema.trim() || props.schema;
-// ponytail: common types only; anything else can be typed.
-const TYPES = [...(props.mariadb ? ["vector(384)"] : []), "int", "bigint", "smallint", "tinyint(1)", "decimal(10,2)", "double", "varchar(255)", "char(36)", "text", "longtext", "json", "date", "datetime", "timestamp", "time", "blob", "uuid", "inet6", "enum('a','b')"];
+// Every type, with a typical size where one is needed; any other spelling can still be typed.
+const TYPES = [
+  ..."tinyint tinyint(1) smallint mediumint int bigint".split(" "),
+  "int unsigned",
+  "bigint unsigned",
+  ..."decimal(10,2) float double bit(1)".split(" "),
+  ..."char(36) varchar(255) binary(16) varbinary(255) tinytext text mediumtext longtext tinyblob blob mediumblob longblob json".split(" "),
+  "enum('a','b')",
+  "set('a','b')",
+  ..."date time datetime datetime(6) timestamp timestamp(6) year".split(" "),
+  ..."geometry point linestring polygon multipoint multilinestring multipolygon geometrycollection".split(" "),
+  // MariaDB only: uuid 10.7, inet4 10.10, inet6 10.5, vector 11.7 (an older server refuses them itself).
+  ...(props.mariadb ? ["uuid", "inet4", "inet6", "vector(384)"] : []),
+];
 
 const input = "h-6 w-full min-w-0 rounded-sm border bg-background px-1.5 font-mono text-xs";
 const cell = "border-b px-1 py-0.5 align-middle";
