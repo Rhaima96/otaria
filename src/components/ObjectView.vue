@@ -15,7 +15,7 @@ import { useConfirm } from "@/composables/useConfirm";
 import { editScript } from "@/lib/templates";
 import { cn } from "@/lib/utils";
 
-const props = defineProps<{ sessionId: string; schema: string; obj: DbObject; mariadb: boolean }>();
+const props = defineProps<{ sessionId: string; schema: string; obj: DbObject; mariadb: boolean; serverVersion: string }>();
 const emit = defineEmits<{ renamed: [name: string]; dropped: []; editSql: [sql: string]; treeChanged: []; versioned: [on: boolean] }>();
 const { t } = useI18n();
 const { confirm } = useConfirm();
@@ -161,7 +161,7 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
 
     <VectorView v-else-if="view === 'vector' && info" :key="version" :session-id="sessionId" :schema="schema" :table="obj.name" :info="info" class="min-h-0 flex-1" />
 
-    <TableDesigner v-else-if="view === 'structure' && isTable" ref="designer" :session-id="sessionId" :schema="schema" :table="obj.name" :mariadb="mariadb" class="min-h-0 flex-1" @saved="saved" />
+    <TableDesigner v-else-if="view === 'structure' && isTable" ref="designer" :session-id="sessionId" :schema="schema" :table="obj.name" :mariadb="mariadb" :version="serverVersion" class="min-h-0 flex-1" @saved="saved" />
 
     <div v-else-if="view === 'structure' && info" class="min-h-0 flex-1 overflow-auto">
       <table class="w-full border-collapse">

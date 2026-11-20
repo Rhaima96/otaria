@@ -254,6 +254,14 @@ async fn cell_value(state: State<'_, AppState>, session_id: String, schema: Stri
     browse::cell_value(&pool(&state, &session_id).await?, &schema, &table, &key, &column).await
 }
 
+/// Replication words the server speaks (MariaDB, MySQL before / since 8.0.26).
+async fn dialect(state: &AppState, session_id: &str) -> AppResult<replication::Dialect> {
+    match state.sessions.lock().await.get(session_id) {
+        Some(s) => Ok(replication::Dialect::of(s.info.is_mariadb, &s.info.version)),
+        None => Err(AppError::new("SESSION_NOT_FOUND", session_id)),
+    }
+}
+
 /// MariaDB or MySQL: some metadata and DDL keywords differ.
 async fn is_mariadb(state: &AppState, session_id: &str) -> AppResult<bool> {
     match state.sessions.lock().await.get(session_id) {
@@ -328,13 +336,14 @@ async fn designer_apply(
     designer::run_on(&mut conn, &stmts).await
 }
 
-/// Progress of a running `designer_apply` (MariaDB): (percent, stage, stages); None when not running.
+/// Progress of a running `designer_apply`: (percent, stage, stages; 0 stages on MySQL); None when not running
+/// or not reported.
 #[tauri::command]
 async fn alter_progress(state: State<'_, AppState>, session_id: String, job_id: String) -> AppResult<Option<(f64, u32, u32)>> {
     let id = state.jobs.lock().unwrap().get(&job_id).map(|(_, id)| *id);
     match id {
-        Some(id) if is_mariadb(&state, &session_id).await? => designer::progress(&pool(&state, &session_id).await?, id).await,
-        _ => Ok(None),
+        Some(id) => designer::progress(&pool(&state, &session_id).await?, id, is_mariadb(&state, &session_id).await?).await,
+        None => Ok(None),
     }
 }
 
@@ -376,7 +385,7 @@ async fn vector_search(
 
 #[tauri::command]
 async fn binlog_state(state: State<'_, AppState>, session_id: String) -> AppResult<binlog::State> {
-    binlog::state(&pool(&state, &session_id).await?).await
+    binlog::state(&pool(&state, &session_id).await?, is_mariadb(&state, &session_id).await?).await
 }
 
 #[tauri::command]
@@ -405,18 +414,18 @@ async fn binlog_purge(state: State<'_, AppState>, session_id: String, file: Stri
 
 #[tauri::command]
 async fn replication_state(state: State<'_, AppState>, session_id: String) -> AppResult<replication::State> {
-    replication::state(&pool(&state, &session_id).await?).await
+    replication::state(&pool(&state, &session_id).await?, dialect(&state, &session_id).await?).await
 }
 
 #[tauri::command]
-fn replication_sql(name: String, action: replication::Action) -> AppResult<Vec<String>> {
-    replication::statements(&name, &action, true)
+async fn replication_sql(state: State<'_, AppState>, session_id: String, name: String, action: replication::Action) -> AppResult<Vec<String>> {
+    replication::statements(&name, &action, true, dialect(&state, &session_id).await?)
 }
 
 /// Rebuilt from the same inputs as the preview.
 #[tauri::command]
 async fn replication_apply(state: State<'_, AppState>, session_id: String, name: String, action: replication::Action) -> AppResult<()> {
-    designer::run(&pool(&state, &session_id).await?, &replication::statements(&name, &action, false)?).await
+    designer::run(&pool(&state, &session_id).await?, &replication::statements(&name, &action, false, dialect(&state, &session_id).await?)?).await
 }
 
 #[tauri::command]
@@ -593,7 +602,7 @@ fn save_diagram(path: String, data: Vec<u8>) -> AppResult<()> {
 
 #[tauri::command]
 async fn list_plugins(state: State<'_, AppState>, session_id: String) -> AppResult<Vec<plugins::Plugin>> {
-    plugins::list(&pool(&state, &session_id).await?).await
+    plugins::list(&pool(&state, &session_id).await?, is_mariadb(&state, &session_id).await?).await
 }
 
 #[tauri::command]
@@ -603,7 +612,7 @@ fn plugin_install_sql(name: String, library: String) -> AppResult<String> {
 
 #[tauri::command]
 async fn plugin_install(state: State<'_, AppState>, session_id: String, name: String, library: String) -> AppResult<()> {
-    plugins::install(&pool(&state, &session_id).await?, &name, &library).await
+    plugins::install(&pool(&state, &session_id).await?, is_mariadb(&state, &session_id).await?, &name, &library).await
 }
 
 /// Progress of a running import / export, sent as the `transfer-progress` event.
@@ -753,7 +762,7 @@ async fn run_sql(
 ) -> AppResult<query::RunOutput> {
     let mut stmts = query::pick(&sql, cursor);
     if analyze {
-        stmts = vec![query::analyze_sql(&stmts)?];
+        stmts = vec![query::analyze_sql(&stmts, is_mariadb(&state, &session_id).await?)?];
     }
     let risky: Vec<&str> = stmts.iter().map(String::as_str).filter(|s| query::risky(s)).collect();
     if !confirmed && !risky.is_empty() {

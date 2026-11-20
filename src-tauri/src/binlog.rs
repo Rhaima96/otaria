@@ -1,6 +1,6 @@
-//! Binary log reader (MariaDB only): files from `SHOW BINARY LOGS`, events from `SHOW BINLOG EVENTS`,
-//! read one page at a time; flashback (undo SQL for a range of row events) through the external
-//! `mariadb-binlog` client. Nothing is run here: the undo script opens in the SQL editor.
+//! Binary log reader: files from `SHOW BINARY LOGS`, events from `SHOW BINLOG EVENTS`, read one page at
+//! a time (MariaDB and MySQL); flashback (undo SQL for a range of row events, MariaDB only) through the
+//! external `mariadb-binlog` client. Nothing is run here: the undo script opens in the SQL editor.
 
 use mysql_async::Pool;
 use mysql_async::prelude::Queryable;
@@ -122,15 +122,18 @@ pub struct State {
     pub format: String,
     /// Oldest first; the last one is the file being written.
     pub files: Vec<BinlogFile>,
-    /// `@@gtid_binlog_pos`: last GTID written per domain.
+    /// `@@gtid_binlog_pos` (MariaDB: last GTID written per domain) or `@@gtid_executed` (MySQL), on one line.
     pub gtid: String,
 }
 
 /// `BINLOG_OFF` when the server does not write a binary log (SHOW BINARY LOGS would fail with 1381).
-pub async fn state(pool: &Pool) -> AppResult<State> {
+pub async fn state(pool: &Pool, mariadb: bool) -> AppResult<State> {
     let mut conn = pool.get_conn().await?;
+    let gtid_var = if mariadb { "@@gtid_binlog_pos" } else { "@@gtid_executed" };
     let (on, format, gtid): (bool, String, String) =
-        conn.query_first("SELECT @@log_bin, @@binlog_format, @@gtid_binlog_pos").await?.unwrap_or_default();
+        conn.query_first(format!("SELECT @@log_bin, @@binlog_format, {gtid_var}")).await?.unwrap_or_default();
+    // MySQL puts a newline after each comma of a long GTID set.
+    let gtid = gtid.replace('\n', "");
     if !on {
         return Err(AppError::new("BINLOG_OFF", String::new()));
     }
@@ -271,7 +274,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let st = state(&pool).await.unwrap();
+        let st = state(&pool, true).await.unwrap();
         assert_eq!(st.format, "ROW");
         assert!(!st.gtid.is_empty());
         let last = &st.files.last().unwrap().name;
@@ -316,9 +319,9 @@ mod tests {
 
         // Purge: the files before the one named go, that one stays.
         conn.query_drop("FLUSH BINARY LOGS").await.unwrap();
-        let names: Vec<String> = state(&pool).await.unwrap().files.into_iter().map(|f| f.name).collect();
+        let names: Vec<String> = state(&pool, true).await.unwrap().files.into_iter().map(|f| f.name).collect();
         purge(&pool, &names[names.len() - 2]).await.unwrap();
-        let left: Vec<String> = state(&pool).await.unwrap().files.into_iter().map(|f| f.name).collect();
+        let left: Vec<String> = state(&pool, true).await.unwrap().files.into_iter().map(|f| f.name).collect();
         assert_eq!(left, names[names.len() - 2..]);
         assert_eq!(purge(&pool, "nope.000001").await.unwrap_err().code, "NOT_FOUND");
 
@@ -328,7 +331,38 @@ mod tests {
             let plain = Pool::new(
                 mysql_async::OptsBuilder::default().ip_or_hostname(p[0]).tcp_port(p[1].parse().unwrap()).user(Some(p[2])).pass(Some(p[3])).prefer_socket(false),
             );
-            assert_eq!(state(&plain).await.unwrap_err().code, "BINLOG_OFF");
+            assert_eq!(state(&plain, true).await.unwrap_err().code, "BINLOG_OFF");
         }
+    }
+
+    /// MySQL 8: OTARIA_TEST_MYSQL="host:port:user:password" cargo test binlog_on_mysql -- --ignored
+    #[tokio::test]
+    #[ignore]
+    async fn binlog_on_mysql() {
+        let spec = std::env::var("OTARIA_TEST_MYSQL").expect("set OTARIA_TEST_MYSQL");
+        let p: Vec<&str> = spec.splitn(4, ':').collect();
+        let pool = Pool::new(
+            mysql_async::OptsBuilder::default().ip_or_hostname(p[0]).tcp_port(p[1].parse().unwrap()).user(Some(p[2])).pass(Some(p[3])).prefer_socket(false),
+        );
+        let mut conn = pool.get_conn().await.unwrap();
+        conn.query_drop(
+            "DROP DATABASE IF EXISTS otaria_bl; FLUSH BINARY LOGS; CREATE DATABASE otaria_bl;
+             CREATE TABLE otaria_bl.t (id INT PRIMARY KEY, v VARCHAR(10)); INSERT INTO otaria_bl.t VALUES (1, 'a');",
+        )
+        .await
+        .unwrap();
+        let st = state(&pool, false).await.unwrap();
+        assert!(!st.gtid.contains('\n'), "{}", st.gtid);
+        let last = &st.files.last().unwrap().name;
+        let all = events(&pool, last, None, 0, 5000).await.unwrap();
+        assert_eq!(all[0].kind, "Format_desc");
+        assert!(all.iter().any(|e| e.kind == "Query" && e.info.contains("CREATE TABLE otaria_bl.t")));
+        assert!(all.iter().any(|e| e.kind == "Write_rows"));
+        assert_eq!(events(&pool, last, Some(all[3].pos + 1), 0, 2).await.unwrap()[0].pos, all[3].pos);
+        conn.query_drop("DROP DATABASE otaria_bl; FLUSH BINARY LOGS").await.unwrap();
+        let names: Vec<String> = state(&pool, false).await.unwrap().files.into_iter().map(|f| f.name).collect();
+        purge(&pool, &names[names.len() - 2]).await.unwrap();
+        let left: Vec<String> = state(&pool, false).await.unwrap().files.into_iter().map(|f| f.name).collect();
+        assert_eq!(left, names[names.len() - 2..]);
     }
 }

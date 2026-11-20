@@ -336,6 +336,8 @@ export interface ReplicationChannel {
   sqlState: string;
   lastIoError: string;
   lastSqlError: string;
+  /** TLS to the source. */
+  ssl: boolean;
 }
 
 export interface ReplicationState {
@@ -375,9 +377,12 @@ export interface ChangeMaster {
   port: number;
   user: string;
   password: string;
-  gtid: "slave_pos" | "current_pos" | "no";
+  /** MariaDB: slave_pos | current_pos | no. MySQL: auto (SOURCE_AUTO_POSITION = 1) | no. */
+  gtid: "slave_pos" | "current_pos" | "auto" | "no";
   file: string;
   pos: number;
+  /** TLS to the source (MASTER_SSL / SOURCE_SSL). */
+  ssl: boolean;
 }
 
 export interface Engine {
@@ -418,15 +423,19 @@ export interface Process {
 export interface Variable {
   name: string;
   value: string | null;
-  /** The fields below are null on MySQL. */
+  /** MariaDB only (null on MySQL). */
   default: string | null;
-  /** INT, BIGINT UNSIGNED, DOUBLE, BOOLEAN, ENUM, SET, FLAGSET, VARCHAR… */
+  /** INT, BIGINT UNSIGNED, DOUBLE, BOOLEAN, ENUM, SET, FLAGSET, VARCHAR… MariaDB only. */
   kind: string | null;
+  /** MariaDB: COMPILE-TIME, CONFIG… MySQL: COMPILED, DYNAMIC, PERSISTED… (null if performance_schema cannot be read). */
   origin: string | null;
   readOnly: boolean;
   comment: string | null;
   /** Comma-separated, for ENUM / SET / FLAGSET / BOOLEAN. */
   choices: string | null;
+  /** Numeric range, null for non-numeric variables. */
+  min: string | null;
+  max: string | null;
 }
 
 export interface Account {
@@ -444,7 +453,8 @@ export interface Account {
   maxUserConnections: number;
   /** Seconds, MariaDB only. */
   maxStatementTime: number;
-  defaultRole: string | null;
+  /** Roles enabled at login, sorted: one at most on MariaDB, several on MySQL. */
+  defaultRoles: string[];
   roles: string[];
   /** Of `roles`, those granted WITH ADMIN OPTION. */
   adminRoles: string[];
@@ -614,7 +624,7 @@ export const api = {
   /** `from`: byte position to start at (an event start), null = start of the file; `offset` counts events from there. */
   binlogEvents: (sessionId: string, file: string, from: number | null, offset: number, limit: number) =>
     invoke<BinlogEvent[]>("binlog_events", { sessionId, file, from, offset, limit }),
-  replicationSql: (name: string, action: ReplicationAction) => invoke<string[]>("replication_sql", { name, action }),
+  replicationSql: (sessionId: string, name: string, action: ReplicationAction) => invoke<string[]>("replication_sql", { sessionId, name, action }),
   replicationApply: (sessionId: string, name: string, action: ReplicationAction) => invoke<void>("replication_apply", { sessionId, name, action }),
   binlogPurgeSql: (file: string) => invoke<string>("binlog_purge_sql", { file }),
   binlogPurge: (sessionId: string, file: string) => invoke<void>("binlog_purge", { sessionId, file }),

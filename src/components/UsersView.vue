@@ -5,9 +5,11 @@ import { Lock, Plus, RefreshCw, Shield, Trash2, User, UserPlus, X } from "lucide
 import ErrorLine from "@/components/ErrorLine.vue";
 import GrantsEditor from "@/components/GrantsEditor.vue";
 import { api, toAppError, type Account, type AccountForm, type AppError, type Privilege } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn, versionAtLeast } from "@/lib/utils";
 
-const props = defineProps<{ sessionId: string; active?: boolean; mariadb: boolean }>();
+const props = defineProps<{ sessionId: string; active?: boolean; mariadb: boolean; version: string }>();
+/** Roles: MariaDB, and MySQL from 8.0 (5.7 has none). */
+const hasRoles = props.mariadb || versionAtLeast(props.version, [8, 0, 0]);
 const { t } = useI18n();
 
 const accounts = ref<Account[]>([]);
@@ -58,7 +60,8 @@ function create(isRole: boolean) {
     user: "",
     host: isRole && props.mariadb ? "" : "%",
     isRole,
-    plugin: isRole ? "" : "mysql_native_password",
+    // MySQL 8 defaults to caching_sha2_password; 8.4 disables mysql_native_password unless asked.
+    plugin: isRole ? "" : !props.mariadb && plugins.value.includes("caching_sha2_password") ? "caching_sha2_password" : "mysql_native_password",
     locked: false,
     expired: false,
     lifetime: null,
@@ -67,7 +70,7 @@ function create(isRole: boolean) {
     maxConnections: 0,
     maxUserConnections: 0,
     maxStatementTime: 0,
-    defaultRole: null,
+    defaultRoles: [],
     roles: [],
     adminRoles: [],
     require: "",
@@ -93,6 +96,12 @@ function addProxy() {
   newProxy.value = "";
 }
 
+/** MariaDB's single default role, over `form.defaultRoles`. */
+const defaultRole = computed<string | null>({
+  get: () => form.value?.defaultRoles[0] ?? null,
+  set: (r) => form.value && (form.value.defaultRoles = r ? [r] : []),
+});
+
 // Password lifetime: server default, never, or N days.
 const lifetimeMode = ref<"default" | "never" | "days">("default");
 const days = ref(90);
@@ -101,9 +110,9 @@ const days = ref(90);
 function payload(): AccountForm {
   const f = form.value!;
   // A default role must be one of the granted roles.
-  const defaultRole = f.defaultRole && f.roles.includes(f.defaultRole) ? f.defaultRole : null;
+  const defaultRoles = f.defaultRoles.filter((r) => f.roles.includes(r));
   const adminRoles = f.adminRoles.filter((r) => f.roles.includes(r));
-  return { ...f, defaultRole, adminRoles, password: f.password || null, lifetime: lifetimeMode.value === "default" ? null : lifetimeMode.value === "never" ? 0 : days.value };
+  return { ...f, defaultRoles, adminRoles, password: f.password || null, lifetime: lifetimeMode.value === "default" ? null : lifetimeMode.value === "never" ? 0 : days.value };
 }
 
 // Preview, then apply.
@@ -185,7 +194,7 @@ const tabBtn = "h-8 border-b-2 px-3";
       </div>
       <div class="flex flex-wrap gap-1 border-b p-2 whitespace-nowrap">
         <button :class="btn" @click="create(false)"><UserPlus class="size-3.5" />{{ t("users.newUser") }}</button>
-        <button :class="btn" @click="create(true)"><Shield class="size-3.5" />{{ t("users.newRole") }}</button>
+        <button v-if="hasRoles" :class="btn" @click="create(true)"><Shield class="size-3.5" />{{ t("users.newRole") }}</button>
       </div>
       <ErrorLine v-if="error" :error="error" class="m-2" />
       <ul class="min-h-0 flex-1 overflow-auto py-1">
@@ -287,20 +296,24 @@ const tabBtn = "h-8 border-b-2 px-3";
             </div>
           </template>
 
-          <span :class="cn(label, 'self-start pt-1')">{{ t("users.roles") }}</span>
-          <div class="flex flex-wrap gap-x-4 gap-y-1">
+          <span v-if="hasRoles" :class="cn(label, 'self-start pt-1')">{{ t("users.roles") }}</span>
+          <div v-if="hasRoles" class="flex flex-wrap gap-x-4 gap-y-1">
             <span v-for="r in grantable" :key="r" class="flex items-center gap-1.5 font-mono text-xs">
               <label class="flex items-center gap-1.5"><input v-model="form.roles" type="checkbox" :value="r" class="size-3.5" />{{ r }}</label>
               <label v-if="form.roles.includes(r)" class="flex items-center gap-1 font-sans text-muted-foreground" :title="t('users.adminOptionHint')">
                 (<input v-model="form.adminRoles" type="checkbox" :value="r" class="size-3" />{{ t("users.adminOption") }})
               </label>
+              <label v-if="!mariadb && !form.isRole && form.roles.includes(r)" class="flex items-center gap-1 font-sans text-muted-foreground" :title="t('users.defaultRolesHint')">
+                (<input v-model="form.defaultRoles" type="checkbox" :value="r" class="size-3" />{{ t("users.defaultRoleOne") }})
+              </label>
             </span>
             <span v-if="!grantable.length" class="text-muted-foreground">{{ t("users.noRoles") }}</span>
           </div>
 
-          <template v-if="!form.isRole">
+          <!-- MariaDB: one default role; MySQL ticks them in the list above. -->
+          <template v-if="!form.isRole && mariadb">
             <label :class="label" for="u-dr">{{ t("users.defaultRole") }}</label>
-            <select id="u-dr" v-model="form.defaultRole" :class="cn(input, 'font-mono')">
+            <select id="u-dr" v-model="defaultRole" :class="cn(input, 'font-mono')">
               <option :value="null">{{ t("users.none") }}</option>
               <option v-for="r in form.roles" :key="r" :value="r">{{ r }}</option>
             </select>

@@ -588,13 +588,28 @@ pub fn with_wait(stmts: Vec<String>, schema: &str, table: &str, wait: Option<u32
     stmts.into_iter().map(|s| if s.starts_with(&head) { format!("{head}{kw}{}", &s[head.len()..]) } else { s }).collect()
 }
 
-/// How far a running ALTER (or LOAD DATA…) of connection `id` is, MariaDB only: (percent, stage, stages).
-pub async fn progress(pool: &Pool, id: u32) -> AppResult<Option<(f64, u32, u32)>> {
-    Ok(pool
-        .get_conn()
-        .await?
-        .exec_first("SELECT PROGRESS + 0e0, STAGE, MAX_STAGE FROM information_schema.PROCESSLIST WHERE ID = ?", (id,))
-        .await?)
+/// How far a running ALTER (or LOAD DATA…) of connection `id` is: (percent, stage, stages).
+/// MariaDB: information_schema.PROCESSLIST. MySQL: the running stage of that connection's thread in
+/// performance_schema.events_stages_current, stage and stages 0 (MySQL does not number them). Filled by the
+/// `stage/innodb/alter%` instruments, on by default (the table fills on 8.4 even with its consumer off);
+/// InnoDB in-place ALTERs only. Otherwise, or without access to performance_schema, None and no bar.
+pub async fn progress(pool: &Pool, id: u32, mariadb: bool) -> AppResult<Option<(f64, u32, u32)>> {
+    let mut conn = pool.get_conn().await?;
+    if mariadb {
+        return Ok(conn.exec_first("SELECT PROGRESS + 0e0, STAGE, MAX_STAGE FROM information_schema.PROCESSLIST WHERE ID = ?", (id,)).await?);
+    }
+    let work: Option<(Option<u64>, Option<u64>)> = conn
+        .exec_first(
+            "SELECT s.WORK_COMPLETED, s.WORK_ESTIMATED FROM performance_schema.events_stages_current s
+             JOIN performance_schema.threads t USING (THREAD_ID) WHERE t.PROCESSLIST_ID = ? AND s.END_EVENT_ID IS NULL",
+            (id,),
+        )
+        .await
+        .unwrap_or(None);
+    Ok(match work {
+        Some((Some(done), Some(total))) if total > 0 => Some(((done as f64 * 100.0 / total as f64).min(100.0), 0, 0)),
+        _ => None,
+    })
 }
 
 /// Parse information_schema.COLUMN_DEFAULT. MariaDB quotes literals ('abc'), writes 'NULL' for
@@ -679,9 +694,14 @@ pub async fn load_tables(pool: &Pool, schema: &str, only: Option<&str>, mariadb:
     let mut columns = by_table(rows.into_iter().map(|mut r| (r.take::<String, _>(0).unwrap_or_default(), r)).collect());
 
     // IGNORED exists from MariaDB 10.6 (oldest supported: 10.11); MySQL calls it IS_VISIBLE.
-    let ignored = if mariadb { "IGNORED = 'YES'" } else { "IS_VISIBLE = 'NO'" };
+    // MySQL 5.7 has neither IS_VISIBLE nor EXPRESSION (invisible and functional indexes came with 8.0).
+    let mysql57 = !mariadb && {
+        let v: Option<String> = pool.get_conn().await?.query_first("SELECT VERSION()").await?;
+        !crate::db::version_at_least(&v.unwrap_or_default(), (8, 0, 0))
+    };
+    let ignored = if mariadb { "IGNORED = 'YES'" } else if mysql57 { "FALSE" } else { "IS_VISIBLE = 'NO'" };
     // Functional key parts: MySQL 8 lists their expression (COLUMN_NAME NULL); MariaDB has none.
-    let expression = if mariadb { "NULL" } else { "EXPRESSION" };
+    let expression = if mariadb || mysql57 { "NULL" } else { "EXPRESSION" };
     type IndexRow = (String, String, bool, Option<String>, Option<u32>, String, String, bool, bool, Option<String>);
     let rows: Vec<IndexRow> = conn
         .exec(
@@ -1323,6 +1343,48 @@ mod tests {
         assert_eq!(database_options(&pool, "otaria_newdb").await.unwrap_err().code, "NOT_FOUND");
     }
 
+    /// MySQL 5.7 / 8, default settings: an in-place ALTER reports its progress.
+    /// OTARIA_TEST_MYSQL="host:port:user:password" cargo test alter_progress_on_mysql -- --ignored
+    #[tokio::test]
+    #[ignore]
+    async fn alter_progress_on_mysql() {
+        let spec = std::env::var("OTARIA_TEST_MYSQL").expect("set OTARIA_TEST_MYSQL");
+        let p: Vec<&str> = spec.splitn(4, ':').collect();
+        let pool = Pool::new(
+            mysql_async::OptsBuilder::default().ip_or_hostname(p[0]).tcp_port(p[1].parse().unwrap()).user(Some(p[2])).pass(Some(p[3])).prefer_socket(false),
+        );
+        let mut setup = pool.get_conn().await.unwrap();
+        // Rows doubled 19 times (no recursive CTE on MySQL 5.7): 524288 rows.
+        setup
+            .query_drop("DROP DATABASE IF EXISTS otaria_prog; CREATE DATABASE otaria_prog; CREATE TABLE otaria_prog.big (id INT PRIMARY KEY, v CHAR(200)); INSERT INTO otaria_prog.big VALUES (1, REPEAT('x', 200))")
+            .await
+            .unwrap();
+        for n in (0..19).map(|i| 1u32 << i) {
+            setup.query_drop(format!("INSERT INTO otaria_prog.big SELECT id + {n}, v FROM otaria_prog.big")).await.unwrap();
+        }
+        let mut conn = pool.get_conn().await.unwrap();
+        let id = conn.id();
+        assert_eq!(progress(&pool, id, false).await.unwrap(), None, "idle connection: nothing running");
+        let alter = tokio::spawn(async move { run_on(&mut conn, &["ALTER TABLE `otaria_prog`.`big` FORCE, ALGORITHM=INPLACE".into()]).await });
+        let mut seen = None;
+        while !alter.is_finished() {
+            if let Some(p) = progress(&pool, id, false).await.unwrap().filter(|p| p.0 > 0.0) {
+                seen = Some(p);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+        }
+        alter.await.unwrap().unwrap();
+        let version: String = setup.query_first("SELECT VERSION()").await.unwrap().unwrap();
+        if !crate::db::version_at_least(&version, (8, 0, 0)) {
+            // MySQL 5.7 publishes no stage for this connection (it does for the mysql client): no bar, no error.
+            setup.query_drop("DROP DATABASE otaria_prog").await.unwrap();
+            return;
+        }
+        let (pct, stage, stages) = seen.expect("progress reported");
+        assert!(pct > 0.0 && pct <= 100.0 && (stage, stages) == (0, 0), "{pct} {stage} {stages}");
+        setup.query_drop("DROP DATABASE otaria_prog").await.unwrap();
+    }
+
     /// A long ALTER reports its progress, and KILL QUERY stops it.
     #[tokio::test]
     #[ignore]
@@ -1339,7 +1401,7 @@ mod tests {
         let mut seen = None;
         for _ in 0..100 {
             tokio::time::sleep(std::time::Duration::from_millis(30)).await;
-            if let Some(p) = progress(&pool, id).await.unwrap().filter(|p| p.0 > 0.0) {
+            if let Some(p) = progress(&pool, id, true).await.unwrap().filter(|p| p.0 > 0.0) {
                 seen = Some(p);
                 break;
             }
@@ -1348,7 +1410,7 @@ mod tests {
         assert!(pct > 0.0 && pct <= 100.0 && stages >= 1, "{pct} {stages}");
         crate::query::cancel(&pool, id).await.unwrap();
         let res = alter.await.unwrap();
-        assert!(res.is_err() || progress(&pool, id).await.unwrap().is_none(), "{res:?}");
+        assert!(res.is_err() || progress(&pool, id, true).await.unwrap().is_none(), "{res:?}");
         run(&pool, &["DROP DATABASE otaria_prog".into()]).await.unwrap();
     }
 

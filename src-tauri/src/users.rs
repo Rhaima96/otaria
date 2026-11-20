@@ -29,7 +29,9 @@ pub struct Account {
     pub max_user_connections: u64,
     /// Seconds, MariaDB only (0 = no limit).
     pub max_statement_time: f64,
-    pub default_role: Option<String>,
+    /// Roles enabled at login, sorted. MariaDB allows one; MySQL several.
+    #[serde(default)]
+    pub default_roles: Vec<String>,
     /// Roles granted to this account (MariaDB).
     pub roles: Vec<String>,
     /// Of `roles`, those granted WITH ADMIN OPTION (the account may grant them on).
@@ -100,7 +102,7 @@ pub async fn accounts(pool: &Pool, mariadb: bool) -> AppResult<Vec<Account>> {
             .unwrap_or_default();
         edges.into_iter().map(|(u, h, ru, rh, admin)| (u, h, role_key(&ru, &rh), admin)).collect()
     };
-    // MySQL: default roles (one shown; several are possible there), MariaDB has it in global_priv.
+    // MySQL: default roles (several possible), MariaDB has its one in global_priv.
     let defaults: Vec<(String, String, String, String)> = if mariadb {
         vec![]
     } else {
@@ -117,8 +119,10 @@ pub async fn accounts(pool: &Pool, mariadb: bool) -> AppResult<Vec<Account>> {
             let roles = mine().map(|m| m.2.clone()).collect();
             let admin_roles = mine().filter(|m| m.3).map(|m| m.2.clone()).collect();
             let granted_as_role = !mariadb && mapping.iter().any(|m| m.2 == role_key(&user, &host));
-            let default_role: Option<String> = r.take(12).flatten();
-            let default_role = default_role.or_else(|| defaults.iter().find(|d| d.0 == user && d.1 == host).map(|d| role_key(&d.2, &d.3)));
+            let mariadb_default: Option<String> = r.take(12).flatten();
+            let mut default_roles: Vec<String> = mariadb_default.into_iter().collect();
+            default_roles.extend(defaults.iter().filter(|d| d.0 == user && d.1 == host).map(|d| role_key(&d.2, &d.3)));
+            default_roles.sort();
             let proxies = proxies.iter().filter(|p| p.0 == user && p.1 == host).map(|p| (p.2.clone(), p.3.clone())).collect();
             Account {
                 is_role: r.take::<bool, _>(2).unwrap_or_default() || granted_as_role,
@@ -131,7 +135,7 @@ pub async fn accounts(pool: &Pool, mariadb: bool) -> AppResult<Vec<Account>> {
                 max_connections: r.take(9).unwrap_or_default(),
                 max_user_connections: r.take(10).unwrap_or_default(),
                 max_statement_time: r.take(11).unwrap_or_default(),
-                default_role,
+                default_roles,
                 require: r.take(13).unwrap_or_default(),
                 issuer: r.take::<Option<String>, _>(14).flatten().unwrap_or_default(),
                 subject: r.take::<Option<String>, _>(15).flatten().unwrap_or_default(),
@@ -455,12 +459,19 @@ pub fn account_sql(old: Option<&Account>, form: &AccountForm, mariadb: bool, sec
     for r in old.map(|o| o.roles.as_slice()).unwrap_or_default().iter().filter(|r| !has.contains(r)) {
         out.push(format!("REVOKE {} FROM {a}", ri(r)));
     }
-    if !new.is_role && old.map(|o| &o.default_role) != Some(&new.default_role) && (old.is_some() || new.default_role.is_some()) {
+    let sorted = |v: &[String]| {
+        let mut v = v.to_vec();
+        v.sort();
+        v
+    };
+    let defaults = sorted(&new.default_roles);
+    if !new.is_role && old.map(|o| sorted(&o.default_roles)) != Some(defaults.clone()) && (old.is_some() || !defaults.is_empty()) {
+        if mariadb && defaults.len() > 1 {
+            return Err(AppError::new("ONE_DEFAULT_ROLE", defaults.join(", ")));
+        }
         let to = if mariadb { "FOR" } else { "TO" };
-        out.push(match &new.default_role {
-            Some(r) => format!("SET DEFAULT ROLE {} {to} {a}", ri(r)),
-            None => format!("SET DEFAULT ROLE NONE {to} {a}"),
-        });
+        let list = if defaults.is_empty() { "NONE".to_string() } else { defaults.iter().map(ri).collect::<Vec<_>>().join(", ") };
+        out.push(format!("SET DEFAULT ROLE {list} {to} {a}"));
     }
 
     // PROXY: users only.
@@ -602,7 +613,7 @@ mod tests {
         new.lifetime = Some(0);
         new.max_statement_time = 2.5;
         new.roles = vec!["r2".into()];
-        new.default_role = Some("r2".into());
+        new.default_roles = vec!["r2".into()];
         let mut f = form(new, Some(("app", "%")), Some("pw"));
         f.expire_now = true;
         assert_eq!(
@@ -690,12 +701,18 @@ mod tests {
         let mut new = old.clone();
         new.admin_roles = vec![];
         new.roles = vec!["r1".into(), "r3".into()];
-        new.default_role = Some("r3".into());
+        new.default_roles = vec!["r3".into(), "r1".into()];
         let f = AccountForm { original: Some(("u".into(), "%".into())), account: new.clone(), password: None, expire_now: false };
         assert_eq!(
             account_sql(Some(&old), &f, false, plain).unwrap(),
-            ["GRANT `r3` TO `u`@`%`", "REVOKE `r1` FROM `u`@`%`", "GRANT `r1` TO `u`@`%`", "REVOKE `r2`@`10.%` FROM `u`@`%`", "SET DEFAULT ROLE `r3` TO `u`@`%`"]
+            ["GRANT `r3` TO `u`@`%`", "REVOKE `r1` FROM `u`@`%`", "GRANT `r1` TO `u`@`%`", "REVOKE `r2`@`10.%` FROM `u`@`%`", "SET DEFAULT ROLE `r1`, `r3` TO `u`@`%`"]
         );
+        // Same default roles in another order: nothing to set. MariaDB: one default role at most.
+        let mut same = new.clone();
+        same.default_roles = vec!["r1".into(), "r3".into()];
+        let f2 = AccountForm { original: Some(("u".into(), "%".into())), account: same, password: None, expire_now: false };
+        assert!(account_sql(Some(&new), &f2, false, plain).unwrap().is_empty());
+        assert_eq!(account_sql(Some(&old), &f, true, plain).unwrap_err().code, "ONE_DEFAULT_ROLE");
         // A MySQL role keeps its host; a MariaDB role has none.
         let role = |host: &str| Account { user: "rr".into(), host: host.into(), is_role: true, ..Default::default() };
         let create = |a: Account, mariadb| account_sql(None, &AccountForm { original: None, account: a, password: None, expire_now: false }, mariadb, plain).unwrap();
@@ -772,14 +789,14 @@ mod tests {
         u.max_user_connections = 3;
         u.max_statement_time = 5.0;
         u.roles = vec!["ot_r".into()];
-        u.default_role = Some("ot_r".into());
+        u.default_roles = vec!["ot_r".into()];
         apply_account(&pool, true, &form(u, None, Some("p'w\\1"))).await.unwrap();
 
         let all = accounts(&pool, true).await.unwrap();
         let got = all.iter().find(|a| a.user == "ot_u").unwrap();
         assert!(got.locked && !got.is_role && !got.expired, "{got:?}");
         assert_eq!((got.lifetime, got.max_user_connections, got.max_statement_time), (Some(30), 3, 5.0));
-        assert_eq!((got.roles.clone(), got.default_role.clone()), (vec!["ot_r".to_string()], Some("ot_r".to_string())));
+        assert_eq!((got.roles.clone(), got.default_roles.clone()), (vec!["ot_r".to_string()], vec!["ot_r".to_string()]));
         assert!(all.iter().any(|a| a.user == "ot_r" && a.is_role));
 
         // The password with a quote and a backslash works for logging in once unlocked.
@@ -868,7 +885,7 @@ mod tests {
         conn.query_drop("DROP DATABASE ot_users").await.unwrap();
     }
 
-    /// MySQL 8 roles: OTARIA_TEST_MYSQL="host:port:user:password" cargo test users_on_mysql -- --ignored
+    /// MySQL 8 roles (5.7: accounts only): OTARIA_TEST_MYSQL="host:port:user:password" cargo test users_on_mysql -- --ignored
     #[tokio::test]
     #[ignore]
     async fn users_on_mysql() {
@@ -878,6 +895,23 @@ mod tests {
             mysql_async::OptsBuilder::default().ip_or_hostname(p[0]).tcp_port(p[1].parse().unwrap()).user(Some(p[2])).pass(Some(p[3])).prefer_socket(false),
         );
         let mut conn = pool.get_conn().await.unwrap();
+        let version: String = conn.query_first("SELECT VERSION()").await.unwrap().unwrap();
+        if !crate::db::version_at_least(&version, (8, 0, 0)) {
+            // MySQL 5.7: no roles (the screen hides them); accounts still load and save.
+            conn.query_drop("DROP USER IF EXISTS ot_mu@'%'").await.unwrap();
+            let f = AccountForm {
+                original: None,
+                account: Account { user: "ot_mu".into(), host: "%".into(), plugin: "mysql_native_password".into(), max_user_connections: 2, ..Default::default() },
+                password: Some("pw-Ot1".into()),
+                expire_now: false,
+            };
+            apply_account(&pool, false, &f).await.unwrap();
+            let all = accounts(&pool, false).await.unwrap();
+            assert!(all.iter().all(|a| !a.is_role && a.default_roles.is_empty()));
+            assert_eq!(all.iter().find(|a| a.user == "ot_mu").unwrap().max_user_connections, 2);
+            conn.query_drop("DROP USER ot_mu@'%'").await.unwrap();
+            return;
+        }
         conn.query_drop("DROP USER IF EXISTS ot_mu@'%'; DROP ROLE IF EXISTS ot_mr, ot_mr2@'10.%'").await.unwrap();
         let new = |user: &str, host: &str, is_role: bool| AccountForm {
             original: None,
@@ -892,25 +926,25 @@ mod tests {
         let all = accounts(&pool, false).await.unwrap();
         assert!(find(&all, "ot_mr").is_role && find(&all, "ot_mr2").is_role && !find(&all, "ot_mu").is_role);
 
-        // Both roles granted (one WITH ADMIN OPTION), one as default.
+        // Both roles granted (one WITH ADMIN OPTION), both as default.
         let mut u = find(&all, "ot_mu");
         u.roles = vec!["ot_mr".into(), "ot_mr2@10.%".into()];
         u.admin_roles = vec!["ot_mr".into()];
-        u.default_role = Some("ot_mr2@10.%".into());
+        u.default_roles = vec!["ot_mr2@10.%".into(), "ot_mr".into()];
         apply_account(&pool, false, &AccountForm { original: Some(("ot_mu".into(), "%".into())), account: u, password: None, expire_now: false }).await.unwrap();
         let u = find(&accounts(&pool, false).await.unwrap(), "ot_mu");
         let mut roles = u.roles.clone();
         roles.sort();
-        assert_eq!((roles, u.admin_roles.clone(), u.default_role.clone()), (vec!["ot_mr".to_string(), "ot_mr2@10.%".to_string()], vec!["ot_mr".to_string()], Some("ot_mr2@10.%".to_string())));
+        assert_eq!((roles.clone(), u.admin_roles.clone(), u.default_roles.clone()), (vec!["ot_mr".to_string(), "ot_mr2@10.%".to_string()], vec!["ot_mr".to_string()], roles));
 
         // Admin option dropped (revoke + grant), one role revoked, default role none.
         let mut v = u.clone();
         v.admin_roles.clear();
         v.roles = vec!["ot_mr".into()];
-        v.default_role = None;
+        v.default_roles = vec![];
         apply_account(&pool, false, &AccountForm { original: Some(("ot_mu".into(), "%".into())), account: v, password: None, expire_now: false }).await.unwrap();
         let v = find(&accounts(&pool, false).await.unwrap(), "ot_mu");
-        assert_eq!((v.roles.clone(), v.admin_roles.clone(), v.default_role.clone()), (vec!["ot_mr".to_string()], vec![], None));
+        assert_eq!((v.roles.clone(), v.admin_roles.clone(), v.default_roles.clone()), (vec!["ot_mr".to_string()], vec![], vec![]));
 
         // A role's own privileges are read under its host.
         let sql = privileges_sql("ot_mr", "%", true, &[PrivChange { target: Target::default(), grant: vec!["PROCESS".into()], revoke: vec![] }]).unwrap();

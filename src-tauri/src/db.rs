@@ -86,6 +86,13 @@ async fn with_timeout<T>(fut: impl std::future::Future<Output = Result<T, mysql_
     }
 }
 
+/// `VERSION()` ("8.0.46", "5.7.44-log", "12.3.3-MariaDB-…") is at least `min`.
+pub fn version_at_least(version: &str, min: (u32, u32, u32)) -> bool {
+    let mut parts = version.split(|c: char| !c.is_ascii_digit()).map(|p| p.parse::<u32>().unwrap_or(0));
+    let v = (parts.next().unwrap_or(0), parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+    v >= min
+}
+
 async fn server_info(conn: &mut Conn, via_ssh: bool) -> AppResult<ServerInfo> {
     let (version, version_comment, current_user, connection_id): (String, String, String, u32) = conn
         .query_first("SELECT VERSION(), @@version_comment, CURRENT_USER(), CONNECTION_ID()")
@@ -142,7 +149,9 @@ pub async fn open(profile: &Profile, password: Option<&str>, ssh_secret: Option<
         }
     };
     let (pool, info, mode) = match try_open(profile.tls.mode).await {
-        Err(e) if profile.tls.mode == TlsMode::Preferred && e.code == "TLS_NOT_SUPPORTED" => {
+        // "If available" checks no certificate, so a plain link loses no protection it had: fall back when the
+        // server has no TLS, or none in common with ours (MySQL 5.7).
+        Err(e) if profile.tls.mode == TlsMode::Preferred && (e.code == "TLS_NOT_SUPPORTED" || e.code == "TLS_INCOMPATIBLE") => {
             let (pool, info) = try_open(TlsMode::Disabled).await?;
             (pool, info, TlsMode::Disabled)
         }
@@ -168,6 +177,13 @@ pub async fn open(profile: &Profile, password: Option<&str>, ssh_secret: Option<
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn compares_versions() {
+        assert!(super::version_at_least("8.0.26", (8, 0, 26)) && super::version_at_least("8.4.13", (8, 0, 26)));
+        assert!(!super::version_at_least("8.0.25", (8, 0, 26)) && !super::version_at_least("5.7.44-log", (8, 0, 18)));
+        assert!(super::version_at_least("12.3.3-MariaDB-ubu2404", (10, 11, 0)));
+    }
+
     use super::*;
     use crate::profiles::Tls;
 

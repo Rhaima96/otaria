@@ -70,21 +70,49 @@ pub async fn explain(pool: &Pool, id: u64) -> AppResult<Option<String>> {
 pub struct Variable {
     pub name: String,
     pub value: Option<String>,
-    /// The rest is MariaDB only (information_schema.SYSTEM_VARIABLES), None on MySQL.
+    /// MariaDB only (information_schema.SYSTEM_VARIABLES), None on MySQL.
     pub default: Option<String>,
-    /// INT, BIGINT UNSIGNED, DOUBLE, BOOLEAN, ENUM, SET, FLAGSET, VARCHAR…
+    /// INT, BIGINT UNSIGNED, DOUBLE, BOOLEAN, ENUM, SET, FLAGSET, VARCHAR… MariaDB only.
     pub kind: Option<String>,
-    /// COMPILE-TIME | CONFIG | COMMAND-LINE | AUTO | SQL
+    /// MariaDB: COMPILE-TIME | CONFIG | COMMAND-LINE | AUTO | SQL.
+    /// MySQL (performance_schema.variables_info): COMPILED | GLOBAL | SERVER | EXPLICIT | EXTRA | USER |
+    /// LOGIN | COMMAND_LINE | PERSISTED | DYNAMIC. None when those tables cannot be read (older servers).
     pub origin: Option<String>,
     pub read_only: bool,
     pub comment: Option<String>,
     pub choices: Option<String>,
+    /// Numeric range; None for non-numeric variables.
+    pub min: Option<String>,
+    pub max: Option<String>,
+}
+
+/// MySQL writes 0..0 for variables that have no range.
+fn range(min: Option<String>, max: Option<String>) -> (Option<String>, Option<String>) {
+    match (min, max) {
+        (Some(a), Some(b)) if a == "0" && b == "0" => (None, None),
+        r => r,
+    }
 }
 
 pub async fn variables(pool: &Pool, mariadb: bool) -> AppResult<Vec<Variable>> {
     let mut conn = pool.get_conn().await?;
     if !mariadb {
-        // ponytail: no default/type on MySQL (performance_schema.variables_info has no default); add if MySQL users ask.
+        // Source and range from performance_schema (readable by any account, even with performance_schema=OFF on 8.4);
+        // if that fails (older servers), names and values only.
+        let rich: Vec<Variable> = conn
+            .query_map(
+                "SELECT g.VARIABLE_NAME, g.VARIABLE_VALUE, i.VARIABLE_SOURCE, i.MIN_VALUE, i.MAX_VALUE
+                 FROM performance_schema.global_variables g LEFT JOIN performance_schema.variables_info i USING (VARIABLE_NAME) ORDER BY 1",
+                |(name, value, origin, min, max)| {
+                    let (min, max) = range(min, max);
+                    Variable { name, value, default: None, kind: None, origin, read_only: false, comment: None, choices: None, min, max }
+                },
+            )
+            .await
+            .unwrap_or_default();
+        if !rich.is_empty() {
+            return Ok(rich);
+        }
         return Ok(conn
             .query_map("SHOW GLOBAL VARIABLES", |(name, value)| Variable {
                 name,
@@ -95,14 +123,17 @@ pub async fn variables(pool: &Pool, mariadb: bool) -> AppResult<Vec<Variable>> {
                 read_only: false,
                 comment: None,
                 choices: None,
+                min: None,
+                max: None,
             })
             .await?);
     }
     Ok(conn
         .query_map(
-            "SELECT LOWER(VARIABLE_NAME), GLOBAL_VALUE, DEFAULT_VALUE, VARIABLE_TYPE, GLOBAL_VALUE_ORIGIN, READ_ONLY = 'YES', VARIABLE_COMMENT, ENUM_VALUE_LIST
+            "SELECT LOWER(VARIABLE_NAME), GLOBAL_VALUE, DEFAULT_VALUE, VARIABLE_TYPE, GLOBAL_VALUE_ORIGIN, READ_ONLY = 'YES', VARIABLE_COMMENT, ENUM_VALUE_LIST,
+                    NUMERIC_MIN_VALUE, NUMERIC_MAX_VALUE
              FROM information_schema.SYSTEM_VARIABLES WHERE VARIABLE_SCOPE <> 'SESSION ONLY' ORDER BY 1",
-            |(name, value, default, kind, origin, read_only, comment, choices)| Variable {
+            |(name, value, default, kind, origin, read_only, comment, choices, min, max)| Variable {
                 name,
                 value,
                 default,
@@ -111,6 +142,8 @@ pub async fn variables(pool: &Pool, mariadb: bool) -> AppResult<Vec<Variable>> {
                 read_only,
                 comment,
                 choices,
+                min,
+                max,
             },
         )
         .await?)
@@ -273,6 +306,7 @@ mod tests {
         let vars = variables(&pool, true).await.unwrap();
         let mc = vars.iter().find(|v| v.name == "max_connections").expect("max_connections");
         assert_eq!(mc.kind.as_deref(), Some("BIGINT UNSIGNED"));
+        assert_eq!((mc.min.as_deref(), mc.max.as_deref()), (Some("10"), Some("100000")));
         assert!(vars.iter().all(|v| v.name != "pseudo_thread_id"), "session-only variables hidden");
         set(&pool, true, "max_connections", Some("170")).await.unwrap();
         let mut conn = pool.get_conn().await.unwrap();
@@ -287,5 +321,34 @@ mod tests {
 
         let e = engines(&pool).await.unwrap();
         assert!(e.iter().any(|e| e.name == "InnoDB" && e.support == "DEFAULT" && e.transactions && e.savepoints));
+    }
+
+    /// MySQL 5.7 / 8: OTARIA_TEST_MYSQL="host:port:user:password" cargo test variables_on_mysql -- --ignored
+    #[tokio::test]
+    #[ignore]
+    async fn variables_on_mysql() {
+        let spec = std::env::var("OTARIA_TEST_MYSQL").expect("set OTARIA_TEST_MYSQL");
+        let p: Vec<&str> = spec.splitn(4, ':').collect();
+        let pool = Pool::new(
+            mysql_async::OptsBuilder::default().ip_or_hostname(p[0]).tcp_port(p[1].parse().unwrap()).user(Some(p[2])).pass(Some(p[3])).prefer_socket(false),
+        );
+        let find = |vars: &[Variable], n: &str| vars.iter().find(|v| v.name == n).map(|v| (v.origin.clone(), v.min.clone(), v.max.clone())).unwrap();
+        let version: String = pool.get_conn().await.unwrap().query_first("SELECT VERSION()").await.unwrap().unwrap();
+        if !crate::db::version_at_least(&version, (8, 0, 0)) {
+            // MySQL 5.7 has no performance_schema.variables_info: names and values only.
+            let vars = variables(&pool, false).await.unwrap();
+            assert_eq!(find(&vars, "wait_timeout"), (None, None, None));
+            return;
+        }
+        let vars = variables(&pool, false).await.unwrap();
+        // Source COMPILED on a fresh server, DYNAMIC once this test has run: only its presence is checked here.
+        let (origin, min, max) = find(&vars, "wait_timeout");
+        assert!(matches!(origin.as_deref(), Some("COMPILED" | "DYNAMIC")), "{origin:?}");
+        assert_eq!((min.as_deref(), max.as_deref()), (Some("1"), Some("31536000")));
+        assert_eq!(find(&vars, "sql_mode").1, None, "no range for a string variable");
+        // SET GLOBAL: the source becomes DYNAMIC, and stays so after SET GLOBAL … = DEFAULT (MySQL keeps who set it).
+        set(&pool, false, "wait_timeout", Some("300")).await.unwrap();
+        assert_eq!(find(&variables(&pool, false).await.unwrap(), "wait_timeout").0.as_deref(), Some("DYNAMIC"));
+        set(&pool, false, "wait_timeout", None).await.unwrap();
     }
 }

@@ -4,10 +4,12 @@ import { useI18n } from "vue-i18n";
 import { ArrowDown, ArrowUp, Plus, Save, Trash2, Undo2 } from "lucide-vue-next";
 import ErrorLine from "@/components/ErrorLine.vue";
 import { api, toAppError, type Algorithm, type AppError, type ColumnDef, type IndexDef, type TableDef } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn, versionAtLeast } from "@/lib/utils";
 
 /** `table` null = new table. */
-const props = defineProps<{ sessionId: string; schema: string; table: string | null; mariadb: boolean }>();
+const props = defineProps<{ sessionId: string; schema: string; table: string | null; mariadb: boolean; version: string }>();
+/** Indexes the optimizer ignores: MariaDB IGNORED, MySQL 8 INVISIBLE (none on 5.7). */
+const canIgnore = props.mariadb || versionAtLeast(props.version, [8, 0, 0]);
 const emit = defineEmits<{ saved: [name: string] }>();
 const { t } = useI18n();
 
@@ -158,8 +160,8 @@ async function openPreview(algo: Algorithm = "instant") {
   }
 }
 
-// MariaDB: lock wait of the ALTER (null = server's lock_wait_timeout, 0 = NOWAIT), and progress
-// while a copying ALTER runs, with a Stop button (KILL QUERY on its connection).
+// MariaDB: lock wait of the ALTER (null = server's lock_wait_timeout, 0 = NOWAIT). Both servers: progress
+// while the ALTER runs (MySQL: in-place InnoDB ALTERs, no stage numbers), with a Stop button (KILL QUERY).
 const WAITS = [null, 0, 5, 30, 300] as const;
 const wait = ref<number | null>(null);
 const progress = ref<[number, number, number] | null>(null);
@@ -321,7 +323,7 @@ const subtab = "h-full border-b-2 px-3 font-medium";
               <th :class="head">{{ t("sequence.name") }}</th>
               <th :class="head">{{ t("designer.indexColumns") }}</th>
               <th :class="head">{{ t("structure.comment") }}</th>
-              <th :class="head" :title="t('designer.ignoredHint')">{{ t("designer.ignored") }}</th>
+              <th v-if="canIgnore" :class="head" :title="t('designer.ignoredHint')">{{ t("designer.ignored") }}</th>
               <th :class="head" />
             </tr>
           </thead>
@@ -366,7 +368,7 @@ const subtab = "h-full border-b-2 px-3 font-medium";
                 </div>
               </td>
               <td :class="cell"><input v-model="x.comment" :aria-label="t('structure.comment')" :class="cn(input, 'font-sans')" /></td>
-              <td :class="cn(cell, 'text-center')"><input v-model="x.ignored" type="checkbox" :disabled="x.kind === 'PRIMARY'" :aria-label="t('designer.ignored')" /></td>
+              <td v-if="canIgnore" :class="cn(cell, 'text-center')"><input v-model="x.ignored" type="checkbox" :disabled="x.kind === 'PRIMARY'" :aria-label="t('designer.ignored')" /></td>
               <td :class="cell"><button :class="icon" :title="t('designer.remove')" @click="def.indexes.splice(i, 1)"><Trash2 class="size-3.5" /><span class="sr-only">{{ t("designer.remove") }}</span></button></td>
             </tr>
           </tbody>
@@ -513,7 +515,7 @@ const subtab = "h-full border-b-2 px-3 font-medium";
       </label>
       <div v-if="busy && progress" class="flex items-center gap-2 px-4 pt-2">
         <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-secondary"><div class="h-full bg-primary" :style="{ width: `${progress[0]}%` }" /></div>
-        <span class="shrink-0 text-muted-foreground">{{ t("designer.progress", { pct: progress[0].toFixed(1), stage: progress[1], stages: progress[2] }) }}</span>
+        <span class="shrink-0 text-muted-foreground">{{ progress[2] ? t("designer.progress", { pct: progress[0].toFixed(1), stage: progress[1], stages: progress[2] }) : t("designer.progressPct", { pct: progress[0].toFixed(1) }) }}</span>
       </div>
       <p class="px-4 text-muted-foreground">{{ t("sequence.ddlHint") }}</p>
       <ErrorLine v-if="applyError" :error="applyError" class="mx-4 mt-2" />

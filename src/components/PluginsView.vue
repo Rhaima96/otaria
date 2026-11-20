@@ -7,7 +7,8 @@ import { api, toAppError, type AppError, type Plugin } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 // active: unused here, passed to every server screen (the polling ones pause when hidden).
-const props = defineProps<{ sessionId: string; active?: boolean }>();
+// mariadb: ALL_PLUGINS lists what can be installed; MySQL lists installed plugins only, so name and library are typed.
+const props = defineProps<{ sessionId: string; active?: boolean; mariadb: boolean }>();
 const { t } = useI18n();
 
 const plugins = ref<Plugin[]>([]);
@@ -51,6 +52,13 @@ async function ask(p: Plugin) {
   }
 }
 
+// MySQL: plugin typed by hand (name + file in plugin_dir), same preview.
+const typedName = ref("");
+const typedLibrary = ref("");
+function askTyped() {
+  ask({ name: typedName.value.trim(), library: typedLibrary.value.trim(), kind: "", status: "NOT INSTALLED", maturity: "", description: "" });
+}
+
 async function install() {
   const p = target.value!;
   busy.value = true;
@@ -75,12 +83,17 @@ const statusClass = (s: string) => (s === "ACTIVE" ? "text-success" : s === "NOT
   <div class="flex flex-col">
     <div class="flex h-9 shrink-0 items-center gap-2 border-b px-3">
       <input v-model="filter" :placeholder="t('plugins.filter')" :aria-label="t('plugins.filter')" class="h-6 w-64 rounded-sm border bg-background px-2" />
-      <label class="flex items-center gap-1.5 text-muted-foreground">
+      <label v-if="mariadb" class="flex items-center gap-1.5 text-muted-foreground">
         <input v-model="availableOnly" type="checkbox" class="size-3.5" />{{ t("plugins.availableOnly") }}
       </label>
+      <form v-else class="flex items-center gap-1" @submit.prevent="askTyped">
+        <input v-model="typedName" required :placeholder="t('plugins.name')" :aria-label="t('plugins.name')" class="h-6 w-40 rounded-sm border bg-background px-2 font-mono text-xs" />
+        <input v-model="typedLibrary" required :placeholder="t('plugins.libraryPlaceholder')" :aria-label="t('plugins.library')" class="h-6 w-48 rounded-sm border bg-background px-2 font-mono text-xs" />
+        <button type="submit" :class="btn"><Download class="size-3.5" />{{ t("plugins.install") }}</button>
+      </form>
       <button :class="cn(btn, 'ml-auto')" @click="load"><RefreshCw class="size-3.5" />{{ t("plugins.refresh") }}</button>
     </div>
-    <p class="border-b px-3 py-1.5 text-muted-foreground">{{ t("plugins.hint") }}</p>
+    <p class="border-b px-3 py-1.5 text-muted-foreground">{{ t(mariadb ? "plugins.hint" : "plugins.hintMysql") }}</p>
 
     <ErrorLine v-if="error" :error="error" class="m-3" />
 
@@ -91,7 +104,7 @@ const statusClass = (s: string) => (s === "ACTIVE" ? "text-success" : s === "NOT
             <th :class="cell">{{ t("plugins.name") }}</th>
             <th :class="cell">{{ t("plugins.type") }}</th>
             <th :class="cell">{{ t("plugins.status") }}</th>
-            <th :class="cell">{{ t("plugins.maturity") }}</th>
+            <th v-if="mariadb" :class="cell">{{ t("plugins.maturity") }}</th>
             <th :class="cell">{{ t("plugins.library") }}</th>
             <th :class="cell">{{ t("plugins.description") }}</th>
             <th :class="cell"><span class="sr-only">{{ t("plugins.install") }}</span></th>
@@ -103,7 +116,7 @@ const statusClass = (s: string) => (s === "ACTIVE" ? "text-success" : s === "NOT
             <td :class="cn(cell, 'font-medium')">{{ p.name }}</td>
             <td :class="cell">{{ p.kind }}</td>
             <td :class="cn(cell, 'font-mono text-xs whitespace-nowrap', statusClass(p.status))">{{ p.status }}</td>
-            <td :class="cn(cell, p.maturity !== 'Stable' && 'text-warning')">{{ p.maturity }}</td>
+            <td v-if="mariadb" :class="cn(cell, p.maturity !== 'Stable' && 'text-warning')">{{ p.maturity }}</td>
             <td :class="cn(cell, 'font-mono text-xs')">{{ p.library ?? t("plugins.builtIn") }}</td>
             <td :class="cell">{{ p.description }}</td>
             <td :class="cell">
@@ -119,7 +132,7 @@ const statusClass = (s: string) => (s === "ACTIVE" ? "text-success" : s === "NOT
       <div class="border-b px-4 py-2 font-semibold">{{ t("grid.previewTitle") }}</div>
       <pre class="max-h-[40vh] overflow-auto p-4 font-mono text-xs whitespace-pre-wrap select-text">{{ preview }}</pre>
       <p class="px-4 text-muted-foreground">{{ t("plugins.installHint") }}</p>
-      <p v-if="target && target.maturity !== 'Stable'" class="px-4 pt-1 text-warning">{{ t("plugins.notStable", { maturity: target.maturity }) }}</p>
+      <p v-if="target?.maturity && target.maturity !== 'Stable'" class="px-4 pt-1 text-warning">{{ t("plugins.notStable", { maturity: target.maturity }) }}</p>
       <ErrorLine v-if="applyError" :error="applyError" class="mx-4 mt-2" />
       <div class="flex justify-end gap-2 px-4 py-3">
         <button class="h-7 rounded-sm border px-3 font-medium hover:bg-secondary" @click="dialog?.close()">{{ t("grid.cancel") }}</button>

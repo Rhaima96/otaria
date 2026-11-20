@@ -24,9 +24,13 @@ async function load() {
 }
 onMounted(load);
 
-/** Defaults come from SYSTEM_VARIABLES (MariaDB); MySQL has none, so no "changed" filter there. */
+/** Defaults and types come from SYSTEM_VARIABLES (MariaDB). MySQL has neither, only the value's source. */
 const hasDefaults = computed(() => vars.value.some((v) => v.kind !== null));
-const changed = (v: Variable) => v.kind !== null && v.value !== v.default;
+const hasOrigin = computed(() => vars.value.some((v) => v.origin !== null));
+const hasRange = computed(() => vars.value.some((v) => v.min !== null));
+// MySQL: changed = set by something other than the compiled default (SET GLOBAL … = DEFAULT still counts).
+const changed = (v: Variable) => (v.kind !== null ? v.value !== v.default : v.origin !== null && v.origin !== "COMPILED");
+const range = (v: Variable) => (v.min !== null ? `${v.min} – ${v.max}` : "");
 
 const shown = computed(() => {
   const f = filter.value.trim().toLowerCase();
@@ -91,7 +95,7 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
   <div class="flex flex-col">
     <div class="flex h-9 shrink-0 items-center gap-2 border-b px-3">
       <input v-model="filter" :placeholder="t('variables.filter')" :aria-label="t('variables.filter')" class="h-6 w-64 rounded-sm border bg-background px-2" />
-      <label v-if="hasDefaults" class="flex items-center gap-1.5 text-muted-foreground">
+      <label v-if="hasOrigin" class="flex items-center gap-1.5 text-muted-foreground">
         <input v-model="changedOnly" type="checkbox" class="size-3.5" />{{ t("variables.changedOnly") }}
       </label>
       <button :class="cn(btn, 'ml-auto')" @click="load"><RefreshCw class="size-3.5" />{{ t("admin.refresh") }}</button>
@@ -106,11 +110,10 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
           <tr>
             <th :class="cell">{{ t("variables.name") }}</th>
             <th :class="cell">{{ t("variables.value") }}</th>
-            <template v-if="hasDefaults">
-              <th :class="cell">{{ t("variables.default") }}</th>
-              <th :class="cell">{{ t("variables.origin") }}</th>
-              <th :class="cell">{{ t("variables.type") }}</th>
-            </template>
+            <th v-if="hasDefaults" :class="cell">{{ t("variables.default") }}</th>
+            <th v-if="hasOrigin" :class="cell">{{ t("variables.origin") }}</th>
+            <th v-if="hasDefaults" :class="cell">{{ t("variables.type") }}</th>
+            <th v-if="hasRange" :class="cell">{{ t("variables.range") }}</th>
           </tr>
         </thead>
         <tbody>
@@ -129,13 +132,12 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
                 <Lock v-if="v.readOnly" class="size-3 text-muted-foreground" :aria-label="t('variables.readOnly')" />
               </span>
             </td>
-            <!-- Changed values: bold + an origin other than COMPILE-TIME, not color alone. -->
+            <!-- Changed values: bold + an origin other than COMPILE-TIME / COMPILED, not color alone. -->
             <td :class="cn(cell, 'font-mono text-xs break-all', changed(v) && 'font-semibold text-primary')">{{ v.value }}</td>
-            <template v-if="hasDefaults">
-              <td :class="cn(cell, 'font-mono text-xs break-all text-muted-foreground')">{{ v.default }}</td>
-              <td :class="cn(cell, 'text-xs whitespace-nowrap')">{{ v.origin }}</td>
-              <td :class="cn(cell, 'text-xs whitespace-nowrap text-muted-foreground')">{{ v.kind }}</td>
-            </template>
+            <td v-if="hasDefaults" :class="cn(cell, 'font-mono text-xs break-all text-muted-foreground')">{{ v.default }}</td>
+            <td v-if="hasOrigin" :class="cn(cell, 'text-xs whitespace-nowrap')">{{ v.origin }}</td>
+            <td v-if="hasDefaults" :class="cn(cell, 'text-xs whitespace-nowrap text-muted-foreground')">{{ v.kind }}</td>
+            <td v-if="hasRange" :class="cn(cell, 'font-mono text-xs whitespace-nowrap text-muted-foreground')">{{ range(v) }}</td>
           </tr>
         </tbody>
       </table>
@@ -152,7 +154,7 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
               <option v-for="c in choices" :key="c" :value="c">{{ c }}</option>
             </select>
             <input v-else-if="draft !== null" v-model="draft" :aria-label="t('variables.value')" class="h-7 flex-1 rounded-sm border bg-background px-2 font-mono" />
-            <span v-else class="flex-1 text-muted-foreground">{{ t("variables.toDefault", { value: target.default ?? "" }) }}</span>
+            <span v-else class="flex-1 text-muted-foreground">{{ target.default !== null ? t("variables.toDefault", { value: target.default }) : t("variables.toDefaultUnknown") }}</span>
             <button v-if="draft !== null" type="button" :class="btn" @click="draft = null">{{ t("variables.reset") }}</button>
             <button v-else type="button" :class="btn" @click="draft = target.value ?? ''">{{ t("variables.editValue") }}</button>
           </div>

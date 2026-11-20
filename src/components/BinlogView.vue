@@ -12,7 +12,8 @@ import { cn } from "@/lib/utils";
 
 /** Binary log reader (MariaDB only): files on the left, events of the chosen file, one page at a time. */
 // active: unused here, passed to every server screen (the polling ones pause when hidden).
-const props = defineProps<{ sessionId: string; active?: boolean }>();
+/** `mariadb`: offer flashback (needs `mariadb-binlog`); hidden on MySQL. */
+const props = defineProps<{ sessionId: string; active?: boolean; mariadb: boolean }>();
 const emit = defineEmits<{ editSql: [sql: string] }>();
 const { t, locale } = useI18n();
 
@@ -165,6 +166,8 @@ const size = (n: number) => {
   const mb = n >= 1024 * 1024;
   return new Intl.NumberFormat(locale.value, { style: "unit", unit: mb ? "megabyte" : "kilobyte", maximumFractionDigits: 1 }).format(n / (mb ? 1024 * 1024 : 1024));
 };
+// Event that carries the statement behind row events (MySQL writes it only with binlog_rows_query_log_events=ON).
+const rowsEvent = props.mariadb ? "Annotate_rows" : "Rows_query";
 const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50";
 </script>
 
@@ -182,6 +185,7 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
         <button type="submit" :class="btn" :title="t('binlog.jumpHint')">{{ t("binlog.jump") }}</button>
       </form>
       <button
+        v-if="mariadb"
         :class="cn(btn, 'ml-auto')"
         :disabled="!selected.length || st?.format !== 'ROW' || undoing"
         :title="st && st.format !== 'ROW' ? t('binlog.undoNeedsRow') : t('binlog.undoHint')"
@@ -189,7 +193,7 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
       >
         <Loader2 v-if="undoing" class="size-3.5 animate-spin" /><Undo2 v-else class="size-3.5" />{{ t("binlog.undo", { n: selected.length }) }}
       </button>
-      <button :class="btn" @click="load"><RefreshCw class="size-3.5" />{{ t("admin.refresh") }}</button>
+      <button :class="cn(btn, !mariadb && 'ml-auto')" @click="load"><RefreshCw class="size-3.5" />{{ t("admin.refresh") }}</button>
     </div>
 
     <ErrorLine v-if="error" :error="error" class="m-3" />
@@ -271,7 +275,7 @@ const btn = "flex h-6 items-center gap-1 rounded-sm px-2 text-muted-foreground h
           <span v-if="byTxn" class="shrink-0">{{ t("binlog.txnCount", txns.length) }}</span>
           <span class="shrink-0">{{ shown.length < events.length ? t("binlog.matching", { n: shown.length, total: events.length }, shown.length) : t("binlog.loaded", events.length) }}</span>
           <button v-if="more" :disabled="busy" :class="btn" class="text-foreground" @click="open(file, true)">{{ t("binlog.more") }}</button>
-          <span class="ml-auto min-w-0 truncate" :title="t('binlog.hint')">{{ t("binlog.hint") }}</span>
+          <span class="ml-auto min-w-0 truncate" :title="t('binlog.hint', { event: rowsEvent })">{{ t("binlog.hint", { event: rowsEvent }) }}</span>
         </div>
       </div>
     </div>

@@ -5,10 +5,11 @@ import { Network, Pencil, Play, Plus, Share2, SkipForward, Square } from "lucide
 import ErrorLine from "@/components/ErrorLine.vue";
 import { api, toAppError, type AppError, type ChangeMaster, type ReplicationAction, type ReplicationChannel, type ReplicationState } from "@/lib/api";
 import { INTERVALS, usePolling } from "@/lib/poll";
-import { cn } from "@/lib/utils";
+import { cn, versionAtLeast } from "@/lib/utils";
 
 /** Replication channels (multi-source) and Galera cluster of the server, read-only, refreshed. */
-const props = defineProps<{ sessionId: string; active?: boolean }>();
+/** `mariadb`: MariaDB GTID modes and Galera; MySQL has SOURCE_AUTO_POSITION and no Galera. */
+const props = defineProps<{ sessionId: string; active?: boolean; mariadb: boolean; version: string }>();
 const { t, locale } = useI18n();
 
 const st = ref<ReplicationState | null>(null);
@@ -49,7 +50,7 @@ const busy = ref(false);
 async function ask(name: string, action: ReplicationAction) {
   actError.value = null;
   try {
-    pending.value = { name, action, sql: await api.replicationSql(name, action) };
+    pending.value = { name, action, sql: await api.replicationSql(props.sessionId, name, action) };
     if (!actDialog.value?.open) actDialog.value?.showModal();
   } catch (e) {
     // Form fields being typed: the dialog stays open with the error under them.
@@ -64,7 +65,11 @@ async function ask(name: string, action: ReplicationAction) {
 // The password lives only in this form while the dialog is open: cleared on close, never shown in the preview.
 // Typing empties the preview (Apply off) until the field is left: what runs is always what was shown.
 // Not for the <select>: re-rendering between its input and change events put the old option back.
-const form = reactive<ChangeMaster & { name: string; isNew: boolean }>({ name: "", isNew: true, host: "", port: 3306, user: "", password: "", gtid: "slave_pos", file: "", pos: 4 });
+const form = reactive<ChangeMaster & { name: string; isNew: boolean }>({ name: "", isNew: true, host: "", port: 3306, user: "", password: "", gtid: props.mariadb ? "slave_pos" : "no", file: "", pos: 4, ssl: true });
+// MySQL: GTID auto-positioning needs gtid_mode = ON on both servers, so a new channel starts on file and position.
+// MySQL 8.0.26+ says REPLICA / SOURCE, older versions SLAVE / MASTER (like MariaDB).
+const sourceWords = !props.mariadb && versionAtLeast(props.version, [8, 0, 26]);
+const changeStmt = sourceWords ? "CHANGE REPLICATION SOURCE TO" : "CHANGE MASTER TO";
 const change = () => {
   const { name, isNew: _, ...cm } = form;
   if (cm.host) return ask(name, { kind: "change", ...cm });
@@ -72,8 +77,8 @@ const change = () => {
   actError.value = null;
 };
 function openChange(c: ReplicationChannel | null) {
-  const gtid = c?.usingGtid === "Current_Pos" ? "current_pos" : c?.usingGtid === "No" ? "no" : "slave_pos";
-  Object.assign(form, { name: c?.name ?? "", isNew: !c, host: c?.masterHost ?? "", port: c?.masterPort || 3306, user: c?.masterUser ?? "", password: "", gtid, file: "", pos: 4 });
+  const gtid = !props.mariadb ? (c?.usingGtid === "Auto" ? "auto" : "no") : c?.usingGtid === "Current_Pos" ? "current_pos" : c?.usingGtid === "No" ? "no" : "slave_pos";
+  Object.assign(form, { name: c?.name ?? "", isNew: !c, host: c?.masterHost ?? "", port: c?.masterPort || 3306, user: c?.masterUser ?? "", password: "", gtid, file: "", pos: 4, ssl: c?.ssl ?? true });
   change();
   actDialog.value?.showModal();
 }
@@ -122,7 +127,7 @@ const field = "h-7 rounded-sm border bg-background px-2 disabled:opacity-60";
       <section :class="card">
         <h3 :class="h">
           <Share2 class="size-4 text-primary" />{{ t("replication.channels") }}
-          <button :class="cn(btn, 'ml-auto font-normal')" :title="t('replication.changeHint')" @click="openChange(null)"><Plus class="size-3.5" />{{ t("replication.newChannel") }}</button>
+          <button :class="cn(btn, 'ml-auto font-normal')" :title="t('replication.changeHint', { stmt: changeStmt })" @click="openChange(null)"><Plus class="size-3.5" />{{ t("replication.newChannel") }}</button>
         </h3>
         <p v-if="!st.channels.length" class="text-muted-foreground">{{ t("replication.noChannels") }}</p>
         <table v-else class="w-full border-collapse">
@@ -194,10 +199,15 @@ const field = "h-7 rounded-sm border bg-background px-2 disabled:opacity-60";
           <input id="cm-user" v-model="form.user" autocomplete="off" :class="field" />
           <label :class="label" for="cm-pw">{{ t("replication.password") }}</label>
           <input id="cm-pw" v-model="form.password" type="password" autocomplete="new-password" :placeholder="form.isNew ? '' : t('replication.passwordKeep')" :class="field" />
+          <span :class="label">{{ t("replication.tls") }}</span>
+          <label class="flex items-center gap-2"><input v-model="form.ssl" type="checkbox" class="size-3.5" />{{ t("replication.tlsHint", { opt: sourceWords ? "SOURCE_SSL" : "MASTER_SSL" }) }}</label>
           <label :class="label" for="cm-gtid">{{ t("replication.startAt") }}</label>
           <select id="cm-gtid" v-model="form.gtid" :class="field">
-            <option value="slave_pos">{{ t("replication.slavePos") }}</option>
-            <option value="current_pos">{{ t("replication.currentPos") }}</option>
+            <template v-if="mariadb">
+              <option value="slave_pos">{{ t("replication.slavePos") }}</option>
+              <option value="current_pos">{{ t("replication.currentPos") }}</option>
+            </template>
+            <option v-else value="auto">{{ t("replication.autoPosition", { opt: sourceWords ? "SOURCE_AUTO_POSITION" : "MASTER_AUTO_POSITION" }) }}</option>
             <option value="no">{{ t("replication.filePos") }}</option>
           </select>
           <template v-if="form.gtid === 'no'">
@@ -229,8 +239,8 @@ const field = "h-7 rounded-sm border bg-background px-2 disabled:opacity-60";
         </div>
       </dialog>
 
-      <!-- Galera -->
-      <section :class="card">
+      <!-- Galera (MariaDB only) -->
+      <section v-if="mariadb" :class="card">
         <h3 :class="h"><Network class="size-4 text-primary" />{{ t("replication.galera") }}</h3>
         <p v-if="!g" class="text-muted-foreground">{{ t("replication.noGalera") }}</p>
         <template v-else>

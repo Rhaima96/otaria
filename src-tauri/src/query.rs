@@ -391,9 +391,11 @@ pub async fn count(conn: &mut Conn, sql: &str) -> AppResult<u64> {
 }
 
 /// `ANALYZE` runs the statement for real: only a single SELECT (or WITH … SELECT) is wrapped.
-pub fn analyze_sql(stmts: &[String]) -> AppResult<String> {
+/// MySQL (8.0.18+) answers `EXPLAIN ANALYZE` with a text tree; its JSON form needs 8.3+ and a session setting.
+pub fn analyze_sql(stmts: &[String], mariadb: bool) -> AppResult<String> {
+    let prefix = if mariadb { "ANALYZE FORMAT=JSON" } else { "EXPLAIN ANALYZE" };
     match stmts {
-        [one] if matches!(first_word(one).as_str(), "SELECT" | "WITH") => Ok(format!("ANALYZE FORMAT=JSON {one}")),
+        [one] if matches!(first_word(one).as_str(), "SELECT" | "WITH") => Ok(format!("{prefix} {one}")),
         _ => Err(AppError::new("ANALYZE_SELECT_ONLY", stmts.join(";\n"))),
     }
 }
@@ -513,10 +515,11 @@ mod tests {
 
     #[test]
     fn wraps_only_one_select_in_analyze() {
-        assert_eq!(analyze_sql(&["SELECT 1".into()]).unwrap(), "ANALYZE FORMAT=JSON SELECT 1");
-        assert!(analyze_sql(&["/* x */ -- y\n (WITH a AS (SELECT 1) SELECT * FROM a)".into()]).is_ok());
+        assert_eq!(analyze_sql(&["SELECT 1".into()], true).unwrap(), "ANALYZE FORMAT=JSON SELECT 1");
+        assert_eq!(analyze_sql(&["SELECT 1".into()], false).unwrap(), "EXPLAIN ANALYZE SELECT 1");
+        assert!(analyze_sql(&["/* x */ -- y\n (WITH a AS (SELECT 1) SELECT * FROM a)".into()], true).is_ok());
         for bad in [vec!["DELETE FROM t WHERE id = 1".to_string()], vec!["SELECT 1".into(), "SELECT 2".into()], vec![]] {
-            assert_eq!(analyze_sql(&bad).unwrap_err().code, "ANALYZE_SELECT_ONLY");
+            assert_eq!(analyze_sql(&bad, true).unwrap_err().code, "ANALYZE_SELECT_ONLY");
         }
     }
 

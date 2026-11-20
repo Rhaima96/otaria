@@ -40,6 +40,11 @@ impl From<mysql_async::Error> for AppError {
                 AppError { code, message: s.message, server_code: Some(s.code), detail: None }
             }
             Error::Io(IoError::Tls(_)) => AppError::new("TLS", message),
+            // The server refused every cipher offered: no TLS in common (MySQL 5.7 has no ECDHE, the only
+            // key exchange rustls speaks). Not a certificate problem.
+            Error::Io(IoError::Io(io)) if io.kind() == std::io::ErrorKind::InvalidData && message.contains("HandshakeFailure") => {
+                AppError::new("TLS_INCOMPATIBLE", message)
+            }
             // rustls handshake failures (bad certificate…) arrive as InvalidData I/O errors.
             Error::Io(IoError::Io(io)) if io.kind() == std::io::ErrorKind::InvalidData => {
                 AppError::new("TLS", message)
@@ -61,5 +66,17 @@ impl From<keyring::Error> for AppError {
 impl From<std::io::Error> for AppError {
     fn from(e: std::io::Error) -> Self {
         AppError::new("IO", e.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn handshake_failure_is_not_a_certificate_error() {
+        let io = |m: &str| mysql_async::Error::Io(mysql_async::IoError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, m.to_string())));
+        assert_eq!(AppError::from(io("received fatal alert: HandshakeFailure")).code, "TLS_INCOMPATIBLE");
+        assert_eq!(AppError::from(io("invalid peer certificate: UnknownIssuer")).code, "TLS");
     }
 }

@@ -130,10 +130,10 @@ function dropped(id: string) {
   tree.value?.load();
 }
 
-/** Server screens, one tab each; plugins (ALL_PLUGINS), replication / Galera and binlog are MariaDB-only. */
+/** Server screens, one tab each (MariaDB-only parts are hidden inside each screen). */
 type Admin = "processes" | "variables" | "status" | "users" | "engines" | "plugins" | "replication" | "binlog";
 const adminViews = { processes: { icon: Activity, view: ProcessesView }, variables: { icon: SlidersHorizontal, view: VariablesView }, status: { icon: Gauge, view: StatusView }, users: { icon: Users, view: UsersView }, engines: { icon: Cog, view: EnginesView }, plugins: { icon: Puzzle, view: PluginsView }, replication: { icon: Share2, view: ReplicationView }, binlog: { icon: ScrollText, view: BinlogView } };
-const adminList = (Object.keys(adminViews) as Admin[]).filter((a) => !["plugins", "replication", "binlog"].includes(a) || props.session.info.isMariadb);
+const adminList = Object.keys(adminViews) as Admin[];
 
 function openAdmin(a: Admin) {
   if (!tabs.value.some((x) => x.id === a)) tabs.value.push({ id: a, schema: null, obj: null, admin: a });
@@ -227,6 +227,7 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
             :schema="x.schema!"
             :obj="x.obj"
             :mariadb="session.info.isMariadb"
+            :server-version="session.info.version"
             class="min-h-0 flex-1"
             @renamed="(n) => renamed(x, n)"
             @dropped="dropped(x.id)"
@@ -235,9 +236,9 @@ const tab = "flex h-full shrink-0 items-center gap-1.5 border-r px-3 hover:bg-se
             @versioned="(on) => ((x.obj = { ...x.obj!, versioned: on }), tree?.load())"
           />
           <SequenceView v-else-if="x.create === 'sequence'" v-show="active === x.id" :session-id="session.sessionId" :schema="x.schema!" name="" create class="min-h-0 flex-1" @created="(n) => created(x.id, x.schema!, 'sequence', n)" />
-          <TableDesigner v-else-if="x.create === 'table'" :ref="(el) => setPanel(x.id, el)" v-show="active === x.id" :session-id="session.sessionId" :schema="x.schema!" :table="null" :mariadb="session.info.isMariadb" class="min-h-0 flex-1" @saved="(n) => created(x.id, x.schema!, 'table', n)" />
-          <component :is="adminViews[x.admin].view" v-else-if="x.admin" v-show="active === x.id" :session-id="session.sessionId" :active="active === x.id" v-bind="x.admin === 'users' ? { mariadb: session.info.isMariadb } : {}" class="min-h-0 flex-1" @edit-sql="(sql: string) => newQuery(null, sql)" />
-          <SqlEditor v-else :ref="(el) => setPanel(x.id, el)" v-show="active === x.id" :session-id="session.sessionId" :profile-id="session.profile.id" :editor-id="x.id" :schema="x.schema" :initial-sql="x.sql" :mariadb="session.info.isMariadb" class="min-h-0 flex-1" />
+          <TableDesigner v-else-if="x.create === 'table'" :ref="(el) => setPanel(x.id, el)" v-show="active === x.id" :session-id="session.sessionId" :schema="x.schema!" :table="null" :mariadb="session.info.isMariadb" :version="session.info.version" class="min-h-0 flex-1" @saved="(n) => created(x.id, x.schema!, 'table', n)" />
+          <component :is="adminViews[x.admin].view" v-else-if="x.admin" v-show="active === x.id" :session-id="session.sessionId" :active="active === x.id" v-bind="['users', 'binlog', 'plugins', 'replication'].includes(x.admin) ? { mariadb: session.info.isMariadb, version: session.info.version } : {}" class="min-h-0 flex-1" @edit-sql="(sql: string) => newQuery(null, sql)" />
+          <SqlEditor v-else :ref="(el) => setPanel(x.id, el)" v-show="active === x.id" :session-id="session.sessionId" :profile-id="session.profile.id" :editor-id="x.id" :schema="x.schema" :initial-sql="x.sql" :mariadb="session.info.isMariadb" :version="session.info.version" class="min-h-0 flex-1" />
         </template>
 
         <div v-if="active === null" class="overflow-auto p-5">

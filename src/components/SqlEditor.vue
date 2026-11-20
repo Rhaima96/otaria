@@ -13,10 +13,12 @@ import { api, toAppError, type AppError, type RunOutput, type RunRequest } from 
 import { theme, vectorText } from "@/lib/grid";
 import { parsePlan } from "@/lib/plan";
 import { monaco, sources } from "@/lib/monaco";
-import { cn } from "@/lib/utils";
+import { cn, versionAtLeast } from "@/lib/utils";
 
-/** `initialSql`: script to start with (object edit, template). `mariadb`: offer ANALYZE FORMAT=JSON (hidden on MySQL). */
-const props = defineProps<{ sessionId: string; profileId: string; editorId: string; schema: string | null; initialSql?: string; mariadb: boolean }>();
+/** `initialSql`: script to start with (object edit, template). `mariadb`: ANALYZE FORMAT=JSON, else MySQL's EXPLAIN ANALYZE. */
+const props = defineProps<{ sessionId: string; profileId: string; editorId: string; schema: string | null; initialSql?: string; mariadb: boolean; version: string }>();
+/** EXPLAIN ANALYZE exists from MySQL 8.0.18. */
+const canAnalyze = props.mariadb || versionAtLeast(props.version, [8, 0, 18]);
 const { t, locale } = useI18n();
 const lib = useQueryLibrary(props.profileId);
 
@@ -85,7 +87,7 @@ onBeforeUnmount(() => {
 const confirmDialog = ref<HTMLDialogElement | null>(null);
 const pending = ref<{ req: RunRequest; statements: string } | null>(null);
 
-/** `analyze`: the selection or the statement under the cursor, as ANALYZE FORMAT=JSON. */
+/** `analyze`: the selection or the statement under the cursor, as ANALYZE FORMAT=JSON (MySQL: EXPLAIN ANALYZE). */
 async function run(currentOnly: boolean, analyze = false) {
   if (!editor || running.value) return;
   const model = editor.getModel()!;
@@ -211,6 +213,12 @@ function appendSql(sql: string) {
 /** A one-cell EXPLAIN / ANALYZE FORMAT=JSON result is drawn as a tree (toggle back to the grid). */
 const plan = computed(() => (shown.value?.columns.length === 1 && shown.value.rows.length === 1 ? parsePlan(shown.value.rows[0][0]) : null));
 const planView = ref(true);
+/** MySQL's EXPLAIN ANALYZE / FORMAT=TREE: one text cell of `-> …` lines, shown as preformatted text. */
+const treeText = computed(() => {
+  const v = shown.value?.columns.length === 1 && shown.value.rows.length === 1 ? shown.value.rows[0][0] : null;
+  return typeof v === "string" && v.trimStart().startsWith("->") ? v : null;
+});
+const analyzeStmt = props.mariadb ? "ANALYZE FORMAT=JSON" : "EXPLAIN ANALYZE";
 
 const fmt = (iso: string) => new Date(iso).toLocaleString(locale.value);
 const btn = "flex h-6 items-center gap-1 rounded-sm px-2 hover:bg-secondary disabled:opacity-40 disabled:hover:bg-transparent";
@@ -231,7 +239,7 @@ const tabBtn = "flex h-full shrink-0 items-center gap-1 border-r px-3 hover:bg-s
       <button :class="btn" :disabled="running" :title="t('editor.runCurrentHint')" @click="run(true)">
         <TextCursorInput class="size-3.5" />{{ t("editor.runCurrent") }}
       </button>
-      <button v-if="mariadb" :class="btn" :disabled="running" :title="t('editor.analyzeHint')" @click="run(true, true)">
+      <button v-if="canAnalyze" :class="btn" :disabled="running" :title="t('editor.analyzeHint', { stmt: analyzeStmt })" @click="run(true, true)">
         <Gauge class="size-3.5" />{{ t("editor.analyze") }}
       </button>
       <button :class="btn" :disabled="!running" @click="cancel"><Square class="size-3.5" />{{ t("editor.cancel") }}</button>
@@ -274,6 +282,7 @@ const tabBtn = "flex h-full shrink-0 items-center gap-1 border-r px-3 hover:bg-s
             <div v-if="plan && planView" class="min-h-0 flex-1 overflow-auto p-3 pl-6">
               <PlanNode :node="plan.root" :total="plan.total" />
             </div>
+            <pre v-else-if="treeText && planView" class="min-h-0 flex-1 overflow-auto p-3 font-mono text-xs select-text">{{ treeText }}</pre>
             <AgGridVue
               v-else
               class="min-h-0 flex-1"
@@ -295,8 +304,8 @@ const tabBtn = "flex h-full shrink-0 items-center gap-1 border-r px-3 hover:bg-s
                 </template>
               </template>
               <span v-else-if="shown.totalRows > shown.rows.length" class="text-warning">{{ t("editor.capped", { total: shown.totalRows }) }}</span>
-              <button v-if="!(plan && planView)" :class="btn" class="text-foreground" :title="t('json.openHint')" @click="openJson"><Braces class="size-3.5" />{{ t("json.open") }}</button>
-              <button v-if="plan" :class="btn" class="text-foreground" @click="planView = !planView">{{ planView ? t("plan.showGrid") : t("plan.showTree") }}</button>
+              <button v-if="!((plan || treeText) && planView)" :class="btn" class="text-foreground" :title="t('json.openHint')" @click="openJson"><Braces class="size-3.5" />{{ t("json.open") }}</button>
+              <button v-if="plan || treeText" :class="btn" class="text-foreground" @click="planView = !planView">{{ planView ? t("plan.showGrid") : t("plan.showTree") }}</button>
               <span class="ml-auto">{{ t("editor.elapsed", { ms: shown.elapsedMs }) }}</span>
             </div>
           </template>
