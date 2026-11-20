@@ -5,12 +5,14 @@ import { CheckCircle2, Eye, EyeOff, Loader2, ShieldAlert, XCircle } from "lucide
 import { api, isAppError, type AppError, type Profile, type ServerInfo, type TlsMode } from "@/lib/api";
 import { TAG_COLORS, tagClass } from "@/lib/tagColors";
 import { useSessions } from "@/composables/useSessions";
+import { useConfirm } from "@/composables/useConfirm";
 import { cn } from "@/lib/utils";
 
 const props = defineProps<{ profile: Profile }>();
 const emit = defineEmits<{ saved: [Profile]; deleted: [] }>();
 
 const { t } = useI18n();
+const { confirm } = useConfirm();
 const { addSession, reloadProfiles } = useSessions();
 
 // Plain deep copy (structuredClone throws on Vue reactive proxies).
@@ -74,7 +76,8 @@ function trustHostKey(fingerprint: string) {
 }
 
 async function remove() {
-  if (!form.value.id || !confirm(t("connection.confirmDelete", { name: form.value.name }))) return;
+  // The app's own dialog: WebKitGTK answers window.confirm() with true without showing anything.
+  if (!form.value.id || !(await confirm(t("connection.confirmDelete", { name: form.value.name }), t("connection.delete")))) return;
   await api.deleteProfile(form.value.id);
   await reloadProfiles();
   emit("deleted");
