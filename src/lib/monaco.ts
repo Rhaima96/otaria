@@ -30,7 +30,12 @@ const KEYWORDS = mysql.keywords;
 /** Theme colours come from tokens.css, re-read when the app switches light/dark. */
 function applyTheme() {
   const css = getComputedStyle(document.documentElement);
-  const v = (name: string) => css.getPropertyValue(name).trim();
+  // The CSS minifier writes #ffffff as #fff, and Monaco throws on a 3-digit colour ("Illegal value
+  // for token color"), leaving the editor blank in the light theme: expand #rgb / #rgba.
+  const v = (name: string) => {
+    const c = css.getPropertyValue(name).trim();
+    return /^#[0-9a-f]{3,4}$/i.test(c) ? `#${[...c.slice(1)].map((x) => x + x).join("")}` : c;
+  };
   const dark = document.documentElement.classList.contains("dark");
   monaco.editor.defineTheme("otaria", {
     base: dark ? "vs-dark" : "vs",
