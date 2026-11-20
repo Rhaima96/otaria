@@ -71,15 +71,20 @@ fn save_profile(
     password: Option<String>,
     ssh_secret: Option<String>,
 ) -> AppResult<Profile> {
-    let saved = state.store.upsert(profile)?;
+    let mut profile = profile;
+    if profile.id.is_empty() {
+        profile.id = uuid::Uuid::new_v4().to_string();
+    }
+    // Secrets first: when the keychain refuses, no profile is written, so saving again does not
+    // leave a duplicate behind (the form never got the new id).
     for (kind, value) in [(Secret::Db, password), (Secret::Ssh, ssh_secret)] {
-        match (saved.save_password, value) {
-            (false, _) => state.store.set_secret(&saved.id, kind, None)?,
-            (true, Some(v)) => state.store.set_secret(&saved.id, kind, Some(&v))?,
+        match (profile.save_password, value) {
+            (false, _) => state.store.set_secret(&profile.id, kind, None)?,
+            (true, Some(v)) => state.store.set_secret(&profile.id, kind, Some(&v))?,
             (true, None) => {}
         }
     }
-    Ok(saved)
+    state.store.upsert(profile)
 }
 
 #[tauri::command]
