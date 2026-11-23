@@ -8,6 +8,8 @@ macOS · Windows · Linux · English, Français, Español, Italiano, Deutsch
 
 > Status: early development. Downloads: [otaria-releases](https://github.com/Rhaima96/otaria-releases/releases).
 
+**[User guide](guide/README.md)**: installation, connections (TLS, SSH), SQL editor, data editing, system-versioned tables, sequences, vectors, server administration, import and export.
+
 ## Develop
 
 Requirements: Node 20+, Rust (stable), and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS.
