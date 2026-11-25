@@ -18,6 +18,9 @@ import { cn, versionAtLeast } from "@/lib/utils";
 /** `initialSql`: script to start with (object edit, template). `mariadb`: ANALYZE FORMAT=JSON, else MySQL's EXPLAIN ANALYZE. */
 const props = defineProps<{ sessionId: string; profileId: string; editorId: string; schema: string | null; initialSql?: string; mariadb: boolean; version: string }>();
 /** EXPLAIN ANALYZE exists from MySQL 8.0.18. */
+const emit = defineEmits<{ treeChanged: [] }>();
+/** CREATE, DROP, ALTER or RENAME, after any leading comments: the object tree is out of date. */
+const DDL = /^\s*(?:(?:--[^\n]*\n|#[^\n]*\n|\/\*[\s\S]*?\*\/)\s*)*(?:create|drop|alter|rename)\b/i;
 const canAnalyze = props.mariadb || versionAtLeast(props.version, [8, 0, 18]);
 const { t, locale } = useI18n();
 const lib = useQueryLibrary(props.profileId);
@@ -109,7 +112,9 @@ async function send(req: RunRequest) {
     const out = await api.runSql(props.sessionId, props.editorId, req);
     output.value = out;
     counts.value = {};
-    if (out.schema !== schema.value) memo.clear();
+    const ddl = out.results.some((r) => DDL.test(r.sql));
+    if (ddl || out.schema !== schema.value) memo.clear();
+    if (ddl) emit("treeChanged");
     schema.value = out.schema;
     const firstSet = out.results.findIndex((r) => r.columns.length);
     resultTab.value = out.error || firstSet < 0 ? "messages" : firstSet;

@@ -41,8 +41,11 @@ async function load() {
   error.value = null;
   try {
     schemas.value = await api.listSchemas(props.sessionId);
-    // Refresh the schemas that are open.
-    for (const s of Object.keys(expanded.value)) await loadObjects(s);
+    // Refresh the schemas that are open; forget the ones dropped meanwhile (DROP DATABASE from the editor).
+    for (const s of Object.keys(expanded.value)) {
+      if (schemas.value.includes(s)) await loadObjects(s);
+      else delete expanded.value[s];
+    }
   } catch (e) {
     error.value = toAppError(e);
   }
